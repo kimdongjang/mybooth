@@ -231,6 +231,7 @@ export default function App() {
 
   const persistProducts = (next) => mutate('replaceProducts', { products: next });
   const persistBundles = (next) => mutate('replaceBundles', { bundles: next });
+  const persistCatalog = (nextProducts, nextBundles) => mutate('saveCatalog', { products: nextProducts, bundles: nextBundles });
 
   const reservedQty = (productId, targetCart = cart) => targetCart.reduce((sum, line) => {
     if (line.type === 'product' && line.id === productId) return sum + line.qty;
@@ -365,8 +366,8 @@ export default function App() {
     mutate('resetDefaults', {}, () => setCart([]));
   };
   const updateToLatestDefaults = () => {
-    if (!confirm('현재 상품/세트 목록을 최신 기본 데이터로 업데이트할까요? (판매 내역은 유지됩니다)')) return;
-    mutate('resetDefaults', {}, () => setCart([]));
+    if (!confirm('최신 기본 상품/세트를 추가/업데이트할까요? 기존 판매 재고 수량은 유지되고, 없는 상품/세트만 추가됩니다.')) return;
+    mutate('upsertDefaults', {}, () => setCart([]));
   };
   const addBundleToSettings = () => {
     const price = Number(bundlePrice);
@@ -574,7 +575,7 @@ export default function App() {
       </aside>
     </main>}
 
-    {screen === 'settings' && <main className="flex-1 overflow-y-auto p-4 md:p-6"><div className="mb-4 flex flex-wrap gap-2"><button onClick={() => setSettingsTab('products')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'products' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>상품 관리</button><button onClick={() => setSettingsTab('bundles')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'bundles' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>세트 관리</button><button onClick={() => setSettingsTab('backup')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'backup' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>주문 백업</button></div>{settingsTab === 'products' && <ProductSettingsPanel products={products} bundles={bundles} persistProducts={persistProducts} persistBundles={persistBundles} onResetDefaults={resetDefaults} onUpdateLatest={updateToLatestDefaults} />}{settingsTab === 'bundles' && <Panel title="세트 할인 구성"><div className="space-y-2.5">{bundles.length ? bundles.map((b) => <div key={b.id} className="rounded-lg border border-line bg-[#fbfaf5] p-2.5"><div className="flex justify-between text-[13px] font-bold"><span>{b.name} — {won(b.price)}원</span><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="mt-1 text-xs text-[#6b6555]">{b.items.map((it) => `${products.find((p) => p.id === it.productId)?.name || '???'} x${it.qty}`).join(', ')}</div></div>) : <p className="text-xs text-[#8a8370]">등록된 세트가 없습니다</p>}</div><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><Input value={bundleName} onChange={setBundleName} placeholder="세트 이름 (예: 아크릴+포카 세트)" />{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select className="flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input type="number" className="w-[60px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: Number(v) || 1 } : r))} /></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><Input type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="세트 판매가 (원)" /><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></Panel>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#6b6555]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</main>}
+    {screen === 'settings' && <main className="flex-1 overflow-y-auto p-4 md:p-6"><div className="mb-4 flex flex-wrap gap-2"><button onClick={() => setSettingsTab('products')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'products' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>상품 관리</button><button onClick={() => setSettingsTab('bundles')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'bundles' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>세트 관리</button><button onClick={() => setSettingsTab('backup')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'backup' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>주문 백업</button></div>{settingsTab === 'products' && <ProductSettingsPanel products={products} bundles={bundles} persistProducts={persistProducts} persistCatalog={persistCatalog} onResetDefaults={resetDefaults} saving={saving} />}{settingsTab === 'bundles' && <Panel title="세트 할인 구성"><div className="space-y-2.5">{bundles.length ? bundles.map((b) => <div key={b.id} className="rounded-lg border border-line bg-[#fbfaf5] p-2.5"><div className="flex justify-between text-[13px] font-bold"><span>{b.name} — {won(b.price)}원</span><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="mt-1 text-xs text-[#6b6555]">{b.items.map((it) => `${products.find((p) => p.id === it.productId)?.name || '???'} x${it.qty}`).join(', ')}</div></div>) : <p className="text-xs text-[#8a8370]">등록된 세트가 없습니다</p>}</div><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><Input value={bundleName} onChange={setBundleName} placeholder="세트 이름 (예: 아크릴+포카 세트)" />{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select className="flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input type="number" className="w-[60px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: Number(v) || 1 } : r))} /></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><Input type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="세트 판매가 (원)" /><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></Panel>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#6b6555]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</main>}
 
     {screen === 'log' && <main className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="mb-4 grid gap-3.5 md:grid-cols-4"><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></div>
@@ -638,11 +639,13 @@ function ProductSettingsPanel({ products, bundles, persistProducts, persistBundl
     if (product.id !== id) return product;
     const next = { ...product, ...patch };
     const stockQty = Number(next.stockQty ?? next.stock ?? 0) || 0;
-    return { ...next, stockQty, stock: stockQty, name: productNameFromFields(next) };
-  }));
+    const normalized = { ...next, stockQty, stock: stockQty, name: productNameFromFields(next) };
+    setDraftProducts((prev) => prev.map((item) => item.id === product.id ? normalized : item));
+  };
+  const saveChanges = () => persistCatalog(draftProducts, draftBundles);
   const addProduct = () => {
     const id = uid();
-    persistProducts([...products, {
+    setDraftProducts((prev) => [...prev, {
       id,
       productCode: id,
       goodsType: '새 굿즈',
@@ -663,39 +666,34 @@ function ProductSettingsPanel({ products, bundles, persistProducts, persistBundl
   };
   const deleteProduct = (productId) => {
     if (!confirm('이 굿즈를 삭제할까요? 세트 구성에서도 제거됩니다.')) return;
-    persistProducts(products.filter((x) => x.id !== productId));
-    persistBundles(bundles.map((b) => ({ ...b, items: b.items.filter((it) => it.productId !== productId) })).filter((b) => b.items.length));
+    setDraftProducts((prev) => prev.filter((x) => x.id !== productId));
+    setDraftBundles((prev) => prev.map((b) => ({ ...b, items: b.items.filter((it) => it.productId !== productId) })).filter((b) => b.items.length));
   };
 
-  return <Panel title="굿즈 목록 (최신 상품 타입)">
-    <div className="mb-2 flex flex-wrap gap-2">
-      <button className="rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addProduct}>+ 굿즈 추가</button>
-      <button className="rounded-md bg-transfer px-3.5 py-2 text-[13px] text-white" onClick={onUpdateLatest}>최신 기본 상품/세트로 업데이트</button>
-      <button className="rounded-md bg-danger px-3.5 py-2 text-[13px] text-white" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button>
-    </div>
+  return <Panel title="굿즈 목록 (최신 상품 타입)" actions={<div className="flex flex-wrap justify-end gap-2"><button className="rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addProduct}>+ 굿즈 추가</button><button className="rounded-md bg-danger px-3.5 py-2 text-[13px] text-white" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button><button className="rounded-md bg-cash px-4 py-2 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:bg-[#b8b1a1]" disabled={!hasChanges || saving} onClick={saveChanges}>{saving ? '저장 중...' : '저장'}</button></div>}>
     <div className="overflow-x-auto">
       <table className="min-w-[940px] w-full border-collapse text-[12px]">
         <thead><tr className="text-left"><th className="border-b border-line p-1">코드</th><th className="border-b border-line p-1">버튜버</th><th className="border-b border-line p-1">굿즈종류</th><th className="border-b border-line p-1">제작자</th><th className="border-b border-line p-1">가격</th><th className="border-b border-line p-1">현재재고</th><th className="border-b border-line p-1">초기재고</th><th className="border-b border-line p-1">세트명</th><th className="border-b border-line p-1">세트가</th><th /></tr></thead>
         <tbody>{sortedProducts.map((p) => <tr key={p.id}>
-          <td className="border-b border-line p-1"><Input value={p.productCode || p.id} className="w-[72px]" onChange={(v) => updateProduct(p.id, { productCode: v })} /></td>
-          <td className="border-b border-line p-1"><Input value={p.vtuberName || ''} className="w-[86px]" onChange={(v) => updateProduct(p.id, { vtuberName: v })} /></td>
-          <td className="border-b border-line p-1"><Input value={p.goodsType || ''} className="w-[112px]" onChange={(v) => updateProduct(p.id, { goodsType: v })} /></td>
-          <td className="border-b border-line p-1"><Input value={p.creatorName || ''} className="w-[82px]" onChange={(v) => updateProduct(p.id, { creatorName: v })} /></td>
-          <td className="border-b border-line p-1"><Input type="number" value={p.price} className="w-[78px]" onChange={(v) => updateProduct(p.id, { price: Number(v) || 0 })} /></td>
-          <td className="border-b border-line p-1"><Input type="number" value={p.stockQty ?? p.stock ?? 0} className="w-[72px]" onChange={(v) => updateProduct(p.id, { stockQty: Number(v) || 0, stock: Number(v) || 0 })} /></td>
-          <td className="border-b border-line p-1"><Input type="number" value={p.initialStockQty ?? 0} className="w-[72px]" onChange={(v) => updateProduct(p.id, { initialStockQty: Number(v) || 0 })} /></td>
-          <td className="border-b border-line p-1"><Input value={p.setGroupName || ''} className="w-[130px]" onChange={(v) => updateProduct(p.id, { setGroupName: v || null, setCreatorName: v ? (p.creatorName || p.setCreatorName) : null })} /></td>
-          <td className="border-b border-line p-1"><Input type="number" value={p.setPrice ?? ''} className="w-[78px]" onChange={(v) => updateProduct(p.id, { setPrice: v === '' ? null : Number(v) || 0 })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.productCode || p.id} className="w-[72px]" onChange={(v) => updateProduct(p, { productCode: v })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.vtuberName || ''} className="w-[86px]" onChange={(v) => updateProduct(p, { vtuberName: v })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.goodsType || ''} className="w-[112px]" onChange={(v) => updateProduct(p, { goodsType: v })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.creatorName || ''} className="w-[82px]" onChange={(v) => updateProduct(p, { creatorName: v })} /></td>
+          <td className="border-b border-line p-1"><Input type="number" value={p.price} className="w-[78px]" onChange={(v) => updateProduct(p, { price: Number(v) || 0 })} /></td>
+          <td className="border-b border-line p-1"><Input type="number" value={p.stockQty ?? p.stock ?? 0} className="w-[72px]" onChange={(v) => updateProduct(p, { stockQty: Number(v) || 0, stock: Number(v) || 0 })} /></td>
+          <td className="border-b border-line p-1"><Input type="number" value={p.initialStockQty ?? 0} className="w-[72px]" onChange={(v) => updateProduct(p, { initialStockQty: Number(v) || 0 })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.setGroupName || ''} className="w-[130px]" onChange={(v) => updateProduct(p, { setGroupName: v || null, setCreatorName: v ? (p.creatorName || p.setCreatorName) : null })} /></td>
+          <td className="border-b border-line p-1"><Input type="number" value={p.setPrice ?? ''} className="w-[78px]" onChange={(v) => updateProduct(p, { setPrice: v === '' ? null : Number(v) || 0 })} /></td>
           <td className="border-b border-line p-1"><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => deleteProduct(p.id)}>삭제</button></td>
         </tr>)}</tbody>
       </table>
     </div>
-    <p className="mt-2 text-[11px] leading-5 text-[#8a8370]">버튜버/굿즈종류/제작자를 수정하면 판매 화면 이름도 최신 상품 타입 형식으로 자동 갱신됩니다.</p>
+    <p className="mt-2 text-[11px] leading-5 text-[#8a8370]">입력 내용은 바로 서버에 저장되지 않습니다. 모든 수정을 마친 뒤 저장 버튼을 눌러 한 번에 반영해주세요.</p>
   </Panel>;
 }
 
 function SectionTitle({ children }) { return <div className="my-3.5 flex items-center gap-2 text-xs uppercase tracking-[1.5px] text-[#6b6555] after:h-px after:flex-1 after:bg-line">{children}</div>; }
 function ItemButton({ name, price, stock, soldout, bundle, creatorName, creatorColor, onClick }) { return <button disabled={soldout} onClick={onClick} className={`relative flex min-h-[82px] flex-col justify-between rounded-[10px] border p-3 text-left shadow-[0_2px_0_#d9d4c4] active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-40 ${bundle ? 'border-amber-pos bg-[#fff8ea]' : 'border-line bg-white'}`}>{bundle && <span className="absolute left-2 top-2 rounded bg-amber-pos px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-white">SET</span>}<span className="absolute right-2 top-2 rounded-lg bg-[#f1eee2] px-2 py-1 text-xs font-bold text-register shadow-sm">{stock}</span><span className={`text-sm font-semibold leading-tight ${bundle ? 'mt-3.5' : 'mt-5'}`}>{name}</span><div className="mt-2 flex items-end justify-between gap-2"><span className={`text-[15px] font-bold ${bundle ? 'text-amber-pos' : 'text-register-2'}`}>{won(price)}원</span>{creatorName && <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}</div></button>; }
-function Panel({ title, children }) { return <section className="rounded-[10px] border border-line bg-white p-3.5"><h2 className="mb-2.5 text-[15px] font-bold">{title}</h2>{children}</section>; }
+function Panel({ title, children, actions }) { return <section className="rounded-[10px] border border-line bg-white p-3.5"><div className="mb-2.5 flex items-center justify-between gap-3"><h2 className="text-[15px] font-bold">{title}</h2>{actions}</div>{children}</section>; }
 function Input({ value, onChange, className = '', ...props }) { return <input {...props} value={value} onChange={(e) => onChange(e.target.value)} className={`w-full rounded border border-line p-1.5 text-[13px] ${className}`} />; }
 function Stat({ label, value }) { return <div className="rounded-[10px] border border-line bg-white p-3.5"><div className="text-[11px] uppercase tracking-wide text-[#8a8370]">{label}</div><div className="mono mt-1 text-2xl font-bold">{value}</div></div>; }
