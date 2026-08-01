@@ -13,12 +13,14 @@ interface SyncServiceOptions {
   repository?: OrderRepository;
   endpoint?: string;
   getAuthToken?: () => string | null;
+  projectId?: string | null;
 }
 
 class SyncService {
   private repository: OrderRepository;
   private endpoint: string;
   private getAuthToken: () => string | null;
+  private projectId: string | null;
   private locked = false;
   private listeners = new Set<SyncListener>();
   private snapshot: SyncSnapshot = { isSyncing: false, pendingCount: 0, lastSyncedAt: null };
@@ -27,10 +29,13 @@ class SyncService {
     this.repository = options.repository || orderRepository;
     this.endpoint = options.endpoint || '/api/pos';
     this.getAuthToken = options.getAuthToken || (() => null);
+    this.projectId = options.projectId || null;
   }
 
-  configure(options: Pick<SyncServiceOptions, 'getAuthToken'>): void {
+  configure(options: Pick<SyncServiceOptions, 'getAuthToken' | 'projectId'>): void {
     if (options.getAuthToken) this.getAuthToken = options.getAuthToken;
+    this.projectId = options.projectId || null;
+    void this.refreshPendingCount();
   }
 
   subscribe(listener: SyncListener): () => void {
@@ -41,7 +46,7 @@ class SyncService {
   }
 
   async refreshPendingCount(): Promise<void> {
-    this.snapshot = { ...this.snapshot, pendingCount: await this.repository.countWaiting() };
+    this.snapshot = { ...this.snapshot, pendingCount: this.projectId ? await this.repository.countWaiting(this.projectId) : 0 };
     this.emit();
   }
 
@@ -57,7 +62,8 @@ class SyncService {
     this.emit();
 
     try {
-      const orders = await this.repository.getPendingOrders();
+      if (!this.projectId) return this.snapshot;
+      const orders = await this.repository.getPendingOrders(this.projectId);
       for (const order of orders) {
         if (!order.id) continue;
         await this.repository.updateStatus(order.id, 'SYNCING');
@@ -86,7 +92,7 @@ class SyncService {
       }
     } finally {
       this.locked = false;
-      this.snapshot = { ...this.snapshot, isSyncing: false, pendingCount: await this.repository.countWaiting() };
+      this.snapshot = { ...this.snapshot, isSyncing: false, pendingCount: this.projectId ? await this.repository.countWaiting(this.projectId) : 0 };
       this.emit();
     }
 

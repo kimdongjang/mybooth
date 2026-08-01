@@ -5,6 +5,7 @@ import { isOnline, subscribeNetwork } from '../sync/network';
 interface UseSyncOptions {
   enabled: boolean;
   getAuthToken: () => string | null;
+  projectId?: string | null;
 }
 
 export interface UseSyncResult extends SyncSnapshot {
@@ -13,13 +14,13 @@ export interface UseSyncResult extends SyncSnapshot {
   refreshPendingCount: () => Promise<void>;
 }
 
-export function useSync({ enabled, getAuthToken }: UseSyncOptions): UseSyncResult {
+export function useSync({ enabled, getAuthToken, projectId }: UseSyncOptions): UseSyncResult {
   const [online, setOnline] = useState(isOnline());
   const [snapshot, setSnapshot] = useState<SyncSnapshot>({ isSyncing: false, pendingCount: 0, lastSyncedAt: null });
 
   useEffect(() => {
-    syncService.configure({ getAuthToken });
-  }, [getAuthToken]);
+    syncService.configure({ getAuthToken, projectId });
+  }, [getAuthToken, projectId]);
 
   useEffect(() => syncService.subscribe(setSnapshot), []);
 

@@ -6,6 +6,8 @@ import { useSync } from './hooks/useSync';
 import { createLocalOrderId } from './utils/orderId';
 
 const AUTH_TOKEN_KEY = 'pos_admin_token';
+const AUTH_ADMIN_KEY = 'pos_admin_id';
+const SELECTED_PROJECT_KEY = 'pos_selected_project_id';
 const CREATOR_COLOR_PALETTE = [
   { bg: '#fef3c7', text: '#92400e', border: '#f59e0b' },
   { bg: '#dbeafe', text: '#1e40af', border: '#3b82f6' },
@@ -48,12 +50,18 @@ async function requestJson(url, options = {}) {
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem(AUTH_TOKEN_KEY));
+  const [adminId, setAdminId] = useState(() => sessionStorage.getItem(AUTH_ADMIN_KEY) || '');
   const [loginId, setLoginId] = useState('admin');
   const [loginPassword, setLoginPassword] = useState('');
+  const [authMode, setAuthMode] = useState('login');
   const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(Boolean(token));
+  const [projectLoading, setProjectLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [projects, setProjects] = useState([]);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [newProjectName, setNewProjectName] = useState('');
   const [screen, setScreen] = useState('pos');
   const [settingsTab, setSettingsTab] = useState('products');
   const [products, setProducts] = useState([]);
@@ -66,10 +74,11 @@ export default function App() {
   const [creatorFilter, setCreatorFilter] = useState('all');
   const [logCreatorFilter, setLogCreatorFilter] = useState('all');
   const getAuthToken = useCallback(() => sessionStorage.getItem(AUTH_TOKEN_KEY), []);
-  const sync = useSync({ enabled: Boolean(token), getAuthToken });
+  const sync = useSync({ enabled: Boolean(token && selectedProject?.id), getAuthToken, projectId: selectedProject?.id });
 
   const persistLocalState = async (nextProducts = products, nextBundles = bundles, nextSales = sales) => {
-    await stateRepository.save({ products: nextProducts, bundles: nextBundles, sales: nextSales });
+    if (!selectedProject?.id) return;
+    await stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales });
   };
 
   const applyState = (data) => {
@@ -84,7 +93,12 @@ export default function App() {
 
   const logout = () => {
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem(AUTH_ADMIN_KEY);
+    sessionStorage.removeItem(SELECTED_PROJECT_KEY);
     setToken(null);
+    setAdminId('');
+    setProjects([]);
+    setSelectedProject(null);
     setProducts([]);
     setBundles([]);
     setSales([]);
@@ -92,11 +106,12 @@ export default function App() {
   };
 
   const loadState = async () => {
+    if (!selectedProject?.id) return;
     setLoading(true);
     setError('');
     try {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        const cached = await stateRepository.get();
+        const cached = await stateRepository.get(selectedProject.id);
         if (cached) {
           applyState(cached);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
@@ -106,11 +121,11 @@ export default function App() {
         return;
       }
 
-      applyState(await requestJson('/api/pos'));
+      applyState(await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}`));
     } catch (err) {
       if (String(err.message).includes('인증')) logout();
       else {
-        const cached = await stateRepository.get();
+        const cached = await stateRepository.get(selectedProject.id);
         if (cached) {
           applyState(cached);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
@@ -121,15 +136,77 @@ export default function App() {
     }
   };
 
-  useEffect(() => { if (token) loadState(); }, [token]);
+  const loadProjects = async () => {
+    if (!token) return;
+    setProjectLoading(true);
+    setError('');
+    try {
+      const data = await requestJson('/api/pos');
+      const nextProjects = data.projects || [];
+      setProjects(nextProjects);
+      const rememberedId = sessionStorage.getItem(SELECTED_PROJECT_KEY);
+      const remembered = nextProjects.find((project) => project.id === rememberedId);
+      setSelectedProject((current) => current && nextProjects.find((project) => project.id === current.id) ? current : remembered || null);
+    } catch (err) {
+      if (String(err.message).includes('인증')) logout();
+      else setError(err.message);
+    } finally {
+      setProjectLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const createProject = async (e) => {
+    e?.preventDefault();
+    if (!newProjectName.trim()) return alert('프로젝트 이름을 입력해주세요.');
+    setProjectLoading(true);
+    setError('');
+    try {
+      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ action: 'createProject', payload: { name: newProjectName.trim() } }) });
+      const project = data.project;
+      setNewProjectName('');
+      await loadProjects();
+      setSelectedProject(project);
+      sessionStorage.setItem(SELECTED_PROJECT_KEY, project.id);
+    } catch (err) {
+      alert(err.message);
+      setError(err.message);
+    } finally {
+      setProjectLoading(false);
+    }
+  };
+
+  const selectProject = (project) => {
+    setSelectedProject(project);
+    sessionStorage.setItem(SELECTED_PROJECT_KEY, project.id);
+    setProducts([]);
+    setBundles([]);
+    setSales([]);
+    setCart([]);
+    setScreen('pos');
+  };
+
+  const leaveProject = () => {
+    setSelectedProject(null);
+    sessionStorage.removeItem(SELECTED_PROJECT_KEY);
+    setProducts([]);
+    setBundles([]);
+    setSales([]);
+    setCart([]);
+  };
+
+  useEffect(() => { if (token) loadProjects(); }, [token]);
+  useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id]);
 
   const login = async (e) => {
     e.preventDefault();
     setLoginError('');
     try {
-      const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify({ id: loginId, password: loginPassword }) });
+      const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify({ mode: authMode, id: loginId, password: loginPassword }) });
       sessionStorage.setItem(AUTH_TOKEN_KEY, data.token);
+      sessionStorage.setItem(AUTH_ADMIN_KEY, data.admin?.id || loginId);
       setToken(data.token);
+      setAdminId(data.admin?.id || loginId);
       setLoginPassword('');
     } catch (err) {
       setLoginError(err.message);
@@ -137,10 +214,11 @@ export default function App() {
   };
 
   const mutate = async (action, payload, success) => {
+    if (!selectedProject?.id) return alert('프로젝트를 먼저 선택해주세요.');
     setSaving(true);
     setError('');
     try {
-      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ action, payload }) });
+      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: selectedProject.id, action, payload }) });
       applyState(data);
       success?.(data);
     } catch (err) {
@@ -246,6 +324,7 @@ export default function App() {
     }
   };
   const finalizeSale = async (method) => {
+    if (!selectedProject?.id) return alert('프로젝트를 먼저 선택해주세요.');
     if (!cart.length || saving) return;
     setSaving(true);
     setError('');
@@ -254,9 +333,10 @@ export default function App() {
       const createdAt = new Date().toISOString();
       const saleCart = cart.map((line) => ({ ...line }));
       const orderPayload = { localOrderId, createdAt, method, total, cart: saleCart };
-      const apiPayload = { action: 'finalizeSale', payload: orderPayload };
+      const apiPayload = { projectId: selectedProject.id, action: 'finalizeSale', payload: orderPayload };
 
       await orderRepository.add({
+        projectId: selectedProject.id,
         localOrderId,
         createdAt,
         payload: apiPayload,
@@ -310,11 +390,11 @@ export default function App() {
     URL.revokeObjectURL(a.href);
   };
   const backupOrdersJson = async () => {
-    const orders = await orderRepository.getAll();
+    const orders = await orderRepository.getAll(selectedProject.id);
     downloadBlob(JSON.stringify(orders, null, 2), 'application/json;charset=utf-8;', `orders_backup_${new Date().toISOString().slice(0, 10)}.json`);
   };
   const backupOrdersCsv = async () => {
-    const orders = await orderRepository.getAll();
+    const orders = await orderRepository.getAll(selectedProject.id);
     const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const rows = orders.map((order) => [
       order.id,
@@ -338,13 +418,14 @@ export default function App() {
       setSales(nextSales);
       await persistLocalState(nextProducts, bundles, nextSales);
 
-      const removedPendingSale = await orderRepository.deletePendingByLocalOrderId(sale.id);
+      const removedPendingSale = await orderRepository.deletePendingByLocalOrderId(selectedProject.id, sale.id);
       if (!removedPendingSale) {
         const createdAt = new Date().toISOString();
         await orderRepository.add({
+          projectId: selectedProject.id,
           localOrderId: `void_${sale.id}_${Date.now()}`,
           createdAt,
-          payload: { action: 'voidSale', payload: { id: sale.id } },
+          payload: { projectId: selectedProject.id, action: 'voidSale', payload: { id: sale.id } },
           syncStatus: 'PENDING',
           retryCount: 0,
           lastSyncAt: null,
@@ -459,13 +540,14 @@ export default function App() {
   }, [saleLineProductEntries, sales]);
   const selectedCreatorSummary = creatorSalesSummary.find((summary) => summary.creator === logCreatorFilter);
 
-  if (!token) return <LoginPage loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginError={loginError} onSubmit={login} />;
-  if (loading) return <div className="flex h-full items-center justify-center bg-paper text-register"><div className="rounded-xl border border-line bg-white p-6 font-bold">DB에서 데이터를 불러오는 중...</div></div>;
+  if (!token) return <LoginPage authMode={authMode} setAuthMode={setAuthMode} loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginError={loginError} onSubmit={login} />;
+  if (loading || projectLoading) return <div className="flex h-full items-center justify-center bg-paper text-register"><div className="rounded-xl border border-line bg-white p-6 font-bold">DB에서 데이터를 불러오는 중...</div></div>;
+  if (!selectedProject) return <ProjectPage adminId={adminId} projects={projects} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} onLogout={logout} />;
 
   return <div className="flex h-full flex-col bg-paper text-ink">
     <header className="flex shrink-0 items-center justify-between border-b-[3px] border-amber-pos bg-register px-4 py-2.5 text-[#eef3ee]">
-      <div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-pos" /><h1 className="display-font text-base font-semibold tracking-wide">부스 포스기</h1>{saving && <span className="text-xs text-amber-pos">저장 중...</span>}</div>
-      <nav className="flex flex-wrap items-center justify-end gap-1.5"><SyncStatus sync={sync} />{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} onClick={() => setScreen(key)} className={`rounded-md border px-3.5 py-2 text-[13px] ${screen === key ? 'border-amber-pos bg-amber-pos font-bold text-ink' : 'border-white/20 bg-white/10'}`}>{label}</button>)}<button onClick={loadState} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">새로고침</button><button onClick={logout} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">로그아웃</button></nav>
+      <div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-pos" /><h1 className="display-font text-base font-semibold tracking-wide">부스 포스기</h1><span className="rounded bg-white/10 px-2 py-1 text-xs">{selectedProject.name}</span>{saving && <span className="text-xs text-amber-pos">저장 중...</span>}</div>
+      <nav className="flex flex-wrap items-center justify-end gap-1.5"><SyncStatus sync={sync} />{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} onClick={() => setScreen(key)} className={`rounded-md border px-3.5 py-2 text-[13px] ${screen === key ? 'border-amber-pos bg-amber-pos font-bold text-ink' : 'border-white/20 bg-white/10'}`}>{label}</button>)}<button onClick={leaveProject} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">프로젝트 변경</button><button onClick={loadState} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">새로고침</button><button onClick={logout} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">로그아웃</button></nav>
     </header>
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
 
@@ -511,16 +593,42 @@ export default function App() {
   </div>;
 }
 
-function LoginPage({ loginId, setLoginId, loginPassword, setLoginPassword, loginError, onSubmit }) {
+function LoginPage({ authMode, setAuthMode, loginId, setLoginId, loginPassword, setLoginPassword, loginError, onSubmit }) {
   return <div className="flex h-full items-center justify-center bg-register px-4 text-ink">
     <form onSubmit={onSubmit} className="w-full max-w-sm rounded-2xl border-[3px] border-amber-pos bg-paper p-6 shadow-2xl">
-      <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">부스 포스기</div><p className="mt-1 text-sm text-[#6b6555]">관리자 로그인 후 이용할 수 있습니다.</p></div>
+      <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">부스 포스기</div><p className="mt-1 text-sm text-[#6b6555]">관리자별 행사 프로젝트를 관리합니다.</p></div>
+      <div className="mb-4 grid grid-cols-2 rounded-lg border border-line bg-white p-1 text-sm font-bold">
+        <button type="button" onClick={() => setAuthMode('login')} className={`rounded-md py-2 ${authMode === 'login' ? 'bg-register text-white' : 'text-[#6b6555]'}`}>로그인</button>
+        <button type="button" onClick={() => setAuthMode('signup')} className={`rounded-md py-2 ${authMode === 'signup' ? 'bg-register text-white' : 'text-[#6b6555]'}`}>회원가입</button>
+      </div>
       <label className="mb-3 block text-sm font-bold">아이디<Input value={loginId} onChange={setLoginId} autoFocus className="mt-1" /></label>
       <label className="mb-3 block text-sm font-bold">패스워드<Input type="password" value={loginPassword} onChange={setLoginPassword} className="mt-1" /></label>
       {loginError && <div className="mb-3 rounded bg-danger px-3 py-2 text-xs text-white">{loginError}</div>}
-      <button className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white">로그인</button>
-      <p className="mt-4 text-xs leading-5 text-[#8a8370]">Vercel 환경변수 <b>ADMIN_ID</b>, <b>ADMIN_PASSWORD</b>, <b>AUTH_SECRET</b>를 설정하세요.</p>
+      <button className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white">{authMode === 'signup' ? '회원가입하고 시작' : '로그인'}</button>
+      <p className="mt-4 text-xs leading-5 text-[#8a8370]">기존 <b>ADMIN_ID/ADMIN_PASSWORD</b> 환경변수 계정은 첫 실행 시 관리자 계정으로 자동 등록됩니다.</p>
     </form>
+  </div>;
+}
+
+function ProjectPage({ adminId, projects, newProjectName, setNewProjectName, onCreateProject, onSelectProject, onLogout }) {
+  return <div className="min-h-full bg-paper p-4 text-ink md:p-8">
+    <div className="mx-auto max-w-4xl">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-register p-4 text-white">
+        <div><h1 className="display-font text-xl font-bold">행사 프로젝트 선택</h1><p className="mt-1 text-sm text-white/70">관리자 <b>{adminId}</b>님의 프로젝트입니다.</p></div>
+        <button onClick={onLogout} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">로그아웃</button>
+      </header>
+      <form onSubmit={onCreateProject} className="mb-5 rounded-xl border border-line bg-white p-4 shadow-[0_2px_0_#e7e1d1]">
+        <label className="block text-sm font-bold">새 프로젝트 만들기</label>
+        <div className="mt-2 flex gap-2"><Input value={newProjectName} onChange={setNewProjectName} placeholder="예: 8월 행사, 10월 행사" /><button className="shrink-0 rounded-md bg-register px-4 py-2 text-sm font-bold text-white">생성</button></div>
+      </form>
+      <div className="grid gap-3 md:grid-cols-2">
+        {projects.map((project) => <button key={project.id} onClick={() => onSelectProject(project)} className="rounded-xl border border-line bg-white p-4 text-left shadow-[0_2px_0_#e7e1d1] hover:border-amber-pos">
+          <div className="text-lg font-bold text-register">{project.name}</div>
+          <div className="mt-2 text-xs text-[#8a8370]">생성: {new Date(project.createdAt).toLocaleDateString('ko-KR')} · 최근 수정: {new Date(project.updatedAt).toLocaleString('ko-KR')}</div>
+        </button>)}
+      </div>
+      {!projects.length && <div className="rounded-xl border border-dashed border-line bg-white p-8 text-center text-sm text-[#8a8370]">아직 프로젝트가 없습니다. 예: “8월 행사” 프로젝트를 만들어 시작하세요.</div>}
+    </div>
   </div>;
 }
 

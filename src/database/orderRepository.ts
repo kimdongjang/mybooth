@@ -2,11 +2,11 @@ import { db, type StoredOrder, type SyncStatus } from './dexie';
 
 export interface OrderRepository {
   add(order: Omit<StoredOrder, 'id'>): Promise<number>;
-  getAll(): Promise<StoredOrder[]>;
-  getPendingOrders(): Promise<StoredOrder[]>;
-  countWaiting(): Promise<number>;
+  getAll(projectId: string): Promise<StoredOrder[]>;
+  getPendingOrders(projectId: string): Promise<StoredOrder[]>;
+  countWaiting(projectId: string): Promise<number>;
   updateStatus(id: number, syncStatus: SyncStatus, patch?: Partial<StoredOrder>): Promise<void>;
-  deletePendingByLocalOrderId(localOrderId: string): Promise<number>;
+  deletePendingByLocalOrderId(projectId: string, localOrderId: string): Promise<number>;
 }
 
 export class DexieOrderRepository implements OrderRepository {
@@ -14,29 +14,29 @@ export class DexieOrderRepository implements OrderRepository {
     return db.orders.add(order);
   }
 
-  async getAll(): Promise<StoredOrder[]> {
-    return db.orders.orderBy('createdAt').toArray();
+  async getAll(projectId: string): Promise<StoredOrder[]> {
+    return db.orders.where('projectId').equals(projectId).sortBy('createdAt');
   }
 
-  async getPendingOrders(): Promise<StoredOrder[]> {
+  async getPendingOrders(projectId: string): Promise<StoredOrder[]> {
     return db.orders
-      .where('syncStatus')
-      .anyOf(['PENDING', 'FAILED'])
+      .where('[projectId+syncStatus]')
+      .anyOf([[projectId, 'PENDING'], [projectId, 'FAILED']])
       .sortBy('createdAt');
   }
 
-  async countWaiting(): Promise<number> {
-    return db.orders.where('syncStatus').anyOf(['PENDING', 'FAILED', 'SYNCING']).count();
+  async countWaiting(projectId: string): Promise<number> {
+    return db.orders.where('[projectId+syncStatus]').anyOf([[projectId, 'PENDING'], [projectId, 'FAILED'], [projectId, 'SYNCING']]).count();
   }
 
   async updateStatus(id: number, syncStatus: SyncStatus, patch: Partial<StoredOrder> = {}): Promise<void> {
     await db.orders.update(id, { ...patch, syncStatus });
   }
 
-  async deletePendingByLocalOrderId(localOrderId: string): Promise<number> {
+  async deletePendingByLocalOrderId(projectId: string, localOrderId: string): Promise<number> {
     return db.orders
-      .where('localOrderId')
-      .equals(localOrderId)
+      .where('[projectId+localOrderId]')
+      .equals([projectId, localOrderId])
       .and((order) => order.syncStatus === 'PENDING' || order.syncStatus === 'FAILED')
       .delete();
   }

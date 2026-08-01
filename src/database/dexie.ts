@@ -4,6 +4,7 @@ export type SyncStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
 
 export interface StoredOrder<TPayload = unknown> {
   id?: number;
+  projectId: string;
   localOrderId: string;
   createdAt: string;
   payload: TPayload;
@@ -14,6 +15,7 @@ export interface StoredOrder<TPayload = unknown> {
 
 export interface StoredPosState<TState = unknown> {
   key: string;
+  projectId: string;
   updatedAt: string;
   state: TState;
 }
@@ -32,6 +34,11 @@ export class PosDatabase extends Dexie {
     this.version(2).stores({
       orders: '++id, localOrderId, createdAt, syncStatus, retryCount, lastSyncAt',
       posState: 'key, updatedAt',
+    });
+
+    this.version(3).stores({
+      orders: '++id, projectId, [projectId+syncStatus], [projectId+localOrderId], localOrderId, createdAt, syncStatus, retryCount, lastSyncAt',
+      posState: 'key, projectId, updatedAt',
     });
   }
 }
