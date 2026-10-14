@@ -95,6 +95,11 @@ export default function App() {
   const [bundleName, setBundleName] = useState('');
   const [bundlePrice, setBundlePrice] = useState('');
   const [creatorFilter, setCreatorFilter] = useState('all');
+  const [purchaseTab, setPurchaseTab] = useState('products');
+  useEffect(() => {
+    setCreatorFilter('all');
+    setPurchaseTab('products');
+  }, [selectedProject?.id]);
   const [logCreatorFilter, setLogCreatorFilter] = useState('all');
   const activeScope = useRef(null);
   const scope = `${token || ''}:${selectedProject?.id || ''}`;
@@ -604,19 +609,27 @@ export default function App() {
 
     {screen === 'pos' && <main className="pos-layout flex min-h-0 flex-1 gap-5 p-5">
       <section className="catalog min-w-0 flex-1 overflow-y-auto">
-        <div className="mb-4 flex items-end justify-between gap-3"><div><h2 className="text-xl font-bold tracking-tight">상품 판매</h2><p className="mt-1 text-xs text-slate-500">상품을 눌러 주문에 추가하세요.</p></div><span className="shrink-0 text-xs text-slate-500">{visibleProducts.length}개 상품</span></div>
-        <div className="mb-4 rounded-xl border border-line bg-white p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-[#526078]">제작자별 보기</span>
-            <span className="text-[11px] text-[#64748b]">표시 {visibleProducts.length}/{products.length}개</span>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => setCreatorFilter('all')} className={`rounded-full border border-line bg-[#f8fafc] px-2 py-1 text-[11px] font-bold text-[#526078] ${creatorFilter === 'all' ? 'ring-2 ring-amber-pos' : ''}`}>전체 보기</button>
-            {creators.map((creator) => <button key={creator} type="button" onClick={() => setCreatorFilter(creator)} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${creatorFilter === creator ? 'ring-2 ring-amber-pos' : ''}`} style={{ backgroundColor: creatorColors[creator]?.bg, color: creatorColors[creator]?.text, borderColor: creatorColors[creator]?.border }}>{creator}</button>)}
+        <div className="catalog-heading mb-4 flex items-end justify-between gap-3"><div><h2 className="text-xl font-bold tracking-tight">상품 판매</h2><p className="mt-1 text-xs text-slate-500">상품을 눌러 주문에 추가하세요.</p></div><span className="shrink-0 text-xs text-slate-500">{purchaseTab === 'products' ? `${visibleProducts.length}개 상품` : `${visibleBundles.length}개 세트`}</span></div>
+        <div className="purchase-tabs" role="tablist" aria-label="구매 방식">
+          {[['products', '단품 구매'], ['bundles', '세트 구매']].map(([key, label], index) => <button key={key} id={`purchase-tab-${key}`} type="button" role="tab" aria-selected={purchaseTab === key} aria-controls="purchase-panel" tabIndex={purchaseTab === key ? 0 : -1} onClick={() => setPurchaseTab(key)} onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 'products' : event.key === 'End' ? 'bundles' : index === 0 ? 'bundles' : 'products';
+            setPurchaseTab(next);
+            document.getElementById(`purchase-tab-${next}`)?.focus();
+          }}>{label}</button>)}
+        </div>
+        <div className="catalog-filters" role="group" aria-label="제작자 필터">
+          <span className="filter-label">제작자</span>
+          <div className="filter-options">
+            <button type="button" aria-pressed={creatorFilter === 'all'} onClick={() => setCreatorFilter('all')}>전체</button>
+            {creators.map((creator) => <button key={creator} type="button" aria-pressed={creatorFilter === creator} onClick={() => setCreatorFilter(creator)}>{creator}</button>)}
           </div>
         </div>
-        <div className="product-grid grid gap-3">{visibleProducts.map((p) => <ItemButton key={p.id} imageUrl={p.imageUrl} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} creatorColor={creatorColors[creatorNameOf(p)]} onClick={() => addProduct(p)} />)}</div>
-        {!!visibleBundles.length && <><SectionTitle>세트 할인</SectionTitle><div className="product-grid grid gap-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div></>}
+        <div id="purchase-panel" role="tabpanel" aria-labelledby={`purchase-tab-${purchaseTab}`} tabIndex={0}>
+          {purchaseTab === 'products' ? <div className="product-grid grid gap-3">{visibleProducts.map((p) => <ItemButton key={p.id} imageUrl={p.imageUrl} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} creatorColor={creatorColors[creatorNameOf(p)]} onClick={() => addProduct(p)} />)}</div> : <div className="product-grid grid gap-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div>}
+          {!(purchaseTab === 'products' ? visibleProducts.length : visibleBundles.length) && <p className="catalog-empty">{creatorFilter !== 'all' ? `선택한 제작자의 ${purchaseTab === 'products' ? '상품' : '세트'}가 없습니다.` : purchaseTab === 'products' ? '등록된 상품이 없습니다.' : '등록된 세트가 없습니다.'}</p>}
+        </div>
       </section>
       <aside className="order-panel flex shrink-0 flex-col rounded-2xl border border-line bg-white text-ink">
         <div className="order-summary"><div><div className="flex items-center gap-2"><h2 className="text-sm font-bold">현재 주문</h2><span className="text-xs text-slate-500">{cart.reduce((count, line) => count + line.qty, 0)}개</span></div><button type="button" className="order-detail-toggle" aria-expanded={orderExpanded} aria-controls="order-lines" onClick={() => setOrderExpanded(!orderExpanded)}>{orderExpanded ? '주문 접기 ∨' : '주문 상세 ∧'}</button></div><div className="text-right"><div className="text-xs text-slate-500">결제할 금액</div><div className="order-total mono font-bold text-register" aria-live="polite">{won(total)}<span className="ml-1 text-sm text-slate-500">원</span></div></div></div>
@@ -777,15 +790,14 @@ function ProductImage({ imageUrl, name }) {
   </div>;
 }
 
-function SectionTitle({ children }) { return <div className="my-3.5 flex items-center gap-2 text-xs uppercase tracking-[1.5px] text-[#526078] after:h-px after:flex-1 after:bg-line">{children}</div>; }
 function ItemButton({ name, imageUrl, price, stock, soldout, bundle, creatorName, creatorColor, onClick }) {
   return <button disabled={soldout} onClick={onClick} className={`product-card flex min-w-0 flex-col overflow-hidden rounded-xl border text-left transition hover:border-register hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed ${bundle ? 'border-blue-200 bg-blue-50' : 'border-line bg-white'} ${soldout ? 'is-soldout' : ''}`}>
     {!bundle && <ProductImage imageUrl={imageUrl} name={name} />}
     <div className="flex flex-1 flex-col p-3">
       {bundle && <span className="mb-2 text-[10px] font-bold tracking-wide text-register">세트 할인</span>}
-      <span className="break-words text-sm font-semibold leading-snug">{name}</span>
-      {creatorName && <span className="mt-2 self-start max-w-full break-words rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="mono text-sm font-bold text-register">{won(price)}원</span><span className={`text-[11px] font-semibold ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>
+      <span className="product-name break-words">{name}</span>
+      {creatorName && <span className="product-creator mt-2 self-start max-w-full break-words rounded-full border px-2 py-0.5" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="product-price mono text-register">{won(price)}원</span><span className={`product-stock ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>
     </div>
   </button>;
 }
