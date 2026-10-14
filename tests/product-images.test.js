@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+
+test('upload tokens require authentication, owned product and matching path; restrict size/type', async () => {
+  const context = vm.createContext({ encodeURIComponent });
+  const source = await readFile(new URL('../api/product-images.js', import.meta.url), 'utf8');
+  const module = new vm.SourceTextModule(source, { context });
+  let tokenOptions;
+  let owned = true;
+  const dependencies = {
+    '@vercel/blob/client': { handleUpload: async options => {
+      tokenOptions = await options.onBeforeGenerateToken(options.body.pathname, options.body.clientPayload);
+      return { type: 'token' };
+    } },
+    '@vercel/postgres': { sql: async () => ({ rows: owned ? [{ id: 'P001' }] : [] }) },
+    './lib/auth.js': { requireAuth: (req, res) => {
+      if (req.authenticated) return { id: 'admin-a' };
+      res.status(401).json({ error: 'Unauthorized' });
+      return null;
+    } },
+  };
+  await module.link(specifier => new vm.SyntheticModule(Object.keys(dependencies[specifier]), function () {
+    for (const [name, value] of Object.entries(dependencies[specifier])) this.setExport(name, value);
+  }, { context }));
+  await module.evaluate();
+  const invoke = async (authenticated, pathname = 'products/project-a/P001/image.png') => {
+    const res = { headersSent: false, status(code) { this.code = code; return this; }, json() { this.headersSent = true; return this; } };
+    await module.namespace.default({ method: 'POST', authenticated, body: { pathname, clientPayload: JSON.stringify({ projectId: 'project-a', productId: 'P001' }) } }, res);
+    return res.code;
+  };
+  assert.equal(await invoke(false), 401);
+  assert.equal(await invoke(true), 200);
+  assert.deepEqual(Array.from(tokenOptions.allowedContentTypes), ['image/jpeg', 'image/png', 'image/webp']);
+  assert.equal(tokenOptions.maximumSizeInBytes, 5 * 1024 * 1024);
+  assert.equal(tokenOptions.allowOverwrite, false);
+  assert.equal(await invoke(true, 'products/project-b/P001/image.png'), 400);
+  owned = false;
+  assert.equal(await invoke(true), 400);
+});

@@ -12,6 +12,7 @@
 | --- | --- |
 | POSTGRES_URL | 설치된 `@vercel/postgres` sql pool의 기본 연결. 별도 개발/검증 DB 사용 |
 | AUTH_SECRET | 토큰 HMAC 서명. 환경별 별도 값으로 설정, 공개 예시 값 사용 금지 |
+| BLOB_READ_WRITE_TOKEN | Public Vercel Blob의 서버 전용 토큰. 이미지 직접 업로드 토큰 발급에 사용; VITE_에 넣지 않음 |
 | ADMIN_ID / ADMIN_USERNAME | ADMIN_PASSWORD가 있을 때 초기 관리자 ID; 기본 admin |
 | ADMIN_PASSWORD | 초기 관리자 등록 및 AUTH_SECRET 미설정 시 서명 fallback; 기존 계정 비밀번호 변경 기능 아님 |
 
@@ -99,3 +100,13 @@
 - 정적 확인: 판매·재고·취소 이벤트와 큐 로직 유지, 수량/삭제 버튼 접근성 이름 추가, 모바일 세로 레이아웃과 키보드 포커스 지정.
 - 브라우저 시각 확인은 로컬 URL 연결 시간 초과로 미실행. 별도 검증 환경에서 375/768/1440px의 로그인·프로젝트·판매·설정·내역, 긴 상품명과 주문 수량 조작을 확인해야 한다.
 - SALE-01/02/03, VOID-01, OFF-01/02 및 CACHE-01 브라우저/DB 통합 검증 미실행. 폰트 캐시와 배포 갱신도 CACHE-01에서 확인한다.
+
+## 상품 이미지 배포·검증 (2026-10-14)
+
+- Vercel 프로젝트 Storage에서 Public Blob을 생성/연결하고 BLOB_READ_WRITE_TOKEN을 설정한다. Preview는 검증용 DB와 Blob을 사용한다. 로컬 개발은 기존 API와 같이 프로세스 환경에 토큰을 주입한다.
+- IMAGE-01: 상품 추가 후 JPG/PNG/WebP 등록 → 판매 카드 표시 → 새로고침 후 유지 → 이미지 교체 → 제거. 이미지 없는 기존 상품 및 깨진 URL은 대체 문구를 표시한다.
+- IMAGE-02: 다른 관리자/프로젝트/상품 경로 업로드 및 URL 저장 거절, 5MiB 초과/다른 형식 업로드 거절, 실패 시 기존 이미지 유지.
+- IMAGE-03: 이미지 수정 전후 재고·판매 보존, 프로젝트 전환, 모바일 카드/관리 화면, 오프라인 로드 실패 대체 표시를 확인한다.
+- 자동 검증: 프런트 빌드 및 SQL 어댑터 테스트. 이미지 URL 저장/제거의 프로젝트 범위·소유권·재고/판매 보존과 잘못된 URL 거절 포함.
+- 실제 Blob 업로드/콜백, 기존 Postgres 컬럼 추가, 브라우저 IMAGE-01/02/03 및 SALE/OFF 통합 시나리오는 미실행. Blob 교체·제거·실패 업로드의 미참조 파일은 자동 삭제하지 않는다.
+- `npm run build` 통과, `npm test` 5개 통과, `git diff --check` 통과. `npm audit --omit=dev`는 nanoid/postcss/source-map-js의 high 3개를 보고했다. 의존성 전체 업데이트는 이번 범위에 포함하지 않았다.
