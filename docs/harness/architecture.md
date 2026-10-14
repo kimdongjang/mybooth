@@ -48,7 +48,7 @@ flowchart LR
 | 저장소 | 데이터/키 | 특성 |
 | --- | --- | --- |
 | sessionStorage | `pos_admin_token`, `pos_admin_id`, `pos_selected_project_id` | 탭 세션 인증/선택; 새 세션 오프라인 인증 보장 없음 |
-| IndexedDB `booth-pos-offline-db.orders` | 자동증가 id, projectId, localOrderId, createdAt, payload, syncStatus, retryCount, lastSyncAt | 상태: PENDING/SYNCING/SYNCED/FAILED; 주문과 취소 명령 저장 |
+| IndexedDB `booth-pos-offline-db.orders` | 자동증가 id, projectId, localOrderId, createdAt, payload, syncStatus, retryCount, lastSyncAt | 상태: PENDING/SYNCING/SYNCED/FAILED/ARCHIVED; 주문과 취소 명령 저장 |
 | IndexedDB `posState` | `project:{projectId}:latest`, state, updatedAt | products/bundles/sales 스냅샷; 주문 큐와 별도 저장 |
 | Postgres `pos_admins` | id PK, password_hash, created_at | 가입 또는 환경변수 기반 초기 관리자 생성 |
 | `pos_projects` | id PK, admin_id FK, name, seed_version, timestamps | 관리자 소유 프로젝트; FK cascade |
@@ -107,7 +107,7 @@ POS POST body는 `{projectId, action, payload}`다. 서버는 query/body/payload
 5. 성공 응답의 서버 상태는 SyncService에서 UI/posState에 적용하지 않는다. 자동 서버 재조회도 없다.
 6. 취소는 로컬 재고·판매를 먼저 바꾼다. PENDING/FAILED 판매면 큐에서 제거하고, 제거하지 못하면 별도 voidSale 주문을 추가한다. 서버 취소는 현재 세트 구성으로 복구하고 판매를 삭제한다.
 
-서비스 워커는 navigation에 network-first, 다른 같은 출처 GET에 stale-while-revalidate를 적용한다. 설치 시 index의 `/assets/` 링크를 캐시한다. 버전은 `booth-pos-app-v9`, 설치/활성화 시 skipWaiting/clients.claim을 사용한다. 기본 상품 이미지 `/images/default-product.svg`도 앱 셸 캐시에 포함한다. 판매 카드와 상품 관리에서 이미지가 없거나 외부 이미지 로드 실패 시 No Image SVG를 표시한다. [기본 이미지 설명](default-product-image.md).
+서비스 워커는 navigation에 network-first, 다른 같은 출처 GET에 stale-while-revalidate를 적용한다. 설치 시 index의 `/assets/` 링크를 캐시한다. 버전은 `booth-pos-app-v10`, 설치/활성화 시 skipWaiting/clients.claim을 사용한다. 기본 상품 이미지 `/images/default-product.svg`도 앱 셸 캐시에 포함한다. 판매 카드와 상품 관리에서 이미지가 없거나 외부 이미지 로드 실패 시 No Image SVG를 표시한다. [기본 이미지 설명](default-product-image.md).
 
 제작자별 집계는 현재 상품·세트 정보를 참조한다. 세트 매출은 현재 구성품 단가×수량 비중으로 배분한다. 과거 구성/단가 변경 시 집계가 변할 수 있다. 판매 CSV와 IndexedDB 주문 JSON/CSV 다운로드가 있지만 복원 UI는 없다.
 
@@ -125,3 +125,11 @@ Vite 화면은 흰색 카드/주문 패널과 파란색 주요 버튼, Pretendar
 - 배포 후 인증된 POS 요청의 초기화에서 연결이 실행된다. 운영 적용 전에 백업 및 별도 DB 검증이 필요하다. 운영 DB는 이번 작업에서 조회/변경하지 않았다.
 - 프로젝트 전환/로그아웃 후 늦은 상태 응답을 무시하고 동기화 배치는 시작 당시 토큰과 프로젝트로 고정한다. 다른 범위 주문은 전송하지 않는다.
 - 검증: npm test 7개와 npm run build 통과. PGlite에서 빈 행사 생성, 다른 계정 접근/변경 제한, 과거 재고·무료 가격·세트·판매 보존 및 반복 연결 확인. 실제 브라우저 AUTH-01/SWITCH-01/OFF-01/02/CACHE-01 및 운영 마이그레이션은 미실행.
+
+## 기존 12월 행사 정리 (2026-10-14)
+
+- 사용자가 지정한 admin 소유 pxwiu2t(12 서코), s4fjgga(12월 행사)만 한 번 비운다. 행사 ID/이름을 유지하며 상품·가격·재고·세트·판매를 초기화하고 seed_version을 0으로 변경한다. 7월 서코행사 및 다른 행사/사용자는 유지한다.
+- pos_event_archives에 프로젝트 및 상품·세트·판매 원본 JSON과 revision을 보관한 뒤 같은 SQL 트랜잭션에서 정리한다. 실패하면 보관/초기화를 함께 롤백한다. 보관 행이 재실행 방지 표식이므로 임의로 삭제하지 않는다. 복원 UI는 없으며 별도 DB에서 JSON 복원 절차를 검증해야 한다.
+- 정리된 행사 GET 응답의 dataRevision을 POST/오프라인 주문에 포함한다. 이전 revision/누락 요청은 409로 거절한다. 새 앱은 서버 상태 확인 후 동기화를 시작하며 이전 미전송 주문을 ARCHIVED로 보존하고 재전송/대기 집계에서 제외한다. 주문 JSON/CSV 백업에는 포함한다. 대상 행사에서 revision 없는 옛 오프라인 캐시는 사용하지 않는다.
+- 배포 후 인증된 POS 요청 초기화 때 적용된다. 운영 DB에는 이번 작업에서 연결하지 않았다. 운영 적용 전 백업 및 ALTER/CREATE 권한 확인, 별도 DB 검증이 필요하다. 오래 열린 탭은 배포 후 새로고침해야 한다.
+- 검증: npm test, npm run build 및 git diff --check. PGlite에서 두 행사만 비움, 원본 보관, 새 상품 반복 요청 보존, 7월/다른 사용자 보존, 이전 POST 409, 소유권 제한 및 실패 시 롤백 확인. 실제 브라우저 IndexedDB ARCHIVED 전환·오프라인/온라인 전환·CACHE-01과 운영 적용은 미실행.

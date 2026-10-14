@@ -7,9 +7,17 @@ export interface OrderRepository {
   countWaiting(projectId: string): Promise<number>;
   updateStatus(id: number, syncStatus: SyncStatus, patch?: Partial<StoredOrder>): Promise<void>;
   deletePendingByLocalOrderId(projectId: string, localOrderId: string): Promise<number>;
+  archivePreviousRevision(projectId: string, revision: string): Promise<void>;
 }
 
 export class DexieOrderRepository implements OrderRepository {
+  async archivePreviousRevision(projectId: string, revision: string): Promise<void> {
+    await db.orders.where('projectId').equals(projectId)
+      .and(order => order.syncStatus !== 'SYNCED' && order.syncStatus !== 'ARCHIVED'
+        && (order.payload as { dataRevision?: string })?.dataRevision !== revision)
+      .modify({ syncStatus: 'ARCHIVED' });
+  }
+
   async add(order: Omit<StoredOrder, 'id'>): Promise<number> {
     return db.orders.add(order);
   }
