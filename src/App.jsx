@@ -617,11 +617,11 @@ function LoginPage({ authMode, setAuthMode, loginId, setLoginId, loginPassword, 
 }
 
 function ProjectPage({ adminId, projects, newProjectName, setNewProjectName, onCreateProject, onSelectProject, onLogout }) {
-  return <div className="min-h-full bg-paper p-4 text-ink md:p-8">
+  return <div className="min-h-full bg-white p-4 text-ink md:p-8">
     <div className="mx-auto max-w-4xl">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-register p-4 text-white">
         <div><h1 className="display-font text-xl font-bold">행사 프로젝트 선택</h1><p className="mt-1 text-sm text-white/70">관리자 <b>{adminId}</b>님의 프로젝트입니다.</p></div>
-        <button onClick={onLogout} className="rounded-md border border-line bg-paper px-3 py-2 text-xs">로그아웃</button>
+        <button onClick={onLogout} className="rounded-md border border-line bg-white px-3 py-2 text-xs font-semibold text-ink hover:bg-paper">로그아웃</button>
       </header>
       <form onSubmit={onCreateProject} className="mb-5 rounded-xl border border-line bg-white p-4 shadow-[0_2px_0_#e2e8f0]">
         <label className="block text-sm font-bold">새 프로젝트 만들기</label>

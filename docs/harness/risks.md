@@ -18,7 +18,7 @@
 | P1 | 설정 입력마다 replaceProducts 전체 삭제·재삽입; 상품 삭제는 상품/세트 변경을 별도 요청으로 병렬 시작 | 개별 변경 API 또는 버전 기반 충돌 검사; 상품/구성 변경 원자 처리 |
 | P1 | loadProjects는 항상 서버 조회; 프로젝트 목록 로컬 캐시 없음 | 오프라인 재시작 정책 정의; 캐시한 프로젝트와 세션 복원 흐름 검증 |
 | P1 | AUTH_SECRET 없으면 ADMIN_PASSWORD 또는 알려진 개발 기본값; 토큰 만료 없음 | 운영 시 secret 필수 검사, 토큰 만료/폐기 정책, 가입 정책·로그인 제한 정의 |
-| P2 | DB 스키마는 CREATE IF NOT EXISTS만 사용 | 명시적 migration/version 및 기존 DB 업그레이드 검증 |
+| P2 | 이전 단일 행사 스키마의 project_id/상품 컬럼/키는 자동 보완. 소유 불명 과거 행은 NULL 범위로 보존 | 명시적 migration/version, 과거 행 소유권 확인 및 연결 절차; 운영 스키마 검증 |
 | P2 | assertPostgresConnectionString은 DATABASE_URL 등도 허용하지만 설치된 sql pool의 기본 연결은 POSTGRES_URL | 연결 검사와 실제 드라이버 설정 일치; 실제 환경의 pooling 연결 확인 |
 | P2 | legacy ADMIN_PASSWORD는 최초 INSERT ON CONFLICT DO NOTHING만 수행 | 환경변수 변경이 기존 비밀번호를 바꾸지 않음을 운영 절차에 기록 |
 | P2 | 서비스 워커 캐시 버전 수동 관리, 설치 캐시 실패를 경고 후 진행 | 배포 버전과 자산 캐시 교체/오프라인 로드 검증 |

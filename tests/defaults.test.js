@@ -14,7 +14,7 @@ async function fixture() {
   const sql = async (parts, ...values) => {
     const query = parts.join('?').replace(/\s+/g, ' ').trim();
     statements.push(query);
-    if ((query.startsWith('CREATE ') || query.startsWith('ALTER '))) return { rows: [] };
+    if ((query.startsWith('CREATE ') || query.startsWith('ALTER ') || query.startsWith('DO '))) return { rows: [] };
     if (query.startsWith('SELECT id FROM pos_projects')) {
       return { rows: rows.pos_projects.filter(p => p.id === values[0] && p.admin_id === values[1]) };
     }
