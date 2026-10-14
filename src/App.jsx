@@ -1,5 +1,5 @@
 import { upload } from '@vercel/blob/client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SyncStatus } from './components/SyncStatus';
 import { orderRepository } from './database/orderRepository';
 import { stateRepository } from './database/stateRepository';
@@ -74,7 +74,12 @@ export default function App() {
   const [bundlePrice, setBundlePrice] = useState('');
   const [creatorFilter, setCreatorFilter] = useState('all');
   const [logCreatorFilter, setLogCreatorFilter] = useState('all');
-  const getAuthToken = useCallback(() => sessionStorage.getItem(AUTH_TOKEN_KEY), []);
+  const activeScope = useRef(null);
+  const scope = `${token || ''}:${selectedProject?.id || ''}`;
+  activeScope.current = scope;
+  const activeToken = useRef(token);
+  activeToken.current = token;
+  const getAuthToken = useCallback(() => token, [token]);
   const sync = useSync({ enabled: Boolean(token && selectedProject?.id), getAuthToken, projectId: selectedProject?.id });
 
   const persistLocalState = async (nextProducts = products, nextBundles = bundles, nextSales = sales) => {
@@ -83,6 +88,7 @@ export default function App() {
   };
 
   const applyState = (data) => {
+    if (activeScope.current !== scope) return;
     const nextProducts = (data.products || []).map(normalizeProductForClient);
     const nextBundles = data.bundles || [];
     const nextSales = data.sales || [];
@@ -113,6 +119,7 @@ export default function App() {
     try {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         const cached = await stateRepository.get(selectedProject.id);
+        if (activeScope.current !== scope) return;
         if (cached) {
           applyState(cached);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
@@ -124,16 +131,18 @@ export default function App() {
 
       applyState(await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}`));
     } catch (err) {
+      if (activeToken.current !== token) return;
       if (String(err.message).includes('인증')) logout();
       else {
         const cached = await stateRepository.get(selectedProject.id);
+        if (activeScope.current !== scope) return;
         if (cached) {
           applyState(cached);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
         } else setError(err.message);
       }
     } finally {
-      setLoading(false);
+      if (activeScope.current === scope) setLoading(false);
     }
   };
 
@@ -143,12 +152,14 @@ export default function App() {
     setError('');
     try {
       const data = await requestJson('/api/pos');
+      if (activeToken.current !== token) return;
       const nextProjects = data.projects || [];
       setProjects(nextProjects);
       const rememberedId = sessionStorage.getItem(SELECTED_PROJECT_KEY);
       const remembered = nextProjects.find((project) => project.id === rememberedId);
       setSelectedProject((current) => current && nextProjects.find((project) => project.id === current.id) ? current : remembered || null);
     } catch (err) {
+      if (activeToken.current !== token) return;
       if (String(err.message).includes('인증')) logout();
       else setError(err.message);
     } finally {
@@ -225,6 +236,7 @@ export default function App() {
         if (waiting > 0) throw new Error('미동기화 주문이 남아 있습니다. 주문 동기화를 완료한 뒤 기본 상품 작업을 다시 시도해주세요.');
       }
       const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: selectedProject.id, action, payload }) });
+      if (activeScope.current !== scope) return;
       applyState(data);
       success?.(data);
     } catch (err) {
@@ -620,7 +632,7 @@ function ProjectPage({ adminId, projects, newProjectName, setNewProjectName, onC
   return <div className="min-h-full bg-white p-4 text-ink md:p-8">
     <div className="mx-auto max-w-4xl">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-register p-4 text-white">
-        <div><h1 className="display-font text-xl font-bold">행사 프로젝트 선택</h1><p className="mt-1 text-sm text-white/70">관리자 <b>{adminId}</b>님의 프로젝트입니다.</p></div>
+        <div><h1 className="display-font text-xl font-bold">행사 프로젝트 선택</h1><p className="mt-1 text-sm text-white/70"><b>{adminId}</b>님의 행사별 상품·가격·재고를 관리합니다.</p></div>
         <button onClick={onLogout} className="rounded-md border border-line bg-white px-3 py-2 text-xs font-semibold text-ink hover:bg-paper">로그아웃</button>
       </header>
       <form onSubmit={onCreateProject} className="mb-5 rounded-xl border border-line bg-white p-4 shadow-[0_2px_0_#e2e8f0]">

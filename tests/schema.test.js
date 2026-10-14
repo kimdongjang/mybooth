@@ -10,7 +10,7 @@ for (const legacy of [true, false]) {
   test(`project creation and repeat initialization on ${legacy ? 'legacy' : 'fresh'} PostgreSQL`, async () => {
     const db = new PGlite();
     try {
-      await db.exec("CREATE TABLE pos_admins (id TEXT PRIMARY KEY); INSERT INTO pos_admins VALUES ('admin-a'), ('admin-b')");
+      await db.exec("CREATE TABLE pos_admins (id TEXT PRIMARY KEY); INSERT INTO pos_admins VALUES ('admin'), ('admin-a'), ('admin-b')");
       if (legacy) await db.exec(`
         CREATE TABLE pos_projects (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL REFERENCES pos_admins(id), name TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW());
         CREATE TABLE pos_products (id TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL, stock INTEGER NOT NULL);
@@ -49,7 +49,14 @@ for (const legacy of [true, false]) {
       const second = await invoke('createProject');
       assert.equal(second.status, 201, JSON.stringify(second.body));
       assert.notEqual(first.body.project.id, second.body.project.id);
+      const other = await invoke('createProject', undefined, 'admin-b');
+      assert.equal(other.status, 201);
+      assert.equal((await invoke(null, other.body.project.id, 'admin-b')).body.products.length, 0);
+      assert.equal((await invoke('upsertDefaults', other.body.project.id)).status, 500);
       for (const project of [first.body.project, second.body.project]) {
+        const empty = await invoke(null, project.id);
+        assert.equal(empty.body.products.length, 0);
+        assert.equal(empty.body.bundles.length, 0);
         assert.equal((await invoke('upsertDefaults', project.id)).status, 200);
         const state = await invoke(null, project.id);
         assert.equal(state.status, 200);
@@ -59,10 +66,19 @@ for (const legacy of [true, false]) {
         assert.equal((await invoke(null, project.id, 'admin-b')).status, 500);
       }
       if (legacy) {
-        assert.deepEqual((await db.query('SELECT id, name, price, stock, project_id FROM pos_products WHERE project_id IS NULL')).rows,
-          [{ id: 'P001', name: 'legacy product', price: 0, stock: 7, project_id: null }]);
-        assert.equal((await db.query('SELECT name FROM pos_bundles WHERE project_id IS NULL')).rows[0].name, 'legacy bundle');
-        assert.equal((await db.query('SELECT total FROM pos_sales WHERE project_id IS NULL')).rows[0].total, 123);
+        const projects = await invoke(null, undefined, 'admin');
+        assert.equal(projects.body.projects.length, 1);
+        const july = projects.body.projects[0];
+        assert.equal(july.name, '7월 서코행사');
+        const state = await invoke(null, july.id, 'admin');
+        assert.equal(state.body.products[0].price, 0);
+        assert.equal(state.body.products[0].stock, 7);
+        assert.equal(state.body.bundles[0].name, 'legacy bundle');
+        assert.equal(state.body.sales[0].total, 123);
+        assert.equal((await invoke(null, july.id)).status, 500);
+        assert.equal((await invoke('replaceProducts', july.id, 'admin-b')).status, 500);
+        assert.equal((await invoke(null, undefined, 'admin')).body.projects.length, 1);
+        assert.equal((await db.query('SELECT * FROM pos_products WHERE project_id IS NULL')).rows.length, 0);
       }
     } finally {
       await db.close();

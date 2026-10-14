@@ -13,12 +13,12 @@
 | P1 | SYNCING은 countWaiting에 포함되지만 getPendingOrders 재조회 대상에서 제외 | 종료/새로고침 시 남은 SYNCING 복구; 서버 멱등성 확보 후 안전 재전송 |
 | P1 | sync 응답 상태를 버리며 loadState/mutate는 서버 전체 상태로 로컬 덮어쓰기 | 서버 상태와 미동기화 주문 병합; 대기 주문이 표시/재고에서 사라지지 않도록 검증 |
 | P1 | SyncService lock은 한 JS 인스턴스 내에서만 적용 | 여러 탭/기기 중복 처리 방어; 서버가 최종 정합성 보장 |
-| P1 | configure가 프로젝트를 변경해도 진행 중 작업을 취소하지 않음; useSync 시작 effect는 enabled만 의존 | 프로젝트 전환/로그아웃 시 진행 작업 경계 고정, 다른 관리자 토큰으로 재전송 방지 |
+| P1 | 동기화 배치 토큰/프로젝트 고정 및 전환 시 다음 주문 중단 구현; 이미 전송된 요청은 완료 가능 | 프로젝트 전환/로그아웃 시 진행 작업 경계 고정, 다른 관리자 토큰으로 재전송 방지 |
 | P1 | 판매 lines에서 subItems를 제거; 서버 판매/취소와 제작자 집계가 현재 세트/상품 참조 | 판매 시점 구성·가격·제작자 스냅샷 저장, 그 스냅샷으로 취소·집계 |
 | P1 | 설정 입력마다 replaceProducts 전체 삭제·재삽입; 상품 삭제는 상품/세트 변경을 별도 요청으로 병렬 시작 | 개별 변경 API 또는 버전 기반 충돌 검사; 상품/구성 변경 원자 처리 |
 | P1 | loadProjects는 항상 서버 조회; 프로젝트 목록 로컬 캐시 없음 | 오프라인 재시작 정책 정의; 캐시한 프로젝트와 세션 복원 흐름 검증 |
 | P1 | AUTH_SECRET 없으면 ADMIN_PASSWORD 또는 알려진 개발 기본값; 토큰 만료 없음 | 운영 시 secret 필수 검사, 토큰 만료/폐기 정책, 가입 정책·로그인 제한 정의 |
-| P2 | 이전 단일 행사 스키마의 project_id/상품 컬럼/키는 자동 보완. 소유 불명 과거 행은 NULL 범위로 보존 | 명시적 migration/version, 과거 행 소유권 확인 및 연결 절차; 운영 스키마 검증 |
+| P2 | 이전 단일 행사 스키마의 project_id/상품 컬럼/키는 자동 보완. 과거 NULL 행은 admin의 7월 서코행사에 연결; ID 충돌 시 전체 보존/실패 | 명시적 migration/version, 과거 행 소유권 확인 및 연결 절차; 운영 스키마 검증 |
 | P2 | assertPostgresConnectionString은 DATABASE_URL 등도 허용하지만 설치된 sql pool의 기본 연결은 POSTGRES_URL | 연결 검사와 실제 드라이버 설정 일치; 실제 환경의 pooling 연결 확인 |
 | P2 | legacy ADMIN_PASSWORD는 최초 INSERT ON CONFLICT DO NOTHING만 수행 | 환경변수 변경이 기존 비밀번호를 바꾸지 않음을 운영 절차에 기록 |
 | P2 | 서비스 워커 캐시 버전 수동 관리, 설치 캐시 실패를 경고 후 진행 | 배포 버전과 자산 캐시 교체/오프라인 로드 검증 |

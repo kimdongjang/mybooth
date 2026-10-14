@@ -63,14 +63,17 @@ class SyncService {
 
     try {
       if (!this.projectId) return this.snapshot;
-      const orders = await this.repository.getPendingOrders(this.projectId);
+      const projectId = this.projectId;
+      const token = this.getAuthToken();
+      const orders = await this.repository.getPendingOrders(projectId);
       for (const order of orders) {
-        if (!order.id) continue;
+        if (this.projectId !== projectId || this.getAuthToken() !== token) break;
+        if (!order.id || order.projectId !== projectId || (order.payload as { projectId?: string })?.projectId !== projectId) continue;
         await this.repository.updateStatus(order.id, 'SYNCING');
         await this.refreshPendingCount();
 
         try {
-          const token = this.getAuthToken();
+
           const response = await fetch(this.endpoint, {
             method: 'POST',
             headers: {
