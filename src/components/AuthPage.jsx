@@ -11,7 +11,7 @@ function PasswordField({ id, label, value, onChange, signup }) {
   </div>;
 }
 
-function AuthForm({ mode, onAuthenticate, onSwitch }) {
+function AuthForm({ mode, onAuthenticate }) {
   const signup = mode === 'signup';
   const [id, setId] = useState('');
   const [email, setEmail] = useState('');
@@ -37,11 +37,11 @@ function AuthForm({ mode, onAuthenticate, onSwitch }) {
     }
   };
   return <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-line bg-white p-8 shadow-xl shadow-blue-900/5">
-    <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">마이 부스</div><h1 className="mt-2 text-lg font-bold">{signup ? '회원가입' : '로그인'}</h1><p className="mt-1 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
-    <fieldset disabled={submitting}>
+    <div className="mb-5 text-center"><a href="#/login" onClick={(event) => { if (submitting) event.preventDefault(); }} className="display-font text-2xl font-bold text-register">마이 부스</a><h1 className="mt-2 text-lg font-bold">{signup ? '회원가입' : '로그인'}</h1><p className="mt-1 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
+    <fieldset disabled={submitting} className="min-w-0">
       <div className="mb-4 grid grid-cols-2 rounded-lg border border-line bg-white p-1 text-sm font-bold">
-        <button type="button" aria-pressed={!signup} onClick={() => onSwitch('login')} className={`rounded-md py-2 ${!signup ? 'bg-register text-white' : 'text-[#526078]'}`}>로그인</button>
-        <button type="button" aria-pressed={signup} onClick={() => onSwitch('signup')} className={`rounded-md py-2 ${signup ? 'bg-register text-white' : 'text-[#526078]'}`}>회원가입</button>
+        <a href="#/login" aria-current={!signup ? 'page' : undefined} aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }} className={`rounded-md py-2 text-center ${!signup ? 'bg-register text-white' : 'text-[#526078]'}`}>로그인</a>
+        <a href="#/signup" aria-current={signup ? 'page' : undefined} aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }} className={`rounded-md py-2 text-center ${signup ? 'bg-register text-white' : 'text-[#526078]'}`}>회원가입</a>
       </div>
       <label className="mb-3 block text-sm font-bold">아이디<input name={`${mode}-username`} autoComplete="username" required autoFocus value={id} onChange={(e) => setId(e.target.value)} className="mt-1 w-full rounded border border-line p-1.5 text-[13px]" /></label>
       {signup && <label className="mb-3 block text-sm font-bold">이메일<input type="email" name="signup-email" autoComplete="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded border border-line p-1.5 text-[13px]" /></label>}
@@ -54,8 +54,7 @@ function AuthForm({ mode, onAuthenticate, onSwitch }) {
   </form>;
 }
 
-export default function AuthPage({ onAuthenticate }) {
-  const [mode, setMode] = useState('login');
+export default function AuthPage({ onAuthenticate, mode }) {
   // Remounting clears credentials, errors and password visibility on every switch.
-  return <div className="flex min-h-full items-center justify-center bg-paper px-4 py-10 text-ink"><AuthForm key={mode} mode={mode} onSwitch={setMode} onAuthenticate={onAuthenticate} /></div>;
+  return <main className="flex min-h-full items-center justify-center bg-paper px-4 py-10 text-ink"><AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} /></main>;
 }

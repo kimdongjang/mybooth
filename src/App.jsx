@@ -1,8 +1,14 @@
-import AuthPage from './components/AuthPage';
-import { managementQuantities, managementBundleStock } from './utils/managementQuantities';
-import { upload } from '@vercel/blob/client';
+import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
+import SalesPage from './pages/SalesPage';
+import ProductsPage from './pages/ProductsPage';
+import SettlementPage from './pages/SettlementPage';
+import ProjectsPage from './pages/ProjectsPage';
+import { AppHeader } from './components/PageLayout';
+import { Input } from './components/PosUI';
+import { pagePaths, usePageRoute } from './hooks/usePageRoute';
+import { uid, won, creatorNameOf, productNameFromFields, productNameWithoutCreator, normalizeProductForClient } from './utils/productDisplay';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SyncStatus } from './components/SyncStatus';
 import { orderRepository } from './database/orderRepository';
 import { stateRepository } from './database/stateRepository';
 import { useSync } from './hooks/useSync';
@@ -21,24 +27,6 @@ const CREATOR_COLOR_PALETTE = [
   { bg: '#fee2e2', text: '#991b1b', border: '#ef4444' },
   { bg: '#e0e7ff', text: '#3730a3', border: '#6366f1' },
 ];
-
-const uid = () => Math.random().toString(36).slice(2, 9);
-const won = (n) => Number(n || 0).toLocaleString('ko-KR');
-const creatorNameOf = (product) => product?.creatorName?.trim() || '미지정';
-const productNameFromFields = (product) => [product.vtuberName, product.goodsType, product.creatorName ? `(${product.creatorName})` : ''].filter(Boolean).join(' ') || product.name || '새 굿즈';
-const productNameWithoutCreator = (product) => String(product?.name || '').replace(/\s*\([^)]*\)\s*$/, '').trim() || product?.name || '';
-const normalizeProductForClient = (product) => {
-  const stock = Number(product?.stock ?? product?.stockQty ?? 0) || 0;
-  const stockQty = Number(product?.stockQty ?? product?.stock ?? stock) || 0;
-
-  return {
-    ...product,
-    stock,
-    stockQty,
-    price: Number(product?.price ?? 0) || 0,
-    name: product?.name || productNameFromFields(product || {}),
-  };
-};
 
 async function requestJson(url, options = {}) {
   const token = sessionStorage.getItem(AUTH_TOKEN_KEY);
@@ -63,27 +51,25 @@ export default function App() {
   const [dataRevision, setDataRevision] = useState(null);
   const [readyScope, setReadyScope] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
-  const [screen, setScreen] = useState('pos');
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [routePage, setScreen] = usePageRoute();
+  const screen = selectedProject ? routePage : 'projects';
   const [orderExpanded, setOrderExpanded] = useState(false);
-  const menuToggle = useRef(null);
 
-  useEffect(() => {
-    setMenuOpen(false);
-    setOrderExpanded(false);
-  }, [screen, selectedProject?.id]);
 
+  useEffect(() => { setOrderExpanded(false); }, [screen, selectedProject?.id]);
   useEffect(() => {
-    if (!menuOpen) return;
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') {
-        setMenuOpen(false);
-        menuToggle.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [menuOpen]);
+    if (!token) {
+      if (!['login', 'signup'].includes(routePage)) setScreen('login', true);
+      document.title = `${routePage === 'signup' ? '회원가입' : '로그인'} · 마이 부스`;
+      return;
+    }
+    if (loading || projectLoading) return;
+    if (['login', 'signup'].includes(routePage)) { setScreen(selectedProject ? 'pos' : 'projects', true); return; }
+    if (!selectedProject && routePage !== 'projects') setScreen('projects', true);
+    else if (!Object.values(pagePaths).some((path) => window.location.hash === `#${path}`)) setScreen(screen, true);
+    document.title = `${{ pos: '상품 판매', settings: '상품 관리', log: '정산', projects: '프로젝트 변경' }[screen]} · 마이 부스`;
+    document.querySelector('.page-heading h1')?.focus();
+  }, [screen, routePage, token, loading, projectLoading, selectedProject?.id, setScreen]);
   const [settingsTab, setSettingsTab] = useState('products');
   const [products, setProducts] = useState([]);
   const [bundles, setBundles] = useState([]);
@@ -97,6 +83,11 @@ export default function App() {
   useEffect(() => {
     setCreatorFilter('all');
     setPurchaseTab('products');
+    setSettingsTab('products');
+    setLogCreatorFilter('all');
+    setBundleRows([{ productId: '', qty: 1 }]);
+    setBundleName('');
+    setBundlePrice('');
   }, [selectedProject?.id]);
   const [logCreatorFilter, setLogCreatorFilter] = useState('all');
   const activeScope = useRef(null);
@@ -126,6 +117,7 @@ export default function App() {
   };
 
   const logout = () => {
+    setScreen('login', true);
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
     sessionStorage.removeItem(AUTH_ADMIN_KEY);
     sessionStorage.removeItem(SELECTED_PROJECT_KEY);
@@ -208,8 +200,7 @@ export default function App() {
       const project = data.project;
       setNewProjectName('');
       await loadProjects();
-      setSelectedProject(project);
-      sessionStorage.setItem(SELECTED_PROJECT_KEY, project.id);
+      selectProject(project);
     } catch (err) {
       alert(err.message);
       setError(err.message);
@@ -220,6 +211,8 @@ export default function App() {
   };
 
   const selectProject = (project) => {
+    if (project.id === selectedProject?.id) { setScreen('pos'); return; }
+    setError('');
     setSelectedProject(project);
     sessionStorage.setItem(SELECTED_PROJECT_KEY, project.id);
     setProducts([]);
@@ -227,15 +220,6 @@ export default function App() {
     setSales([]);
     setCart([]);
     setScreen('pos');
-  };
-
-  const leaveProject = () => {
-    setSelectedProject(null);
-    sessionStorage.removeItem(SELECTED_PROJECT_KEY);
-    setProducts([]);
-    setBundles([]);
-    setSales([]);
-    setCart([]);
   };
 
   useEffect(() => { if (token) loadProjects(); }, [token]);
@@ -247,8 +231,8 @@ export default function App() {
     sessionStorage.setItem(AUTH_ADMIN_KEY, data.admin?.id || credentials.id);
     setToken(data.token);
     setAdminId(data.admin?.id || credentials.id);
+    setScreen('pos', true);
   };
-
   const mutate = async (action, payload, success) => {
     if (!selectedProject?.id) return alert('프로젝트를 먼저 선택해주세요.');
     if (saving) return;
@@ -588,272 +572,20 @@ export default function App() {
   }, [saleLineProductEntries, sales]);
   const selectedCreatorSummary = creatorSalesSummary.find((summary) => summary.creator === logCreatorFilter);
 
-  if (!token) return <AuthPage onAuthenticate={login} />;
-  if (loading || projectLoading) return <div className="flex h-full items-center justify-center bg-paper text-register"><div className="rounded-xl border border-line bg-white p-6 font-bold">DB에서 데이터를 불러오는 중...</div></div>;
-  if (!selectedProject) return <ProjectPage adminId={adminId} projects={projects} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} onLogout={logout} />;
-
+  if (!token) return routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />;
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
-    <header className="app-header border-b border-line bg-white text-ink">
-      <div className="header-brand flex min-w-0 items-center gap-2.5"><span className="h-2 w-2 shrink-0 rounded-full bg-register" /><div className="min-w-0"><h1 className="display-font text-base font-bold">마이 부스</h1><p className="truncate text-xs text-slate-500" title={selectedProject.name}>{selectedProject.name}</p></div>{saving && <span className="shrink-0 text-xs text-register">저장 중...</span>}</div>
-      <div className="header-controls"><SyncStatus sync={sync} /><button ref={menuToggle} type="button" className={`menu-toggle ${menuOpen ? 'is-open' : ''}`} aria-label={menuOpen ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={menuOpen} aria-controls="booth-navigation" onClick={() => setMenuOpen(!menuOpen)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>
-      <nav id="booth-navigation" aria-label="부스 메뉴" className={`booth-navigation ${menuOpen ? 'is-open' : ''}`}>
-        <div className="nav-screens">{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} aria-current={screen === key ? 'page' : undefined} onClick={() => { setScreen(key); setMenuOpen(false); }} className={screen === key ? 'is-active' : ''}>{label}</button>)}</div>
-        <div className="nav-utilities"><button onClick={() => { setMenuOpen(false); leaveProject(); }}>프로젝트 변경</button><button onClick={() => { setMenuOpen(false); loadState(); }}>새로고침</button><button onClick={() => { setMenuOpen(false); logout(); }}>로그아웃</button></div>
-      </nav>
-    </header>
+    <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onRefresh={screen === 'projects' ? loadProjects : loadState} onLogout={logout} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
+    {loading || projectLoading || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
 
-    {screen === 'pos' && <main className="pos-layout flex min-h-0 flex-1 gap-5 p-5">
-      <section className="catalog min-w-0 flex-1 overflow-y-auto">
-        <div className="catalog-heading mb-4 flex items-end justify-between gap-3"><div><h2 className="text-xl font-bold tracking-tight">상품 판매</h2><p className="mt-1 text-xs text-slate-500">상품을 눌러 주문에 추가하세요.</p></div><span className="shrink-0 text-xs text-slate-500">{purchaseTab === 'products' ? `${visibleProducts.length}개 상품` : `${visibleBundles.length}개 세트`}</span></div>
-        <div className="purchase-tabs" role="tablist" aria-label="구매 방식">
-          {[['products', '단품 구매'], ['bundles', '세트 구매']].map(([key, label], index) => <button key={key} id={`purchase-tab-${key}`} type="button" role="tab" aria-selected={purchaseTab === key} aria-controls="purchase-panel" tabIndex={purchaseTab === key ? 0 : -1} onClick={() => setPurchaseTab(key)} onKeyDown={(event) => {
-            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-            event.preventDefault();
-            const next = event.key === 'Home' ? 'products' : event.key === 'End' ? 'bundles' : index === 0 ? 'bundles' : 'products';
-            setPurchaseTab(next);
-            document.getElementById(`purchase-tab-${next}`)?.focus();
-          }}>{label}</button>)}
-        </div>
-        <div className="catalog-filters" role="group" aria-label="제작자 필터">
-          <span className="filter-label">제작자</span>
-          <div className="filter-options">
-            <button type="button" aria-pressed={creatorFilter === 'all'} onClick={() => setCreatorFilter('all')}>전체</button>
-            {creators.map((creator) => <button key={creator} type="button" aria-pressed={creatorFilter === creator} onClick={() => setCreatorFilter(creator)}>{creator}</button>)}
-          </div>
-        </div>
-        <div id="purchase-panel" role="tabpanel" aria-labelledby={`purchase-tab-${purchaseTab}`} tabIndex={0}>
-          {purchaseTab === 'products' ? <div className="product-grid grid gap-3">{visibleProducts.map((p) => <ItemButton key={p.id} imageUrl={p.imageUrl} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} onClick={() => addProduct(p)} />)}</div> : <div className="product-grid grid gap-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div>}
-          {!(purchaseTab === 'products' ? visibleProducts.length : visibleBundles.length) && <p className="catalog-empty">{creatorFilter !== 'all' ? `선택한 제작자의 ${purchaseTab === 'products' ? '상품' : '세트'}가 없습니다.` : purchaseTab === 'products' ? '등록된 상품이 없습니다.' : '등록된 세트가 없습니다.'}</p>}
-        </div>
-      </section>
-      <aside className="order-panel flex shrink-0 flex-col rounded-2xl border border-line bg-white text-ink">
-        <div className="order-summary"><div><div className="flex items-center gap-2"><h2 className="text-sm font-bold">현재 주문</h2><span className="text-xs text-slate-500">{cart.reduce((count, line) => count + line.qty, 0)}개</span></div><button type="button" className="order-detail-toggle" aria-expanded={orderExpanded} aria-controls="order-lines" onClick={() => setOrderExpanded(!orderExpanded)}>{orderExpanded ? '주문 접기 ∨' : '주문 상세 ∧'}</button></div><div className="text-right"><div className="text-xs text-slate-500">결제할 금액</div><div className="order-total mono font-bold text-register" aria-live="polite">{won(total)}<span className="ml-1 text-sm text-slate-500">원</span></div></div></div>
-        <div id="order-lines" className={`order-lines flex-1 overflow-y-auto px-3 py-1.5 ${orderExpanded ? 'is-expanded' : ''}`}>{cart.length ? cart.map((line, i) => <div key={`${line.type}-${line.id}`} className="flex items-center gap-2 border-b border-line px-1.5 py-2.5"><div className="flex-1 text-[13.5px]">{line.type === 'bundle' && <span className="mr-1 rounded bg-amber-pos px-1.5 py-0.5 text-[9px] text-white">SET</span>}{line.name}<div className="text-xs text-[#64748b]">{won(line.unitPrice)}원</div></div><button className="h-9 w-9 shrink-0 rounded-lg border border-line bg-paper" aria-label={`${line.name} 수량 줄이기`} onClick={() => updateCartQty(i, -1)}>−</button><span className="w-5 text-center text-sm">{line.qty}</span><button className="h-9 w-9 shrink-0 rounded-lg border border-line bg-paper" aria-label={`${line.name} 수량 늘리기`} onClick={() => updateCartQty(i, 1)}>+</button><div className="mono w-[70px] text-right text-[13.5px] font-bold">{won(line.unitPrice * line.qty)}</div><button aria-label={`${line.name} 주문에서 제거`} className="h-9 w-9 shrink-0 text-[#dc2626]" onClick={() => setCart(cart.filter((_, idx) => idx !== i))}>✕</button></div>) : <div className="px-5 py-10 text-center text-sm text-[#64748b]">굿즈를 선택해주세요</div>}</div>
-        <div className="order-actions border-t border-line p-3.5"><p className="mb-3 text-xs leading-5 text-slate-500">수령 확인 후 결제를 기록하세요.</p><div className="flex gap-2.5"><button disabled={!cart.length || saving} onClick={() => finalizeSale('cash')} className="flex-1 rounded-2xl bg-cash px-2 py-4 font-bold text-white disabled:bg-slate-200 disabled:text-slate-500">현금 결제</button><button disabled={!cart.length || saving} onClick={() => finalizeSale('transfer')} className="flex-1 rounded-2xl bg-transfer px-2 py-4 font-bold text-white disabled:bg-slate-200 disabled:text-slate-500">계좌이체</button></div><button onClick={() => cart.length && confirm('장바구니를 비울까요?') && setCart([])} className="mt-2 w-full rounded-lg border border-line py-2 text-xs text-[#526078]">비우기</button></div>
-      </aside>
-    </main>}
+    {screen === 'projects' && <ProjectsPage projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} />}
 
-    {screen === 'settings' && <main className="settings-page flex-1 overflow-y-auto p-4 md:p-6"><SettingsTabs selected={settingsTab} onSelect={setSettingsTab} /><div id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} tabIndex={0} className="settings-content">{settingsTab === 'products' && <ProductSettingsPanel key={selectedProject.id} projectId={selectedProject.id} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} onResetDefaults={resetDefaults} onUpdateLatest={updateToLatestDefaults} />}{settingsTab === 'bundles' && <section className="product-management"><header className="management-heading"><div><h2>세트 관리</h2><p>구성품과 판매 현황을 확인하고 새 세트를 등록하세요.</p></div></header><div className="management-summary"><span>등록 세트 <b>{bundles.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '수량은 자동으로 계산됩니다'}</span></div><p className="management-note">판매 가능 수량은 현재 구성품의 남은 재고 기준이며, 다른 세트와 재고를 공유합니다.</p><div className="management-products">{bundles.map((b) => <article key={b.id} className="management-product"><div className="management-product-header"><h3>{b.name}</h3><button type="button" className="management-delete" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="bundle-management-body"><div className="management-fields management-fields-three"><div className="management-field"><span>판매가</span><strong>{won(b.price)}원</strong></div><Quantity label="판매 수량" value={managementQuantities(sales, bundles).bundles.get(b.id) || 0} /><Quantity label="판매 가능 수량" value={managementBundleStock(b, products)} /></div><h4>세트 구성</h4><ul className="bundle-components">{b.items.map((item, index) => { const product = products.find((p) => p.id === item.productId); return <li key={index}><span>{product ? productNameWithoutCreator(product) : '삭제된 상품'}<small>{product ? creatorNameOf(product) : '구성 확인 필요'}</small></span><strong>{item.qty}개</strong></li>; })}</ul></div></article>)}</div>{!bundles.length && <div className="management-empty"><h3>등록된 세트가 없습니다</h3><p>아래에서 구성품과 판매가를 입력하세요.</p></div>}<section className="management-product bundle-management-body"><h3>새 세트 등록</h3><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><label className="management-field"><span>세트 이름</span><Input value={bundleName} onChange={setBundleName} placeholder="예: 아크릴+포카 세트" /></label>{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select aria-label={`구성품 ${idx + 1}`} className="min-w-0 flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input aria-label={`구성품 ${idx + 1} 수량`} min="1" step="1" type="number" className="w-[70px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: v } : r))} /><button type="button" className="management-delete" aria-label={`구성품 ${idx + 1} 제거`} disabled={bundleRows.length === 1} onClick={() => setBundleRows(bundleRows.filter((_, i) => i !== idx))}>제거</button></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><label className="management-field"><span>판매가 (원)</span><Input min="0" step="1" type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="0" /></label><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></section></section>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</div></main>}
+    {screen === 'pos' && <SalesPage purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
-    {screen === 'log' && <main className="flex-1 overflow-y-auto p-4 md:p-6">
-      <div className="mb-4 grid gap-3.5 md:grid-cols-4"><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></div>
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(420px,0.9fr)_minmax(560px,1.1fr)]">
-        <section className="rounded-2xl border border-line bg-white p-3">
-          <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold text-[#526078]">제작자별 판매 집계</span><span className="text-[11px] text-[#64748b]">제작자가 만든 굿즈 기준 수량/금액</span></div>
-          <div className="mt-2 flex flex-wrap gap-1.5"><button type="button" onClick={() => setLogCreatorFilter('all')} className={`rounded-full border border-line bg-[#f8fafc] px-2 py-1 text-[11px] font-bold text-[#526078] ${logCreatorFilter === 'all' ? 'ring-2 ring-amber-pos' : ''}`}>전체 요약</button>{creatorSalesSummary.map(({ creator, qty, amount }) => <button key={creator} type="button" onClick={() => setLogCreatorFilter(creator)} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${logCreatorFilter === creator ? 'ring-2 ring-amber-pos' : ''}`} style={{ backgroundColor: creatorColors[creator]?.bg, color: creatorColors[creator]?.text, borderColor: creatorColors[creator]?.border }}>{creator}</button>)}</div>
-          <div className="mt-3 overflow-x-auto"><table className="min-w-[520px] w-full border-collapse text-[12px]"><thead><tr className="bg-[#f8fafc] text-left text-[#526078]"><th className="border-b border-line p-2">제작자</th><th className="border-b border-line p-2 text-right">판매 수량</th><th className="border-b border-line p-2 text-right">판매 금액</th><th className="border-b border-line p-2">판매 굿즈</th></tr></thead><tbody>{(logCreatorFilter === 'all' ? creatorSalesSummary : selectedCreatorSummary ? [selectedCreatorSummary] : []).map((summary) => <tr key={summary.creator}><td className="border-b border-line p-2"><span className="rounded-full border px-2 py-0.5 text-[11px] font-bold" style={{ backgroundColor: creatorColors[summary.creator]?.bg, color: creatorColors[summary.creator]?.text, borderColor: creatorColors[summary.creator]?.border }}>{summary.creator}</span></td><td className="mono border-b border-line p-2 text-right font-bold">{won(summary.qty)}개</td><td className="mono border-b border-line p-2 text-right font-bold">{won(Math.round(summary.amount))}원</td><td className="border-b border-line p-2"><div className="flex flex-col gap-1">{summary.goods.map((goods) => <div key={goods.productId} className="flex flex-wrap justify-between gap-2 rounded bg-[#f8fafc] px-2 py-1"><span>{goods.name}</span><span className="mono text-[#526078]">{won(goods.qty)}개 · {won(Math.round(goods.amount))}원</span></div>)}</div></td></tr>)}</tbody></table>{!creatorSalesSummary.length && <p className="py-4 text-center text-xs text-[#64748b]">아직 판매된 굿즈가 없습니다.</p>}</div>
-        </section>
-        <section>
-          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2"><div><span className="text-xs font-bold text-[#526078]">실제 판매 내역</span><span className="ml-2 text-[11px] text-[#64748b]">전체 {visibleSales.length}건</span></div><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={exportCsv}>CSV로 내보내기</button><button className="rounded-md bg-danger px-3 py-2 text-xs text-white" onClick={clearSalesWithPassword}>판매 내역 초기화</button></div></div>
-          <div className="overflow-x-auto"><table className="min-w-[560px] w-full border-collapse bg-white text-[12.5px]"><thead><tr className="bg-register text-left text-[#eef3ee]"><th className="p-2">시간</th><th className="p-2">결제수단</th><th className="p-2">구성</th><th className="p-2">금액</th><th /></tr></thead><tbody>{visibleSales.map((s) => <tr key={s.id}><td className="mono border-b border-line p-2">{new Date(s.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</td><td className="border-b border-line p-2"><span className={`rounded px-2 py-0.5 text-[11px] text-white ${s.method === 'cash' ? 'bg-cash' : 'bg-transfer'}`}>{s.method === 'cash' ? '현금' : '계좌이체'}</span></td><td className="border-b border-line p-2"><div className="flex flex-col gap-1">{s.lines.map((l, index) => <div key={`${l.type}-${l.id}-${index}`} className="flex flex-wrap items-center gap-1.5"><span>{l.name} x{l.qty}</span>{saleLineCreators(l).map((creator) => <span key={creator} className="rounded-full border px-1.5 py-0.5 text-[10px] font-bold" style={{ backgroundColor: creatorColors[creator]?.bg, color: creatorColors[creator]?.text, borderColor: creatorColors[creator]?.border }}>{creator}</span>)}</div>)}</div></td><td className="mono border-b border-line p-2">{won(s.total)}원</td><td className="border-b border-line p-2"><button className="rounded border border-danger px-2 py-1 text-[10px] text-danger" onClick={() => voidSale(s)}>취소</button></td></tr>)}</tbody></table></div>
-        </section>
-      </div>
-    </main>}
-  </div>;
-}
+    {screen === 'settings' && <ProductsPage key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} resetDefaults={resetDefaults} updateToLatestDefaults={updateToLatestDefaults} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
-function ProjectPage({ adminId, projects, newProjectName, setNewProjectName, onCreateProject, onSelectProject, onLogout }) {
-  return <div className="min-h-full bg-white p-4 text-ink md:p-8">
-    <div className="mx-auto max-w-4xl">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-register p-4 text-white">
-        <div><h1 className="display-font text-xl font-bold">행사 프로젝트 선택</h1><p className="mt-1 text-sm text-white/70"><b>{adminId}</b>님의 행사별 상품·가격·재고를 관리합니다.</p></div>
-        <button onClick={onLogout} className="rounded-md border border-line bg-white px-3 py-2 text-xs font-semibold text-ink hover:bg-paper">로그아웃</button>
-      </header>
-      <form onSubmit={onCreateProject} className="mb-5 rounded-xl border border-line bg-white p-4 shadow-[0_2px_0_#e2e8f0]">
-        <label className="block text-sm font-bold">새 프로젝트 만들기</label>
-        <div className="mt-2 flex gap-2"><Input value={newProjectName} onChange={setNewProjectName} placeholder="예: 8월 행사, 10월 행사" /><button className="shrink-0 rounded-md bg-register px-4 py-2 text-sm font-bold text-white">생성</button></div>
-      </form>
-      <div className="grid gap-3 md:grid-cols-2">
-        {projects.map((project) => <button key={project.id} onClick={() => onSelectProject(project)} className="rounded-xl border border-line bg-white p-4 text-left shadow-[0_2px_0_#e2e8f0] hover:border-amber-pos">
-          <div className="text-lg font-bold text-register">{project.name}</div>
-          <div className="mt-2 text-xs text-[#64748b]">생성: {new Date(project.createdAt).toLocaleDateString('ko-KR')} · 최근 수정: {new Date(project.updatedAt).toLocaleString('ko-KR')}</div>
-        </button>)}
-      </div>
-      {!projects.length && <div className="rounded-xl border border-dashed border-line bg-white p-8 text-center text-sm text-[#64748b]">아직 프로젝트가 없습니다. 예: “8월 행사” 프로젝트를 만들어 시작하세요.</div>}
-    </div>
-  </div>;
-}
-
-function SettingsTabs({ selected, onSelect }) {
-  const tabs = [['products', '상품관리'], ['bundles', '세트관리'], ['backup', '주문백업']];
-  const changeWithKeyboard = (event, index) => {
-    let next;
-    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
-    else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = tabs.length - 1;
-    else return;
-    event.preventDefault();
-    onSelect(tabs[next][0]);
-    event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[next]?.focus();
-  };
-  return <div className="settings-navigation purchase-tabs" role="tablist" aria-label="상품 및 주문 관리">
-    {tabs.map(([key, label], index) => <button key={key} id={`settings-tab-${key}`} type="button" role="tab" aria-selected={selected === key} aria-controls="settings-panel" tabIndex={selected === key ? 0 : -1} onClick={() => onSelect(key)} onKeyDown={(event) => changeWithKeyboard(event, index)}>{label}</button>)}
-  </div>;
-}
-
-function ProductSettingsPanel({ projectId, saving, onImageChange, products, bundles, sales, persistProducts, persistBundles, onResetDefaults, onUpdateLatest }) {
-  const quantities = managementQuantities(sales, bundles);
-  const [uploadingId, setUploadingId] = useState(null);
-  const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState(null);
-  const backButton = useRef(null);
-  const pageSize = 10;
-  const pageCount = Math.max(1, Math.ceil(products.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const selectedProduct = products.find((product) => product.id === selectedId);
-  useEffect(() => { setPage((previous) => Math.min(previous, pageCount)); }, [pageCount]);
-  useEffect(() => { if (selectedProduct) backButton.current?.focus(); }, [selectedProduct?.id]);
-  const uploadImage = async (product, file) => {
-    if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) return alert('JPG, PNG, WebP 이미지를 5MB 이하로 선택해주세요.');
-    if (!navigator.onLine) return alert('이미지 등록은 인터넷 연결이 필요합니다.');
-    setUploadingId(product.id);
-    try {
-      const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type];
-      const blob = await upload(`products/${encodeURIComponent(projectId)}/${encodeURIComponent(product.id)}/${crypto.randomUUID()}.${extension}`, file, {
-        access: 'public', handleUploadUrl: '/api/product-images', contentType: file.type,
-        clientPayload: JSON.stringify({ projectId, productId: product.id }),
-        headers: { Authorization: `Bearer ${sessionStorage.getItem(AUTH_TOKEN_KEY)}` },
-      });
-      await onImageChange(product.id, blob.url);
-    } catch (error) { alert(error.message || '이미지 등록에 실패했습니다.'); }
-    finally { setUploadingId(null); }
-  };
-  const sortedProducts = useMemo(() => [...products].sort((a, b) => String(a.productCode || a.id).localeCompare(String(b.productCode || b.id), 'ko-KR', { numeric: true })), [products]);
-  const updateProduct = (id, patch) => persistProducts(products.map((product) => {
-    if (product.id !== id) return product;
-    const next = { ...product, ...patch };
-    const stockQty = Number(next.stockQty ?? next.stock ?? 0) || 0;
-    return { ...next, stockQty, stock: stockQty, name: productNameFromFields(next) };
-  }));
-  const addProduct = () => {
-    const id = uid();
-    persistProducts([...products, {
-      id,
-      productCode: id,
-      goodsType: '새 굿즈',
-      vtuberName: '',
-      creatorName: '',
-      stockQty: 0,
-      initialStockQty: 0,
-      size: '',
-      price: 0,
-      setCreatorName: null,
-      setGroupName: null,
-      setPrice: null,
-      setDescription: null,
-      isActive: true,
-      name: '새 굿즈',
-      stock: 0,
-      createdAt: new Date().toISOString(),
-    }]);
-    setSelectedId(id);
-  };
-  const deleteProduct = (productId) => {
-    if (!confirm('이 굿즈를 삭제할까요? 세트 구성에서도 제거됩니다.')) return;
-    persistProducts(products.filter((x) => x.id !== productId));
-    persistBundles(bundles.map((b) => ({ ...b, items: b.items.filter((it) => it.productId !== productId) })).filter((b) => b.items.length));
-  };
-
-  const field = (product, title, value, patch, type = 'text') => <label className="management-field"><span>{title}</span><Input type={type} value={value} onChange={(v) => updateProduct(product.id, patch(v))} /></label>;
-
-  return <section className="product-management">
-    <header className="management-heading">
-      <div><h2>{selectedProduct ? '상품 상세' : '상품 관리'}</h2><p>{selectedProduct ? '이미지와 상품 정보를 수정하세요. 수정한 내용은 자동으로 저장됩니다.' : '상품을 한눈에 확인하고 상세보기에서 정보를 수정하세요.'}</p></div>
-      {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <button type="button" className="management-add" onClick={addProduct}>+ 상품 추가</button>}
-    </header>
-    <div className="management-summary"><span>등록 상품 <b>{products.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '상품 정보를 수정할 수 있습니다'}</span></div>
-    <p className="management-note">등록 수량은 기존 초기 재고와 추가 입고의 합계입니다. 판매 수량은 현재 판매 내역의 단품·세트 구성품을 합산합니다. 취소된 판매는 제외하며, 구성 정보가 없는 과거 세트 판매는 현재 구성 기준입니다.</p>
-    {!selectedProduct && <>
-      <div className="management-table-wrap"><table className="management-table">
-        <caption className="sr-only">상품 이름, 제작자, 판매가, 등록 수량, 판매 수량, 남은 재고, 등록일 목록</caption>
-        <thead><tr><th scope="col">상품 이름</th><th scope="col">제작자</th><th scope="col">판매가</th><th scope="col">등록 수량</th><th scope="col">판매 수량</th><th scope="col">남은 재고</th><th scope="col">등록일</th></tr></thead>
-        <tbody>{sortedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => <tr key={p.id}>
-          <td><span className="management-row-name">{productNameWithoutCreator(p)}</span><button type="button" className="management-detail-link" aria-label={`${productNameWithoutCreator(p)} 상세보기`} onClick={() => setSelectedId(p.id)}>상세보기</button></td>
-          <td>{creatorNameOf(p)}</td><td className="mono management-row-price">{won(p.price)}원</td>
-          <td className="mono">{won(p.initialStockQty ?? 0)}개</td><td className="mono">{won(quantities.products.get(p.id) || 0)}개</td><td className="mono">{won(p.stockQty ?? p.stock ?? 0)}개</td>
-          <td>{p.createdAt && !Number.isNaN(new Date(p.createdAt).getTime()) ? <time dateTime={p.createdAt}>{new Date(p.createdAt).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\s/g, '')}</time> : '—'}</td>
-        </tr>)}</tbody>
-      </table>{!products.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}</div>
-      <nav className="management-pagination" aria-label="상품 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
+    {screen === 'log' && <SettlementPage stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} creatorColors={creatorColors} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} voidSale={voidSale} />}
     </>}
-    {selectedProduct && <div className="management-products">
-      {[selectedProduct].map((p) => <article className="management-product" key={p.id}>
-        <div className="management-product-header"><h3>{productNameWithoutCreator(p)}</h3><button type="button" className="management-delete" aria-label={`${p.name} 상품 삭제`} onClick={() => deleteProduct(p.id)}>삭제</button></div>
-        <div className="management-product-body">
-          <div className="management-image">
-            <ProductImage imageUrl={p.imageUrl} name={p.name} />
-            <label className="management-upload"><span>{uploadingId === p.id ? '업로드 중…' : p.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label={`${p.name} 이미지 등록 또는 수정`} type="file" accept="image/jpeg,image/png,image/webp" disabled={saving || uploadingId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; uploadImage(p, file); }} /></label>
-            {p.imageUrl && <button type="button" disabled={saving || uploadingId !== null} className="management-delete" onClick={() => onImageChange(p.id, null)}>이미지 제거</button>}
-            <p>JPG · PNG · WebP / 최대 5MB</p>
-          </div>
-          <div className="management-details">
-            <fieldset><legend>기본 정보</legend><div className="management-fields">
-              {field(p, '상품 코드', p.productCode || p.id, (v) => ({ productCode: v }))}
-              {field(p, '버튜버', p.vtuberName || '', (v) => ({ vtuberName: v }))}
-              {field(p, '굿즈 종류', p.goodsType || '', (v) => ({ goodsType: v }))}
-              {field(p, '제작자', p.creatorName || '', (v) => ({ creatorName: v }))}
-            </div></fieldset>
-            <fieldset><legend>가격 · 재고</legend><div className="management-fields management-fields-three">
-              {field(p, '판매가 (원)', p.price, (v) => ({ price: Number(v) || 0 }), 'number')}
-              <Quantity label="등록 수량" value={p.initialStockQty ?? 0} />
-              <Quantity label="판매 수량" value={quantities.products.get(p.id) || 0} />
-              <Quantity label="남은 재고" value={p.stockQty ?? p.stock ?? 0} />
-              <StockAdjustment key={p.id} product={p} onSave={(patch) => updateProduct(p.id, patch)} saving={saving} />
-            </div></fieldset>
-            <fieldset><legend>세트 정보 <span>선택 입력</span></legend><div className="management-fields">
-              {field(p, '세트명', p.setGroupName || '', (v) => ({ setGroupName: v || null, setCreatorName: v ? (p.creatorName || p.setCreatorName) : null }))}
-              {field(p, '세트가 (원)', p.setPrice ?? '', (v) => ({ setPrice: v === '' ? null : Number(v) || 0 }), 'number')}
-            </div></fieldset>
-          </div>
-        </div>
-      </article>)}
-    </div>}
-    {!selectedProduct && <aside className="management-defaults"><div><h3>기본 상품 목록</h3><p>누락된 기본 상품·세트만 추가하거나, 상품·세트·재고를 기본 44종으로 초기화할 수 있습니다.</p></div><div className="management-default-actions"><button type="button" onClick={onUpdateLatest}>없는 기본 상품/세트 추가</button><button type="button" className="management-delete" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button></div></aside>}
-  </section>;
-}
 
-function Quantity({ label, value }) {
-  return <div className="management-field"><span>{label}</span><output className="management-quantity mono">{won(value)}개</output></div>;
-}
-
-function StockAdjustment({ product, onSave, saving }) {
-  const [amount, setAmount] = useState('');
-  const [mode, setMode] = useState('receive');
-  const submit = async () => {
-    const qty = Number(amount);
-    const current = Number(product.stockQty ?? product.stock ?? 0);
-    if (amount === '' || !Number.isInteger(qty) || (mode === 'receive' ? qty <= 0 : current + qty < 0 || qty === 0)) return alert('입고는 양의 정수, 재고 조정은 남은 재고가 0 이상이 되는 정수를 입력해주세요.');
-    if (!confirm(`${mode === 'receive' ? '추가 입고' : '재고 조정'} ${qty}개를 반영할까요?`)) return;
-    const saved = await onSave({ stockQty: current + qty, stock: current + qty, ...(mode === 'receive' ? { initialStockQty: Number(product.initialStockQty ?? 0) + qty } : {}) });
-    if (saved) setAmount('');
-  };
-  return <div className="stock-adjustment"><label className="management-field"><span>입고 · 재고 조정</span><select value={mode} onChange={(e) => { setMode(e.target.value); setAmount(''); }}><option value="receive">추가 입고</option><option value="adjust">재고 조정 (+/−)</option></select></label><label className="management-field"><span>변경 수량 (개)</span><Input type="number" step="1" min={mode === 'receive' ? 1 : undefined} value={amount} onChange={setAmount} /></label><button type="button" className="management-add" disabled={saving || amount === ''} onClick={submit}>반영</button><p className="management-note">추가 입고는 등록 수량과 남은 재고에 함께 더합니다. 재고 조정은 분실·파손·실사 차이만 남은 재고에 반영합니다.</p></div>;
-}
-
-function ProductImage({ imageUrl, name }) {
-  const [failedUrl, setFailedUrl] = useState(null);
-  const [defaultFailed, setDefaultFailed] = useState(false);
-  const isDefault = !imageUrl || imageUrl === failedUrl;
-  const source = isDefault ? '/images/default-product.svg' : imageUrl;
-  return <div className="product-image flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-[#f1f5f9]">
-    {isDefault && defaultFailed ? <span className="text-xs text-[#64748b]">No Image</span> : <img key={source} src={source} alt={isDefault ? 'No Image' : name || '상품 이미지'} loading="lazy" className="h-full w-full object-contain" onError={() => isDefault ? setDefaultFailed(true) : setFailedUrl(imageUrl)} />}
   </div>;
 }
-
-function ItemButton({ name, imageUrl, price, stock, soldout, bundle, creatorName, onClick }) {
-  return <button disabled={soldout} onClick={onClick} className={`product-card flex min-w-0 flex-col overflow-hidden rounded-xl border text-left transition hover:border-register hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed ${bundle ? 'border-blue-200 bg-blue-50' : 'border-line bg-white'} ${soldout ? 'is-soldout' : ''}`}>
-    {!bundle && <ProductImage imageUrl={imageUrl} name={name} />}
-    <div className="flex flex-1 flex-col p-3">
-      {bundle && <span className="mb-2 text-[10px] font-bold tracking-wide text-register">세트 할인</span>}
-      <span className="product-name break-words">{name}</span>
-      {creatorName && <span className="product-creator mt-1 self-start max-w-full break-words">{creatorName}</span>}
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="product-price mono text-register">{won(price)}원</span><span className={`product-stock ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>
-    </div>
-  </button>;
-}
-function Panel({ title, children, actions }) { return <section className="rounded-2xl border border-line bg-white p-3.5"><div className="mb-2.5 flex items-center justify-between gap-3"><h2 className="text-[15px] font-bold">{title}</h2>{actions}</div>{children}</section>; }
-function Input({ value, onChange, className = '', ...props }) { return <input {...props} value={value} onChange={(e) => onChange(e.target.value)} className={`w-full rounded border border-line p-1.5 text-[13px] ${className}`} />; }
-function Stat({ label, value }) { return <div className="rounded-2xl border border-line bg-white p-3.5"><div className="text-[11px] uppercase tracking-wide text-[#64748b]">{label}</div><div className="mono mt-1 text-2xl font-bold">{value}</div></div>; }
