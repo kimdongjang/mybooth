@@ -1,12 +1,13 @@
 import { useState } from 'react';
+import Icon from './Icon';
 
 function PasswordField({ id, label, value, onChange, signup }) {
   const [visible, setVisible] = useState(false);
   return <div className="mb-3">
     <label htmlFor={id} className="block text-sm font-bold">{label}</label>
-    <div className="mt-1 flex gap-2">
-      <input id={id} name={id} type={visible ? 'text' : 'password'} required minLength={signup ? 6 : undefined} autoComplete={signup ? 'new-password' : 'current-password'} value={value} onChange={(e) => onChange(e.target.value)} className="min-w-0 flex-1 rounded border border-line p-1.5 text-[13px]" />
-      <button type="button" aria-controls={id} aria-pressed={visible} aria-label={`${label} ${visible ? '숨기기' : '보기'}`} onClick={() => setVisible(!visible)} className="shrink-0 rounded border border-line px-3 text-xs font-bold text-register">{visible ? '숨기기' : '보기'}</button>
+    <div className="mt-1 relative">
+      <input id={id} name={id} type={visible ? 'text' : 'password'} required minLength={signup ? 6 : undefined} autoComplete={signup ? 'new-password' : 'current-password'} value={value} onChange={(e) => onChange(e.target.value)} className="w-full min-w-0 rounded border border-line py-2 pl-2 pr-12 text-[13px]" />
+      <button type="button" aria-controls={id} aria-pressed={visible} aria-label={`${label} ${visible ? '숨기기' : '보기'}`} title={visible ? '패스워드 숨기기' : '패스워드 보기'} onClick={() => setVisible(!visible)} className="password-toggle"><Icon name={visible ? 'eyeOff' : 'eye'} /></button>
     </div>
   </div>;
 }
@@ -37,7 +38,7 @@ function AuthForm({ mode, onAuthenticate }) {
     }
   };
   return <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-line bg-white p-8 shadow-xl shadow-blue-900/5">
-    <div className="mb-5 text-center"><a href="#/login" onClick={(event) => { if (submitting) event.preventDefault(); }} className="display-font text-2xl font-bold text-register">마이 부스</a><h1 className="mt-2 text-lg font-bold">{signup ? '회원가입' : '로그인'}</h1><p className="mt-1 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
+    <div className="mb-5 text-center"><h1 className="text-xl font-bold">{signup ? '회원가입' : '로그인'}</h1><p className="mt-2 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
     <fieldset disabled={submitting} className="min-w-0">
       <div className="mb-4 grid grid-cols-2 rounded-lg border border-line bg-white p-1 text-sm font-bold">
         <a href="#/login" aria-current={!signup ? 'page' : undefined} aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }} className={`rounded-md py-2 text-center ${!signup ? 'bg-register text-white' : 'text-[#526078]'}`}>로그인</a>
@@ -56,5 +57,5 @@ function AuthForm({ mode, onAuthenticate }) {
 
 export default function AuthPage({ onAuthenticate, mode }) {
   // Remounting clears credentials, errors and password visibility on every switch.
-  return <main className="flex min-h-full items-center justify-center bg-paper px-4 py-10 text-ink"><AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} /></main>;
+  return <div className="auth-shell min-h-full flex flex-col bg-paper text-ink"><header className="auth-header border-b border-line bg-white"><a href="#/login" className="display-font brand-title font-bold">마이 부스</a></header><main className="flex flex-1 items-center justify-center px-4 py-10"><AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} /></main></div>;
 }

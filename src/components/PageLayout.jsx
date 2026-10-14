@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useEffect, useRef, useState } from 'react';
 import { SyncStatus } from './SyncStatus';
 import { pagePaths } from '../hooks/usePageRoute';
@@ -43,12 +44,12 @@ export function AppHeader({ page, navigate, project, adminId, saving, sync, onRe
     <div className="header-brand flex min-w-0 items-center gap-2.5"><span className="h-2 w-2 shrink-0 rounded-full bg-register" /><div className="min-w-0"><a href="#/sales" className="display-font brand-title font-bold" onClick={(event) => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); go('pos'); }}>마이 부스</a><p className="truncate text-xs text-slate-500" title={project?.name || adminId}>{project?.name || `${adminId}님의 프로젝트`}</p></div>{saving && <span className="shrink-0 text-xs text-register">저장 중...</span>}</div>
     <div className="header-controls">{project && <SyncStatus sync={sync} />}<button ref={toggle} type="button" className={`menu-toggle ${open ? 'is-open' : ''}`} aria-label={open ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={open} aria-controls="booth-navigation" onClick={() => setOpen(!open)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>
     <nav id="booth-navigation" aria-label="부스 메뉴" className={`booth-navigation ${open ? 'is-open' : ''}`}>
-      <div className="nav-screens">{[['pos', '상품 판매'], ['settings', '상품 관리'], ['log', '정산'], ['projects', '프로젝트 변경']].map(([key, label]) => !project && key !== 'projects' ? <button key={key} disabled>{label}</button> : <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key ? 'page' : undefined} onClick={(event) => {
+      <div className="nav-screens">{[['pos', '상품 판매'], ['settings', '상품 관리'], ['log', '정산'], ['projects', '프로젝트 변경']].map(([key, label]) => !project && key !== 'projects' ? <button key={key} disabled><Icon name={key} />{label}</button> : <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key ? 'page' : undefined} onClick={(event) => {
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
         go(key);
-      }} className={page === key ? 'is-active' : ''}>{label}</a>)}</div>
-      <div className="nav-utilities"><button onClick={() => { setOpen(false); onRefresh(); }}>새로고침</button><button onClick={() => { setOpen(false); onLogout(); }}>로그아웃</button></div>
+      }} className={page === key ? 'is-active' : ''}><Icon name={key} />{label}</a>)}</div>
+      <div className="nav-utilities"><button onClick={() => { setOpen(false); onRefresh(); }}><Icon name="refresh" />새로고침</button><button onClick={() => { setOpen(false); onLogout(); }}><Icon name="logout" />로그아웃</button></div>
     </nav>
   </header>;
 }
