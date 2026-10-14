@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">MyBooth Mb</title>
+  <rect x="12" y="12" width="104" height="104" rx="30" fill="#BEF264"/>
+  <g fill="none" stroke="#111827" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 83V45L47 64L62 45V83"/>
+    <path d="M78 43V82M78 67C78 52 99 52 99 67V70C99 85 78 85 78 70"/>
+  </g>
+</svg>
