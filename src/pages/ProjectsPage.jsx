@@ -14,7 +14,7 @@ export default function ProjectsPage({ projects, selectedProject, newProjectName
         <label htmlFor="new-project-name" className="block text-sm font-bold">새 프로젝트 만들기</label>
         <div className="mt-2 flex gap-2"><Input id="new-project-name" required value={newProjectName} onChange={setNewProjectName} placeholder="예: 8월 행사, 10월 행사" /><button className="shrink-0 rounded-md bg-register px-4 py-2 text-sm font-bold text-white">생성</button></div>
       </form>}
-      {tab === 'list' && <div className="grid gap-3 md:grid-cols-2">
+      {tab === 'list' && <div className="project-grid grid gap-3 md:grid-cols-2">
         {projects.map((project) => <button key={project.id} onClick={() => onSelectProject(project)} aria-pressed={selectedProject?.id === project.id} className="project-card rounded-xl border border-line bg-white p-4 text-left shadow-[0_2px_0_#e2e8f0] hover:border-amber-pos">
           <div className="text-lg font-bold text-register">{project.name}</div>{selectedProject?.id === project.id && <span className="text-xs text-register">현재 프로젝트</span>}
           <div className="mt-2 text-xs text-[#64748b]">생성: {new Date(project.createdAt).toLocaleDateString('ko-KR')} · 최근 수정: {new Date(project.updatedAt).toLocaleString('ko-KR')}</div>
