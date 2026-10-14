@@ -184,3 +184,9 @@
 - 제작자 필터 margin 위 8px/아래 12px, 라벨 padding-top 4px. 판매 카드 제작자 표시의 인라인 색상·배지 테두리/배경 제거, 회색 보조 텍스트로 통일. 소스 diff에서 판매 내역 색상과 필터 동작 유지 확인.
 - npm run build 및 git diff --check 통과. API/판매/큐 변경 없음, npm test 미실행.
 - UI-01 실제 브라우저 모바일/데스크톱 시각 검증 및 배포 후 CACHE-01 미실행. 캐시 버전 v15.
+
+## 상품 관리 UI·필터 버튼 간격 (2026-10-14)
+
+- npm run build 및 git diff --check 통과. 상품 관리의 모든 기존 입력 필드와 수정/추가/삭제/이미지/기본값 핸들러 연결을 소스 diff에서 확인했다. 입력 label 및 fieldset/legend 적용.
+- filter-options margin-block 0, 줄 간격 4px, 버튼 세로 padding 3px, 최소 높이 데스크톱30/모바일32px로 축소.
+- UI-01 모바일/데스크톱 실제 브라우저 시각·편집 검증, IMAGE-01/02/03 및 CACHE-01 미실행. API/기본값 로직 변경 없음, npm test 미실행. 운영 DB 연결 없음.
