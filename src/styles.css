@@ -83,8 +83,8 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .purchase-tabs button[aria-selected="true"]::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: #2563eb; border-radius: 2px; }
 .catalog-filters { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 12px; }
 .filter-label { flex-shrink: 0; color: #64748b; font-size: 12px; padding-top: 4px; }
-.filter-options { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.filter-options button { min-height: 36px; max-width: 100%; overflow-wrap: anywhere; padding: 6px 12px; border: 1px solid transparent; border-radius: 6px; background: #edf0f4; color: #526078; font-size: 13px; line-height: 1.5; }
+.filter-options { display: flex; flex-wrap: wrap; column-gap: 6px; row-gap: 4px; margin-block: 0; min-width: 0; }
+.filter-options button { min-height: 30px; max-width: 100%; overflow-wrap: anywhere; padding: 3px 12px; border: 1px solid transparent; border-radius: 6px; background: #edf0f4; color: #526078; font-size: 13px; line-height: 1.5; }
 .filter-options button:hover { background: #e2e8f0; }
 .filter-options button[aria-pressed="true"] { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
 .catalog-empty { padding: 40px 16px; text-align: center; color: #64748b; font-size: 14px; }
@@ -135,7 +135,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .catalog-heading h2 { font-size: 20px; }
   .catalog-heading p { font-size: 13px; }
   .catalog-filters { margin: 8px 0 12px; gap: 10px; }
-  .filter-options button { min-height: 40px; }
+  .filter-options button { min-height: 32px; }
   .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .product-card > div:last-child { padding: 12px; }
   .order-panel { bottom: 0; top: auto; z-index: 10; width: 100%; max-height: 70%; border-radius: 12px 12px 0 0; border-bottom: 0; box-shadow: 0 -4px 16px #17243b08; padding-bottom: env(safe-area-inset-bottom); }
@@ -155,4 +155,53 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 @media (prefers-reduced-motion: reduce) {
   button, input, select, .hamburger-lines span, .booth-navigation { transition: none; }
   .sync-icon.is-syncing { animation: none; }
+}
+
+/* Product management */
+.settings-page { background: #f4f7fc; }
+.settings-navigation, .product-management { width: 100%; max-width: 1120px; margin-inline: auto; }
+.settings-navigation { padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
+.management-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.management-heading h2 { font-size: 24px; font-weight: 700; letter-spacing: -.03em; }
+.management-heading p, .management-defaults p { margin-top: 6px; font-size: 13px; line-height: 1.6; color: #64748b; }
+.management-add { min-height: 40px; padding: 10px 16px; border-radius: 8px; background: #2563eb; color: white; font-size: 14px; font-weight: 600; }
+.management-add:hover { background: #1d4ed8; }
+.management-summary { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; color: #64748b; font-size: 12px; }
+.management-summary b { color: #17243b; margin-left: 6px; }
+.management-products { display: grid; gap: 16px; }
+.management-product { min-width: 0; background: white; border: 1px solid #e2e8f0; border-radius: 12px; }
+.management-product-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #edf0f4; }
+.management-product-header h3 { min-width: 0; overflow-wrap: anywhere; font-size: 15px; font-weight: 600; }
+.management-delete { color: #dc2626; font-size: 12px; padding: 6px 8px; border-radius: 6px; flex-shrink: 0; }
+.management-delete:hover { background: #fef2f2; }
+.management-product-body { display: grid; grid-template-columns: 152px minmax(0, 1fr); gap: 24px; padding: 20px; }
+.management-image { min-width: 0; }
+.management-image .product-image { width: 100%; max-width: none; border: 1px solid #edf0f4; border-radius: 8px; }
+.management-image p { font-size: 11px; color: #94a3b8; line-height: 1.5; margin-top: 8px; }
+.management-upload { display: block; margin-top: 10px; color: #2563eb; font-size: 12px; }
+.management-upload input { display: block; width: 100%; min-width: 0; margin-top: 6px; font-size: 11px; }
+.management-details { min-width: 0; display: grid; gap: 18px; }
+.management-details fieldset { min-width: 0; border: 0; padding: 0; }
+.management-details legend { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: #334155; }
+.management-details legend span { font-size: 11px; color: #94a3b8; font-weight: 400; margin-left: 6px; }
+.management-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+.management-fields-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.management-field { min-width: 0; display: grid; gap: 5px; }
+.management-field > span { font-size: 12px; color: #64748b; }
+.management-field input { width: 100%; min-width: 0; min-height: 40px; border-radius: 6px; padding: 8px 10px; font-size: 14px; }
+.management-empty { padding: 48px 16px; text-align: center; border: 1px dashed #cbd5e1; border-radius: 12px; background: white; }
+.management-empty h3 { font-size: 15px; font-weight: 600; }
+.management-empty p { margin-top: 8px; font-size: 13px; color: #64748b; }
+.management-defaults { margin-top: 24px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px; }
+.management-defaults h3 { font-size: 14px; font-weight: 600; }
+.management-default-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.management-default-actions button { min-height: 36px; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; font-size: 12px; }
+@media (max-width: 767px) {
+  .management-heading h2 { font-size: 20px; }
+  .management-product-header { padding: 12px 16px; }
+  .management-product-body { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 16px; }
+  .management-image { width: 152px; max-width: 100%; }
+  .management-fields, .management-fields-three { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .management-field input { font-size: 16px; }
+  .management-defaults { padding: 16px; }
 }

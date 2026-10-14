@@ -107,7 +107,7 @@ POS POST body는 `{projectId, action, payload}`다. 서버는 query/body/payload
 5. 성공 응답의 서버 상태는 SyncService에서 UI/posState에 적용하지 않는다. 자동 서버 재조회도 없다.
 6. 취소는 로컬 재고·판매를 먼저 바꾼다. PENDING/FAILED 판매면 큐에서 제거하고, 제거하지 못하면 별도 voidSale 주문을 추가한다. 서버 취소는 현재 세트 구성으로 복구하고 판매를 삭제한다.
 
-서비스 워커는 navigation에 network-first, 다른 같은 출처 GET에 stale-while-revalidate를 적용한다. 설치 시 index의 `/assets/` 링크를 캐시한다. 버전은 `booth-pos-app-v15`, 설치/활성화 시 skipWaiting/clients.claim을 사용한다. 기본 상품 이미지 `/images/default-product.svg`도 앱 셸 캐시에 포함한다. 판매 카드와 상품 관리에서 이미지가 없거나 외부 이미지 로드 실패 시 No Image SVG를 표시한다. [기본 이미지 설명](default-product-image.md).
+서비스 워커는 navigation에 network-first, 다른 같은 출처 GET에 stale-while-revalidate를 적용한다. 설치 시 index의 `/assets/` 링크를 캐시한다. 버전은 `booth-pos-app-v16`, 설치/활성화 시 skipWaiting/clients.claim을 사용한다. 기본 상품 이미지 `/images/default-product.svg`도 앱 셸 캐시에 포함한다. 판매 카드와 상품 관리에서 이미지가 없거나 외부 이미지 로드 실패 시 No Image SVG를 표시한다. [기본 이미지 설명](default-product-image.md).
 
 제작자별 집계는 현재 상품·세트 정보를 참조한다. 세트 매출은 현재 구성품 단가×수량 비중으로 배분한다. 과거 구성/단가 변경 시 집계가 변할 수 있다. 판매 CSV와 IndexedDB 주문 JSON/CSV 다운로드가 있지만 복원 UI는 없다.
 
@@ -138,3 +138,8 @@ Vite 화면은 흰색 카드/주문 패널과 파란색 주요 버튼, Pretendar
 ## 판매 카드 제작자 표시 후속 조정 (2026-10-14)
 
 제작자 필터 영역의 세로 margin은 모바일·데스크톱 모두 위 8px/아래 12px, 라벨 위 padding은 4px로 축소했다. 판매 상품 카드의 제작자별 색상 배지를 제거하고 상품명 아래 회색 12px 보조 텍스트로 통일했다. 판매 내역의 제작자 색상 표시는 유지한다. 서비스 워커 캐시는 v15로 갱신했다.
+
+
+## 상품 관리 편집 레이아웃 (2026-10-14)
+
+상품 관리의 가로 표를 상품별 흰색 카드로 변경했다. 이미지, 기본 정보, 가격·재고, 선택 세트 정보를 분리하고 각 입력에 label을 연결한다. 데스크톱은 이미지/입력을 나란히, 모바일은 세로로 배치한다. 등록 상품 수와 저장 중 상태를 표시하고 기본값 추가·초기화 버튼은 목록 아래에 모은다. 기존 입력 자동 저장, 이미지 등록/제거, 상품 추가/삭제 및 기본값 확인·미동기화 차단 동작은 유지한다. 판매 제작자 필터의 filter-options margin-block은 0, 줄 간격은 4px, 버튼 세로 padding은 3px, 최소 높이는 데스크톱30/모바일32px다. 서비스 워커 v16.
