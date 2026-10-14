@@ -14,7 +14,7 @@ async function fixture() {
   const sql = async (parts, ...values) => {
     const query = parts.join('?').replace(/\s+/g, ' ').trim();
     statements.push(query);
-    if (query.startsWith('CREATE ')) return { rows: [] };
+    if ((query.startsWith('CREATE ') || query.startsWith('ALTER '))) return { rows: [] };
     if (query.startsWith('SELECT id FROM pos_projects')) {
       return { rows: rows.pos_projects.filter(p => p.id === values[0] && p.admin_id === values[1]) };
     }
@@ -37,13 +37,18 @@ async function fixture() {
       rows.pos_projects.find(p => p.id === values[1]).seed_version = values[0];
       return { rows: [] };
     }
+    if (query.startsWith('UPDATE pos_products SET image_url')) {
+      const product = rows.pos_products.find(p => p.project_id === values[1] && p.id === values[2]);
+      if (product) product.image_url = values[0];
+      return { rows: [] };
+    }
     if (query.startsWith('SELECT ')) {
       const table = query.match(/ FROM (\w+)/)[1];
       return { rows: rows[table].filter(row => row.project_id === values[0]) };
     }
     throw new Error(`Unexpected SQL: ${query}`);
   };
-  const context = vm.createContext({ console });
+  const context = vm.createContext({ console, URL });
   const source = await readFile(new URL('../api/pos.js', import.meta.url), 'utf8');
   const module = new vm.SourceTextModule(source, { context });
   await module.link((specifier) => {
@@ -58,9 +63,9 @@ async function fixture() {
     }, { context });
   });
   await module.evaluate();
-  const invoke = async (action, projectId = 'project-a', adminId = 'admin-a') => {
+  const invoke = async (action, projectId = 'project-a', adminId = 'admin-a', payload = {}) => {
     const result = {};
-    await module.namespace.default({ method: 'POST', adminId, body: { action, projectId, payload: {} } }, {
+    await module.namespace.default({ method: 'POST', adminId, body: { action, projectId, payload } }, {
       status(code) { result.status = code; return this; },
       json(body) { result.body = body; return this; },
     });
@@ -68,6 +73,27 @@ async function fixture() {
   };
   return { rows, statements, invoke };
 }
+
+test('image update is scoped, preserves stock/sales and rejects foreign paths and owners', async () => {
+  const { rows, invoke } = await fixture();
+  const timestamp = '2026-10-14T00:00:00.000Z';
+  rows.pos_products.push({ project_id: 'project-a', id: 'P001', stock: 3, created_at: timestamp, updated_at: timestamp }, { project_id: 'project-b', id: 'P001', stock: 7 });
+  rows.pos_sales.push({ project_id: 'project-a', id: 'sale', time: timestamp, lines: [] });
+  const beforeSales = structuredClone(rows.pos_sales);
+  const imageUrl = 'https://example.public.blob.vercel-storage.com/products/project-a/P001/image-unique.png';
+  assert.equal((await invoke('updateProductImage', 'project-a', 'admin-a', { productId: 'P001', imageUrl })).status, 200);
+  assert.equal(rows.pos_products[0].image_url, imageUrl);
+  assert.equal(rows.pos_products[0].stock, 3);
+  assert.equal(rows.pos_products[1].image_url, undefined);
+  assert.deepEqual(rows.pos_sales, beforeSales);
+  for (const invalid of ['https://example.com/products/project-a/P001/a.png', imageUrl.replace('project-a', 'project-b'), imageUrl.replace('/P001/', '/P002/')]) {
+    assert.equal((await invoke('updateProductImage', 'project-a', 'admin-a', { productId: 'P001', imageUrl: invalid })).status, 500);
+    assert.equal(rows.pos_products[0].image_url, imageUrl);
+  }
+  assert.equal((await invoke('updateProductImage', 'project-a', 'admin-b', { productId: 'P001', imageUrl: null })).status, 500);
+  assert.equal((await invoke('updateProductImage', 'project-a', 'admin-a', { productId: 'P001', imageUrl: null })).status, 200);
+  assert.equal(rows.pos_products[0].image_url, null);
+});
 
 test('upsertDefaults preserves sales, custom/inactive rows and stock; only adds missing defaults', async () => {
   const { rows, statements, invoke } = await fixture();

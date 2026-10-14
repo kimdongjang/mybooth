@@ -9,6 +9,9 @@ function createVercelApiDevPlugin() {
       server.middlewares.use('/api/auth', async (req, res) => {
         await runApiHandler(req, res, () => import('./api/auth.js'));
       });
+      server.middlewares.use('/api/product-images', async (req, res) => {
+        await runApiHandler(req, res, () => import('./api/product-images.js'));
+      });
       server.middlewares.use('/api/pos', async (req, res) => {
         await runApiHandler(req, res, () => import('./api/pos.js'));
       });
@@ -49,6 +52,7 @@ function readJsonBody(req) {
 
 function createResponseAdapter(res) {
   return {
+    get headersSent() { return res.headersSent; },
     status(code) {
       res.statusCode = code;
       return this;
