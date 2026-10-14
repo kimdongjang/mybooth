@@ -81,8 +81,8 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .purchase-tabs button { position: relative; min-height: 44px; padding: 10px 2px; color: #64748b; font-size: 14px; font-weight: 500; }
 .purchase-tabs button[aria-selected="true"] { color: #2563eb; font-weight: 600; }
 .purchase-tabs button[aria-selected="true"]::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: #2563eb; border-radius: 2px; }
-.catalog-filters { display: flex; align-items: baseline; gap: 12px; margin: 16px 0 20px; }
-.filter-label { flex-shrink: 0; color: #64748b; font-size: 12px; padding-top: 8px; }
+.catalog-filters { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 12px; }
+.filter-label { flex-shrink: 0; color: #64748b; font-size: 12px; padding-top: 4px; }
 .filter-options { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .filter-options button { min-height: 36px; max-width: 100%; overflow-wrap: anywhere; padding: 6px 12px; border: 1px solid transparent; border-radius: 6px; background: #edf0f4; color: #526078; font-size: 13px; line-height: 1.5; }
 .filter-options button:hover { background: #e2e8f0; }
@@ -98,6 +98,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .product-name { font-size: 14px; line-height: 1.5; font-weight: 500; }
 .product-price { font-size: 16px; font-weight: 700; }
 .product-stock, .product-creator { font-size: 12px; }
+.product-creator { color: #64748b; line-height: 1.5; }
 .order-panel { position: sticky; top: 0; width: 350px; max-height: 100%; border-radius: 10px; box-shadow: 0 4px 16px #17243b04; }
 .order-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px; }
 .order-summary h2 { font-size: 16px; font-weight: 600; }
@@ -133,7 +134,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .catalog { min-height: 0; padding: 16px; overflow-y: auto; overscroll-behavior: contain; }
   .catalog-heading h2 { font-size: 20px; }
   .catalog-heading p { font-size: 13px; }
-  .catalog-filters { margin: 12px 0 16px; gap: 10px; }
+  .catalog-filters { margin: 8px 0 12px; gap: 10px; }
   .filter-options button { min-height: 40px; }
   .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .product-card > div:last-child { padding: 12px; }
