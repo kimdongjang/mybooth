@@ -604,11 +604,10 @@ export default function App() {
 
     {screen === 'pos' && <main className="pos-layout flex min-h-0 flex-1 gap-5 p-5">
       <section className="catalog min-w-0 flex-1 overflow-y-auto">
-        <div className="mb-4 flex items-end justify-between gap-3"><div><h2 className="text-xl font-bold tracking-tight">상품 판매</h2><p className="mt-1 text-xs text-slate-500">상품을 눌러 주문에 추가하세요.</p></div><span className="shrink-0 text-xs text-slate-500">{visibleProducts.length}개 상품</span></div>
-        <div className="mb-4 rounded-xl border border-line bg-white p-3">
+        <div className="catalog-heading mb-4 flex items-end justify-between gap-3"><div><h2 className="text-xl font-bold tracking-tight">상품 판매</h2><p className="mt-1 text-xs text-slate-500">상품을 눌러 주문에 추가하세요.</p></div><span className="shrink-0 text-xs text-slate-500">{visibleProducts.length}개 상품</span></div>
+        <div className="catalog-filters mb-4 border border-line bg-white p-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-[#526078]">제작자별 보기</span>
-            <span className="text-[11px] text-[#64748b]">표시 {visibleProducts.length}/{products.length}개</span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <button type="button" onClick={() => setCreatorFilter('all')} className={`rounded-full border border-line bg-[#f8fafc] px-2 py-1 text-[11px] font-bold text-[#526078] ${creatorFilter === 'all' ? 'ring-2 ring-amber-pos' : ''}`}>전체 보기</button>
@@ -783,9 +782,9 @@ function ItemButton({ name, imageUrl, price, stock, soldout, bundle, creatorName
     {!bundle && <ProductImage imageUrl={imageUrl} name={name} />}
     <div className="flex flex-1 flex-col p-3">
       {bundle && <span className="mb-2 text-[10px] font-bold tracking-wide text-register">세트 할인</span>}
-      <span className="break-words text-sm font-semibold leading-snug">{name}</span>
-      {creatorName && <span className="mt-2 self-start max-w-full break-words rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="mono text-sm font-bold text-register">{won(price)}원</span><span className={`text-[11px] font-semibold ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>
+      <span className="product-name break-words">{name}</span>
+      {creatorName && <span className="product-creator mt-2 self-start max-w-full break-words rounded-full border px-2 py-0.5" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="product-price mono text-register">{won(price)}원</span><span className={`product-stock ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>
     </div>
   </button>;
 }
