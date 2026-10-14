@@ -627,7 +627,7 @@ export default function App() {
           </div>
         </div>
         <div id="purchase-panel" role="tabpanel" aria-labelledby={`purchase-tab-${purchaseTab}`} tabIndex={0}>
-          {purchaseTab === 'products' ? <div className="product-grid grid gap-3">{visibleProducts.map((p) => <ItemButton key={p.id} imageUrl={p.imageUrl} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} creatorColor={creatorColors[creatorNameOf(p)]} onClick={() => addProduct(p)} />)}</div> : <div className="product-grid grid gap-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div>}
+          {purchaseTab === 'products' ? <div className="product-grid grid gap-3">{visibleProducts.map((p) => <ItemButton key={p.id} imageUrl={p.imageUrl} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} onClick={() => addProduct(p)} />)}</div> : <div className="product-grid grid gap-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div>}
           {!(purchaseTab === 'products' ? visibleProducts.length : visibleBundles.length) && <p className="catalog-empty">{creatorFilter !== 'all' ? `선택한 제작자의 ${purchaseTab === 'products' ? '상품' : '세트'}가 없습니다.` : purchaseTab === 'products' ? '등록된 상품이 없습니다.' : '등록된 세트가 없습니다.'}</p>}
         </div>
       </section>
@@ -790,13 +790,13 @@ function ProductImage({ imageUrl, name }) {
   </div>;
 }
 
-function ItemButton({ name, imageUrl, price, stock, soldout, bundle, creatorName, creatorColor, onClick }) {
+function ItemButton({ name, imageUrl, price, stock, soldout, bundle, creatorName, onClick }) {
   return <button disabled={soldout} onClick={onClick} className={`product-card flex min-w-0 flex-col overflow-hidden rounded-xl border text-left transition hover:border-register hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed ${bundle ? 'border-blue-200 bg-blue-50' : 'border-line bg-white'} ${soldout ? 'is-soldout' : ''}`}>
     {!bundle && <ProductImage imageUrl={imageUrl} name={name} />}
     <div className="flex flex-1 flex-col p-3">
       {bundle && <span className="mb-2 text-[10px] font-bold tracking-wide text-register">세트 할인</span>}
       <span className="product-name break-words">{name}</span>
-      {creatorName && <span className="product-creator mt-2 self-start max-w-full break-words rounded-full border px-2 py-0.5" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}
+      {creatorName && <span className="product-creator mt-1 self-start max-w-full break-words">{creatorName}</span>}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="product-price mono text-register">{won(price)}원</span><span className={`product-stock ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>
     </div>
   </button>;
