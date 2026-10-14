@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export const pagePaths = { pos: '/sales', settings: '/products', log: '/settlement', projects: '/projects' };
+export const pagePaths = { pos: '/sales', settings: '/products', log: '/settlement', projects: '/projects', login: '/login', signup: '/signup' };
 const readPage = () => Object.entries(pagePaths).find(([, path]) => window.location.hash === `#${path}`)?.[0] || 'pos';
 
 export function usePageRoute() {

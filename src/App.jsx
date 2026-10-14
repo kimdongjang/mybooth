@@ -1,3 +1,5 @@
+import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
 import SalesPage from './pages/SalesPage';
 import ProductsPage from './pages/ProductsPage';
 import SettlementPage from './pages/SettlementPage';
@@ -40,11 +42,6 @@ async function requestJson(url, options = {}) {
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem(AUTH_TOKEN_KEY));
   const [adminId, setAdminId] = useState(() => sessionStorage.getItem(AUTH_ADMIN_KEY) || '');
-  const [loginId, setLoginId] = useState('admin');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginEmail, setLoginEmail] = useState('');
-  const [authMode, setAuthMode] = useState('login');
-  const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(Boolean(token));
   const [projectLoading, setProjectLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
@@ -61,7 +58,13 @@ export default function App() {
 
   useEffect(() => { setOrderExpanded(false); }, [screen, selectedProject?.id]);
   useEffect(() => {
-    if (!token || loading || projectLoading) return;
+    if (!token) {
+      if (!['login', 'signup'].includes(routePage)) setScreen('login', true);
+      document.title = `${routePage === 'signup' ? '회원가입' : '로그인'} · 마이 부스`;
+      return;
+    }
+    if (loading || projectLoading) return;
+    if (['login', 'signup'].includes(routePage)) { setScreen(selectedProject ? 'pos' : 'projects', true); return; }
     if (!selectedProject && routePage !== 'projects') setScreen('projects', true);
     else if (!Object.values(pagePaths).some((path) => window.location.hash === `#${path}`)) setScreen(screen, true);
     document.title = `${{ pos: '상품 판매', settings: '상품 관리', log: '정산', projects: '프로젝트 변경' }[screen]} · 마이 부스`;
@@ -114,6 +117,7 @@ export default function App() {
   };
 
   const logout = () => {
+    setScreen('login', true);
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
     sessionStorage.removeItem(AUTH_ADMIN_KEY);
     sessionStorage.removeItem(SELECTED_PROJECT_KEY);
@@ -221,22 +225,14 @@ export default function App() {
   useEffect(() => { if (token) loadProjects(); }, [token]);
   useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id]);
 
-  const login = async (e) => {
-    e.preventDefault();
-    setLoginError('');
-    try {
-      const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify({ mode: authMode, id: loginId, password: loginPassword, ...(authMode === 'signup' ? { email: loginEmail } : {}) }) });
-      sessionStorage.setItem(AUTH_TOKEN_KEY, data.token);
-      sessionStorage.setItem(AUTH_ADMIN_KEY, data.admin?.id || loginId);
-      setToken(data.token);
-      setAdminId(data.admin?.id || loginId);
-      setLoginPassword('');
-      setLoginEmail('');
-    } catch (err) {
-      setLoginError(err.message);
-    }
+  const login = async (credentials) => {
+    const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify(credentials) });
+    sessionStorage.setItem(AUTH_TOKEN_KEY, data.token);
+    sessionStorage.setItem(AUTH_ADMIN_KEY, data.admin?.id || credentials.id);
+    setToken(data.token);
+    setAdminId(data.admin?.id || credentials.id);
+    setScreen('pos', true);
   };
-
   const mutate = async (action, payload, success) => {
     if (!selectedProject?.id) return alert('프로젝트를 먼저 선택해주세요.');
     if (saving) return;
@@ -576,7 +572,7 @@ export default function App() {
   }, [saleLineProductEntries, sales]);
   const selectedCreatorSummary = creatorSalesSummary.find((summary) => summary.creator === logCreatorFilter);
 
-  if (!token) return <LoginPage authMode={authMode} setAuthMode={setAuthMode} loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginEmail={loginEmail} setLoginEmail={setLoginEmail} loginError={loginError} onSubmit={login} />;
+  if (!token) return routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />;
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onRefresh={screen === 'projects' ? loadProjects : loadState} onLogout={logout} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
@@ -591,23 +587,5 @@ export default function App() {
     {screen === 'log' && <SettlementPage stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} creatorColors={creatorColors} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} voidSale={voidSale} />}
     </>}
 
-  </div>;
-}
-
-function LoginPage({ authMode, setAuthMode, loginId, setLoginId, loginPassword, setLoginPassword, loginEmail, setLoginEmail, loginError, onSubmit }) {
-  return <div className="flex min-h-full items-center justify-center bg-paper px-4 py-10 text-ink">
-    <form onSubmit={onSubmit} className="w-full max-w-sm rounded-2xl border border-line bg-white p-8 shadow-xl shadow-blue-900/5">
-      <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">마이 부스</div><p className="mt-1 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
-      <div className="mb-4 grid grid-cols-2 rounded-lg border border-line bg-white p-1 text-sm font-bold">
-        <button type="button" onClick={() => setAuthMode('login')} className={`rounded-md py-2 ${authMode === 'login' ? 'bg-register text-white' : 'text-[#526078]'}`}>로그인</button>
-        <button type="button" onClick={() => setAuthMode('signup')} className={`rounded-md py-2 ${authMode === 'signup' ? 'bg-register text-white' : 'text-[#526078]'}`}>회원가입</button>
-      </div>
-      <label className="mb-3 block text-sm font-bold">아이디<Input value={loginId} onChange={setLoginId} autoFocus className="mt-1" /></label>
-      {authMode === 'signup' && <label className="mb-3 block text-sm font-bold">이메일<Input type="email" name="email" autoComplete="email" required maxLength={254} value={loginEmail} onChange={setLoginEmail} className="mt-1" /></label>}
-      <label className="mb-3 block text-sm font-bold">패스워드<Input type="password" value={loginPassword} onChange={setLoginPassword} className="mt-1" /></label>
-      {loginError && <div className="mb-3 rounded bg-danger px-3 py-2 text-xs text-white">{loginError}</div>}
-      <button className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white">{authMode === 'signup' ? '회원가입하고 시작' : '로그인'}</button>
-      <p className="mt-4 text-xs leading-5 text-[#64748b]">행사별 상품과 판매 내역을 한곳에서 관리하세요.</p>
-    </form>
   </div>;
 }
