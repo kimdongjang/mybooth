@@ -1,3 +1,4 @@
+import { managementQuantities, managementBundleStock } from './utils/managementQuantities';
 import { upload } from '@vercel/blob/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SyncStatus } from './components/SyncStatus';
@@ -216,6 +217,7 @@ export default function App() {
     } catch (err) {
       alert(err.message);
       setError(err.message);
+      return false;
     } finally {
       setProjectLoading(false);
     }
@@ -265,17 +267,20 @@ export default function App() {
     setSaving(true);
     setError('');
     try {
-      if (action === 'resetDefaults' || action === 'upsertDefaults') {
+      if (['resetDefaults', 'upsertDefaults', 'replaceProducts', 'replaceBundles'].includes(action)) {
         const waiting = await orderRepository.countWaiting(selectedProject.id);
-        if (waiting > 0) throw new Error('미동기화 주문이 남아 있습니다. 주문 동기화를 완료한 뒤 기본 상품 작업을 다시 시도해주세요.');
+        if (waiting > 0) throw new Error('미동기화 주문이 남아 있습니다. 주문 동기화를 완료한 뒤 상품·세트 변경을 다시 시도해주세요.');
       }
+      if (activeScope.current !== scope) return false;
       const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: selectedProject.id, dataRevision, action, payload }) });
       if (activeScope.current !== scope) return;
       applyState(data);
       success?.(data);
+      return true;
     } catch (err) {
       alert(err.message);
       setError(err.message);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -422,11 +427,12 @@ export default function App() {
     if (!confirm('없는 기본 상품/세트만 추가할까요? 기존 상품·세트 설정, 현재·초기 재고와 판매 내역은 모두 유지됩니다.')) return;
     mutate('upsertDefaults', {}, () => setCart([]));
   };
-  const addBundleToSettings = () => {
+  const addBundleToSettings = async () => {
     const price = Number(bundlePrice);
-    const items = bundleRows.filter((r) => r.productId).map((r) => ({ productId: r.productId, qty: Number(r.qty) || 1 }));
-    if (!bundleName.trim() || !price || !items.length) return alert('세트 이름, 판매가, 구성품을 모두 입력해주세요.');
-    persistBundles([...bundles, { id: uid(), name: bundleName.trim(), price, items }]);
+    const items = bundleRows.filter((r) => r.productId).map((r) => ({ productId: r.productId, qty: Number(r.qty) }));
+    if (!bundleName.trim() || String(bundlePrice).trim() === '' || !Number.isInteger(price) || price < 0 || !items.length || items.some((item) => !Number.isInteger(item.qty) || item.qty <= 0)) return alert('세트 이름, 0원 이상의 정수 판매가, 구성품과 양의 정수 수량을 입력해주세요.');
+    const saved = await persistBundles([...bundles, { id: uid(), name: bundleName.trim(), price, items }]);
+    if (!saved) return;
     setBundleName(''); setBundlePrice(''); setBundleRows([{ productId: '', qty: 1 }]);
   };
   const exportCsv = () => {
@@ -640,7 +646,7 @@ export default function App() {
       </aside>
     </main>}
 
-    {screen === 'settings' && <main className="settings-page flex-1 overflow-y-auto p-4 md:p-6"><SettingsTabs selected={settingsTab} onSelect={setSettingsTab} /><div id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} tabIndex={0} className="settings-content">{settingsTab === 'products' && <ProductSettingsPanel key={selectedProject.id} projectId={selectedProject.id} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} persistProducts={persistProducts} persistBundles={persistBundles} onResetDefaults={resetDefaults} onUpdateLatest={updateToLatestDefaults} />}{settingsTab === 'bundles' && <Panel title="세트 할인 구성"><div className="space-y-2.5">{bundles.length ? bundles.map((b) => <div key={b.id} className="rounded-lg border border-line bg-[#f8fafc] p-2.5"><div className="flex justify-between text-[13px] font-bold"><span>{b.name} — {won(b.price)}원</span><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="mt-1 text-xs text-[#526078]">{b.items.map((it) => `${products.find((p) => p.id === it.productId)?.name || '???'} x${it.qty}`).join(', ')}</div></div>) : <p className="text-xs text-[#64748b]">등록된 세트가 없습니다</p>}</div><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><Input value={bundleName} onChange={setBundleName} placeholder="세트 이름 (예: 아크릴+포카 세트)" />{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select className="flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input type="number" className="w-[60px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: Number(v) || 1 } : r))} /></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><Input type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="세트 판매가 (원)" /><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></Panel>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</div></main>}
+    {screen === 'settings' && <main className="settings-page flex-1 overflow-y-auto p-4 md:p-6"><SettingsTabs selected={settingsTab} onSelect={setSettingsTab} /><div id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} tabIndex={0} className="settings-content">{settingsTab === 'products' && <ProductSettingsPanel key={selectedProject.id} projectId={selectedProject.id} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} onResetDefaults={resetDefaults} onUpdateLatest={updateToLatestDefaults} />}{settingsTab === 'bundles' && <section className="product-management"><header className="management-heading"><div><h2>세트 관리</h2><p>구성품과 판매 현황을 확인하고 새 세트를 등록하세요.</p></div></header><div className="management-summary"><span>등록 세트 <b>{bundles.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '수량은 자동으로 계산됩니다'}</span></div><p className="management-note">판매 가능 수량은 현재 구성품의 남은 재고 기준이며, 다른 세트와 재고를 공유합니다.</p><div className="management-products">{bundles.map((b) => <article key={b.id} className="management-product"><div className="management-product-header"><h3>{b.name}</h3><button type="button" className="management-delete" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="bundle-management-body"><div className="management-fields management-fields-three"><div className="management-field"><span>판매가</span><strong>{won(b.price)}원</strong></div><Quantity label="판매 수량" value={managementQuantities(sales, bundles).bundles.get(b.id) || 0} /><Quantity label="판매 가능 수량" value={managementBundleStock(b, products)} /></div><h4>세트 구성</h4><ul className="bundle-components">{b.items.map((item, index) => { const product = products.find((p) => p.id === item.productId); return <li key={index}><span>{product ? productNameWithoutCreator(product) : '삭제된 상품'}<small>{product ? creatorNameOf(product) : '구성 확인 필요'}</small></span><strong>{item.qty}개</strong></li>; })}</ul></div></article>)}</div>{!bundles.length && <div className="management-empty"><h3>등록된 세트가 없습니다</h3><p>아래에서 구성품과 판매가를 입력하세요.</p></div>}<section className="management-product bundle-management-body"><h3>새 세트 등록</h3><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><label className="management-field"><span>세트 이름</span><Input value={bundleName} onChange={setBundleName} placeholder="예: 아크릴+포카 세트" /></label>{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select aria-label={`구성품 ${idx + 1}`} className="min-w-0 flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input aria-label={`구성품 ${idx + 1} 수량`} min="1" step="1" type="number" className="w-[70px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: v } : r))} /><button type="button" className="management-delete" aria-label={`구성품 ${idx + 1} 제거`} disabled={bundleRows.length === 1} onClick={() => setBundleRows(bundleRows.filter((_, i) => i !== idx))}>제거</button></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><label className="management-field"><span>판매가 (원)</span><Input min="0" step="1" type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="0" /></label><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></section></section>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</div></main>}
 
     {screen === 'log' && <main className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="mb-4 grid gap-3.5 md:grid-cols-4"><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></div>
@@ -717,7 +723,8 @@ function SettingsTabs({ selected, onSelect }) {
   </div>;
 }
 
-function ProductSettingsPanel({ projectId, saving, onImageChange, products, bundles, persistProducts, persistBundles, onResetDefaults, onUpdateLatest }) {
+function ProductSettingsPanel({ projectId, saving, onImageChange, products, bundles, sales, persistProducts, persistBundles, onResetDefaults, onUpdateLatest }) {
+  const quantities = managementQuantities(sales, bundles);
   const [uploadingId, setUploadingId] = useState(null);
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState(null);
@@ -788,14 +795,15 @@ function ProductSettingsPanel({ projectId, saving, onImageChange, products, bund
       {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <button type="button" className="management-add" onClick={addProduct}>+ 상품 추가</button>}
     </header>
     <div className="management-summary"><span>등록 상품 <b>{products.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '상품 정보를 수정할 수 있습니다'}</span></div>
+    <p className="management-note">등록 수량은 기존 초기 재고와 추가 입고의 합계입니다. 판매 수량은 현재 판매 내역의 단품·세트 구성품을 합산합니다. 취소된 판매는 제외하며, 구성 정보가 없는 과거 세트 판매는 현재 구성 기준입니다.</p>
     {!selectedProduct && <>
       <div className="management-table-wrap"><table className="management-table">
-        <caption className="sr-only">상품 이름, 제작자, 가격, 등록일 목록</caption>
-        <colgroup><col className="management-name-column" /><col /><col /><col /></colgroup>
-        <thead><tr><th scope="col">상품 이름</th><th scope="col">제작자</th><th scope="col">가격</th><th scope="col">등록일</th></tr></thead>
+        <caption className="sr-only">상품 이름, 제작자, 판매가, 등록 수량, 판매 수량, 남은 재고, 등록일 목록</caption>
+        <thead><tr><th scope="col">상품 이름</th><th scope="col">제작자</th><th scope="col">판매가</th><th scope="col">등록 수량</th><th scope="col">판매 수량</th><th scope="col">남은 재고</th><th scope="col">등록일</th></tr></thead>
         <tbody>{sortedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => <tr key={p.id}>
           <td><span className="management-row-name">{productNameWithoutCreator(p)}</span><button type="button" className="management-detail-link" aria-label={`${productNameWithoutCreator(p)} 상세보기`} onClick={() => setSelectedId(p.id)}>상세보기</button></td>
           <td>{creatorNameOf(p)}</td><td className="mono management-row-price">{won(p.price)}원</td>
+          <td className="mono">{won(p.initialStockQty ?? 0)}개</td><td className="mono">{won(quantities.products.get(p.id) || 0)}개</td><td className="mono">{won(p.stockQty ?? p.stock ?? 0)}개</td>
           <td>{p.createdAt && !Number.isNaN(new Date(p.createdAt).getTime()) ? <time dateTime={p.createdAt}>{new Date(p.createdAt).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\s/g, '')}</time> : '—'}</td>
         </tr>)}</tbody>
       </table>{!products.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}</div>
@@ -820,8 +828,10 @@ function ProductSettingsPanel({ projectId, saving, onImageChange, products, bund
             </div></fieldset>
             <fieldset><legend>가격 · 재고</legend><div className="management-fields management-fields-three">
               {field(p, '판매가 (원)', p.price, (v) => ({ price: Number(v) || 0 }), 'number')}
-              {field(p, '현재 재고', p.stockQty ?? p.stock ?? 0, (v) => ({ stockQty: Number(v) || 0, stock: Number(v) || 0 }), 'number')}
-              {field(p, '초기 재고', p.initialStockQty ?? 0, (v) => ({ initialStockQty: Number(v) || 0 }), 'number')}
+              <Quantity label="등록 수량" value={p.initialStockQty ?? 0} />
+              <Quantity label="판매 수량" value={quantities.products.get(p.id) || 0} />
+              <Quantity label="남은 재고" value={p.stockQty ?? p.stock ?? 0} />
+              <StockAdjustment key={p.id} product={p} onSave={(patch) => updateProduct(p.id, patch)} saving={saving} />
             </div></fieldset>
             <fieldset><legend>세트 정보 <span>선택 입력</span></legend><div className="management-fields">
               {field(p, '세트명', p.setGroupName || '', (v) => ({ setGroupName: v || null, setCreatorName: v ? (p.creatorName || p.setCreatorName) : null }))}
@@ -833,6 +843,24 @@ function ProductSettingsPanel({ projectId, saving, onImageChange, products, bund
     </div>}
     {!selectedProduct && <aside className="management-defaults"><div><h3>기본 상품 목록</h3><p>누락된 기본 상품·세트만 추가하거나, 상품·세트·재고를 기본 44종으로 초기화할 수 있습니다.</p></div><div className="management-default-actions"><button type="button" onClick={onUpdateLatest}>없는 기본 상품/세트 추가</button><button type="button" className="management-delete" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button></div></aside>}
   </section>;
+}
+
+function Quantity({ label, value }) {
+  return <div className="management-field"><span>{label}</span><output className="management-quantity mono">{won(value)}개</output></div>;
+}
+
+function StockAdjustment({ product, onSave, saving }) {
+  const [amount, setAmount] = useState('');
+  const [mode, setMode] = useState('receive');
+  const submit = async () => {
+    const qty = Number(amount);
+    const current = Number(product.stockQty ?? product.stock ?? 0);
+    if (amount === '' || !Number.isInteger(qty) || (mode === 'receive' ? qty <= 0 : current + qty < 0 || qty === 0)) return alert('입고는 양의 정수, 재고 조정은 남은 재고가 0 이상이 되는 정수를 입력해주세요.');
+    if (!confirm(`${mode === 'receive' ? '추가 입고' : '재고 조정'} ${qty}개를 반영할까요?`)) return;
+    const saved = await onSave({ stockQty: current + qty, stock: current + qty, ...(mode === 'receive' ? { initialStockQty: Number(product.initialStockQty ?? 0) + qty } : {}) });
+    if (saved) setAmount('');
+  };
+  return <div className="stock-adjustment"><label className="management-field"><span>입고 · 재고 조정</span><select value={mode} onChange={(e) => { setMode(e.target.value); setAmount(''); }}><option value="receive">추가 입고</option><option value="adjust">재고 조정 (+/−)</option></select></label><label className="management-field"><span>변경 수량 (개)</span><Input type="number" step="1" min={mode === 'receive' ? 1 : undefined} value={amount} onChange={setAmount} /></label><button type="button" className="management-add" disabled={saving || amount === ''} onClick={submit}>반영</button><p className="management-note">추가 입고는 등록 수량과 남은 재고에 함께 더합니다. 재고 조정은 분실·파손·실사 차이만 남은 재고에 반영합니다.</p></div>;
 }
 
 function ProductImage({ imageUrl, name }) {
