@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 
-export type SyncStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
+export type SyncStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED' | 'ARCHIVED';
 
 export interface StoredOrder<TPayload = unknown> {
   id?: number;

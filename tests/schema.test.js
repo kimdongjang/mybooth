@@ -36,9 +36,9 @@ for (const legacy of [true, false]) {
         }, { context });
       });
       await module.evaluate();
-      const invoke = async (action, projectId, adminId = 'admin-a') => {
+      const invoke = async (action, projectId, adminId = 'admin-a', extraBody = {}) => {
         const result = {};
-        await module.namespace.default({ method: action ? 'POST' : 'GET', adminId, query: { projectId }, body: { action, projectId, payload: { name: '12월 행사' } } }, {
+        await module.namespace.default({ method: action ? 'POST' : 'GET', adminId, query: { projectId }, body: { action, projectId, payload: { name: '12월 행사' }, ...extraBody } }, {
           status(code) { result.status = code; return this; },
           json(body) { result.body = body; return this; },
         });
@@ -49,6 +49,52 @@ for (const legacy of [true, false]) {
       const second = await invoke('createProject');
       assert.equal(second.status, 201, JSON.stringify(second.body));
       assert.notEqual(first.body.project.id, second.body.project.id);
+      if (!legacy) {
+        await db.exec(`
+          INSERT INTO pos_projects (id, admin_id, name, seed_version) VALUES
+            ('pxwiu2t', 'admin', '12 서코', 3), ('s4fjgga', 'admin', '12월 행사', 3),
+            ('legacy-admin-july-seoul-comic', 'admin', '7월 서코행사', 0),
+            ('untouched', 'admin-b', '12월 행사', 3);
+          INSERT INTO pos_products (project_id, id, name, price, stock) SELECT id, 'P001', 'original', 0, 7 FROM pos_projects;
+          INSERT INTO pos_bundles (project_id, id, name, price, items) SELECT id, 'b1', 'original set', 100, '[]' FROM pos_projects;
+          INSERT INTO pos_sales (project_id, id, time, method, total, lines) SELECT id, 'sale1', NOW(), 'cash', 100, '[]' FROM pos_projects;
+        `);
+        await db.exec(`CREATE FUNCTION reject_event_cleanup() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN RAISE EXCEPTION 'injected cleanup failure'; END $$;
+          CREATE TRIGGER fail_cleanup BEFORE DELETE ON pos_products FOR EACH ROW
+          WHEN (OLD.project_id = 's4fjgga') EXECUTE FUNCTION reject_event_cleanup();`);
+        assert.equal((await invoke(null, 'pxwiu2t', 'admin')).status, 500);
+        assert.equal((await db.query('SELECT * FROM pos_event_archives')).rows.length, 0);
+        assert.equal((await db.query("SELECT * FROM pos_products WHERE project_id IN ('pxwiu2t', 's4fjgga')")).rows.length, 2);
+        assert.equal((await db.query("SELECT * FROM pos_sales WHERE project_id IN ('pxwiu2t', 's4fjgga')")).rows.length, 2);
+        await db.exec('DROP TRIGGER fail_cleanup ON pos_products; DROP FUNCTION reject_event_cleanup()');
+        for (const id of ['pxwiu2t', 's4fjgga']) {
+          const separated = await invoke(null, id, 'admin');
+          assert.equal(separated.status, 200);
+          assert.equal(separated.body.dataRevision, 'separate-july-data-v1');
+          assert.equal(separated.body.products.length, 0);
+          assert.equal(separated.body.bundles.length, 0);
+          assert.equal(separated.body.sales.length, 0);
+          const archive = (await db.query('SELECT snapshot FROM pos_event_archives WHERE project_id = $1', [id])).rows[0].snapshot;
+          assert.equal(archive.products[0].stock, 7);
+          assert.equal(archive.products[0].price, 0);
+          assert.equal(archive.bundles[0].name, 'original set');
+          assert.equal(archive.sales[0].total, 100);
+          assert.equal((await invoke('replaceProducts', id, 'admin')).status, 409);
+          assert.equal((await invoke('finalizeSale', id, 'admin')).status, 409);
+          assert.equal((await invoke('voidSale', id, 'admin')).status, 409);
+          assert.equal((await invoke('replaceProducts', id, 'admin-b')).status, 500);
+          const revision = { dataRevision: separated.body.dataRevision };
+          assert.equal((await invoke('upsertDefaults', id, 'admin', revision)).status, 200);
+          assert.equal((await invoke(null, id, 'admin')).body.products.length, defaults.getDefaultProducts().length);
+        }
+        assert.equal((await invoke(null, 'legacy-admin-july-seoul-comic', 'admin')).body.products[0].stock, 7);
+        assert.equal((await invoke(null, 'untouched', 'admin-b')).body.sales[0].total, 100);
+        assert.equal((await db.query('SELECT * FROM pos_event_archives')).rows.length, 2);
+        await db.exec(`DELETE FROM pos_products WHERE project_id IN ('${first.body.project.id}', '${second.body.project.id}');
+          DELETE FROM pos_bundles WHERE project_id IN ('${first.body.project.id}', '${second.body.project.id}');
+          DELETE FROM pos_sales WHERE project_id IN ('${first.body.project.id}', '${second.body.project.id}');`);
+      }
       const other = await invoke('createProject', undefined, 'admin-b');
       assert.equal(other.status, 201);
       assert.equal((await invoke(null, other.body.project.id, 'admin-b')).body.products.length, 0);

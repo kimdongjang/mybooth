@@ -62,6 +62,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
+  const [dataRevision, setDataRevision] = useState(null);
+  const [readyScope, setReadyScope] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [screen, setScreen] = useState('pos');
   const [settingsTab, setSettingsTab] = useState('products');
@@ -80,11 +82,11 @@ export default function App() {
   const activeToken = useRef(token);
   activeToken.current = token;
   const getAuthToken = useCallback(() => token, [token]);
-  const sync = useSync({ enabled: Boolean(token && selectedProject?.id), getAuthToken, projectId: selectedProject?.id });
+  const sync = useSync({ enabled: Boolean(token && selectedProject?.id && readyScope === scope), getAuthToken, projectId: selectedProject?.id });
 
   const persistLocalState = async (nextProducts = products, nextBundles = bundles, nextSales = sales) => {
     if (!selectedProject?.id) return;
-    await stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales });
+    await stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales, dataRevision });
   };
 
   const applyState = (data) => {
@@ -95,7 +97,9 @@ export default function App() {
     setProducts(nextProducts);
     setBundles(nextBundles);
     setSales(nextSales);
-    void persistLocalState(nextProducts, nextBundles, nextSales);
+    setDataRevision(data.dataRevision || null);
+    setReadyScope(scope);
+    void stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales, dataRevision: data.dataRevision || null });
   };
 
   const logout = () => {
@@ -120,7 +124,7 @@ export default function App() {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         const cached = await stateRepository.get(selectedProject.id);
         if (activeScope.current !== scope) return;
-        if (cached) {
+        if (cached && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
           applyState(cached);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
           return;
@@ -129,14 +133,17 @@ export default function App() {
         return;
       }
 
-      applyState(await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}`));
+      const data = await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}`);
+      if (activeScope.current !== scope) return;
+      if (data.dataRevision) await orderRepository.archivePreviousRevision(selectedProject.id, data.dataRevision);
+      applyState(data);
     } catch (err) {
       if (activeToken.current !== token) return;
       if (String(err.message).includes('인증')) logout();
       else {
         const cached = await stateRepository.get(selectedProject.id);
         if (activeScope.current !== scope) return;
-        if (cached) {
+        if (cached && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
           applyState(cached);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
         } else setError(err.message);
@@ -235,7 +242,7 @@ export default function App() {
         const waiting = await orderRepository.countWaiting(selectedProject.id);
         if (waiting > 0) throw new Error('미동기화 주문이 남아 있습니다. 주문 동기화를 완료한 뒤 기본 상품 작업을 다시 시도해주세요.');
       }
-      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: selectedProject.id, action, payload }) });
+      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: selectedProject.id, dataRevision, action, payload }) });
       if (activeScope.current !== scope) return;
       applyState(data);
       success?.(data);
@@ -351,7 +358,7 @@ export default function App() {
       const createdAt = new Date().toISOString();
       const saleCart = cart.map((line) => ({ ...line }));
       const orderPayload = { localOrderId, createdAt, method, total, cart: saleCart };
-      const apiPayload = { projectId: selectedProject.id, action: 'finalizeSale', payload: orderPayload };
+      const apiPayload = { projectId: selectedProject.id, dataRevision, action: 'finalizeSale', payload: orderPayload };
 
       await orderRepository.add({
         projectId: selectedProject.id,
@@ -443,7 +450,7 @@ export default function App() {
           projectId: selectedProject.id,
           localOrderId: `void_${sale.id}_${Date.now()}`,
           createdAt,
-          payload: { projectId: selectedProject.id, action: 'voidSale', payload: { id: sale.id } },
+          payload: { projectId: selectedProject.id, dataRevision, action: 'voidSale', payload: { id: sale.id } },
           syncStatus: 'PENDING',
           retryCount: 0,
           lastSyncAt: null,

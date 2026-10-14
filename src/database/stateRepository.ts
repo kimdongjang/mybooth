@@ -1,6 +1,7 @@
 import { db } from './dexie';
 
 export interface PosStateCache {
+  dataRevision?: string | null;
   products: unknown[];
   bundles: unknown[];
   sales: unknown[];
