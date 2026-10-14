@@ -6,19 +6,20 @@ export interface PosStateCache {
   sales: unknown[];
 }
 
-const POS_STATE_KEY = 'latest';
+const stateKey = (projectId: string) => `project:${projectId}:latest`;
 
 export const stateRepository = {
-  async save(state: PosStateCache): Promise<void> {
+  async save(projectId: string, state: PosStateCache): Promise<void> {
     await db.posState.put({
-      key: POS_STATE_KEY,
+      key: stateKey(projectId),
+      projectId,
       updatedAt: new Date().toISOString(),
       state,
     });
   },
 
-  async get(): Promise<PosStateCache | null> {
-    const cached = await db.posState.get(POS_STATE_KEY);
+  async get(projectId: string): Promise<PosStateCache | null> {
+    const cached = await db.posState.get(stateKey(projectId));
     return (cached?.state as PosStateCache | undefined) || null;
   },
 };

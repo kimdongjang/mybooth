@@ -6,6 +6,8 @@ import { useSync } from './hooks/useSync';
 import { createLocalOrderId } from './utils/orderId';
 
 const AUTH_TOKEN_KEY = 'pos_admin_token';
+const AUTH_ADMIN_KEY = 'pos_admin_id';
+const SELECTED_PROJECT_KEY = 'pos_selected_project_id';
 const CREATOR_COLOR_PALETTE = [
   { bg: '#fef3c7', text: '#92400e', border: '#f59e0b' },
   { bg: '#dbeafe', text: '#1e40af', border: '#3b82f6' },
@@ -48,12 +50,18 @@ async function requestJson(url, options = {}) {
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem(AUTH_TOKEN_KEY));
+  const [adminId, setAdminId] = useState(() => sessionStorage.getItem(AUTH_ADMIN_KEY) || '');
   const [loginId, setLoginId] = useState('admin');
   const [loginPassword, setLoginPassword] = useState('');
+  const [authMode, setAuthMode] = useState('login');
   const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(Boolean(token));
+  const [projectLoading, setProjectLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [projects, setProjects] = useState([]);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [newProjectName, setNewProjectName] = useState('');
   const [screen, setScreen] = useState('pos');
   const [settingsTab, setSettingsTab] = useState('products');
   const [products, setProducts] = useState([]);
@@ -66,10 +74,11 @@ export default function App() {
   const [creatorFilter, setCreatorFilter] = useState('all');
   const [logCreatorFilter, setLogCreatorFilter] = useState('all');
   const getAuthToken = useCallback(() => sessionStorage.getItem(AUTH_TOKEN_KEY), []);
-  const sync = useSync({ enabled: Boolean(token), getAuthToken });
+  const sync = useSync({ enabled: Boolean(token && selectedProject?.id), getAuthToken, projectId: selectedProject?.id });
 
   const persistLocalState = async (nextProducts = products, nextBundles = bundles, nextSales = sales) => {
-    await stateRepository.save({ products: nextProducts, bundles: nextBundles, sales: nextSales });
+    if (!selectedProject?.id) return;
+    await stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales });
   };
 
   const applyState = (data) => {
@@ -84,7 +93,12 @@ export default function App() {
 
   const logout = () => {
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem(AUTH_ADMIN_KEY);
+    sessionStorage.removeItem(SELECTED_PROJECT_KEY);
     setToken(null);
+    setAdminId('');
+    setProjects([]);
+    setSelectedProject(null);
     setProducts([]);
     setBundles([]);
     setSales([]);
@@ -92,11 +106,12 @@ export default function App() {
   };
 
   const loadState = async () => {
+    if (!selectedProject?.id) return;
     setLoading(true);
     setError('');
     try {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        const cached = await stateRepository.get();
+        const cached = await stateRepository.get(selectedProject.id);
         if (cached) {
           applyState(cached);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
@@ -106,11 +121,11 @@ export default function App() {
         return;
       }
 
-      applyState(await requestJson('/api/pos'));
+      applyState(await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}`));
     } catch (err) {
       if (String(err.message).includes('인증')) logout();
       else {
-        const cached = await stateRepository.get();
+        const cached = await stateRepository.get(selectedProject.id);
         if (cached) {
           applyState(cached);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
@@ -121,15 +136,77 @@ export default function App() {
     }
   };
 
-  useEffect(() => { if (token) loadState(); }, [token]);
+  const loadProjects = async () => {
+    if (!token) return;
+    setProjectLoading(true);
+    setError('');
+    try {
+      const data = await requestJson('/api/pos');
+      const nextProjects = data.projects || [];
+      setProjects(nextProjects);
+      const rememberedId = sessionStorage.getItem(SELECTED_PROJECT_KEY);
+      const remembered = nextProjects.find((project) => project.id === rememberedId);
+      setSelectedProject((current) => current && nextProjects.find((project) => project.id === current.id) ? current : remembered || null);
+    } catch (err) {
+      if (String(err.message).includes('인증')) logout();
+      else setError(err.message);
+    } finally {
+      setProjectLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const createProject = async (e) => {
+    e?.preventDefault();
+    if (!newProjectName.trim()) return alert('프로젝트 이름을 입력해주세요.');
+    setProjectLoading(true);
+    setError('');
+    try {
+      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ action: 'createProject', payload: { name: newProjectName.trim() } }) });
+      const project = data.project;
+      setNewProjectName('');
+      await loadProjects();
+      setSelectedProject(project);
+      sessionStorage.setItem(SELECTED_PROJECT_KEY, project.id);
+    } catch (err) {
+      alert(err.message);
+      setError(err.message);
+    } finally {
+      setProjectLoading(false);
+    }
+  };
+
+  const selectProject = (project) => {
+    setSelectedProject(project);
+    sessionStorage.setItem(SELECTED_PROJECT_KEY, project.id);
+    setProducts([]);
+    setBundles([]);
+    setSales([]);
+    setCart([]);
+    setScreen('pos');
+  };
+
+  const leaveProject = () => {
+    setSelectedProject(null);
+    sessionStorage.removeItem(SELECTED_PROJECT_KEY);
+    setProducts([]);
+    setBundles([]);
+    setSales([]);
+    setCart([]);
+  };
+
+  useEffect(() => { if (token) loadProjects(); }, [token]);
+  useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id]);
 
   const login = async (e) => {
     e.preventDefault();
     setLoginError('');
     try {
-      const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify({ id: loginId, password: loginPassword }) });
+      const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify({ mode: authMode, id: loginId, password: loginPassword }) });
       sessionStorage.setItem(AUTH_TOKEN_KEY, data.token);
+      sessionStorage.setItem(AUTH_ADMIN_KEY, data.admin?.id || loginId);
       setToken(data.token);
+      setAdminId(data.admin?.id || loginId);
       setLoginPassword('');
     } catch (err) {
       setLoginError(err.message);
@@ -137,10 +214,16 @@ export default function App() {
   };
 
   const mutate = async (action, payload, success) => {
+    if (!selectedProject?.id) return alert('프로젝트를 먼저 선택해주세요.');
+    if (saving) return;
     setSaving(true);
     setError('');
     try {
-      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ action, payload }) });
+      if (action === 'resetDefaults' || action === 'upsertDefaults') {
+        const waiting = await orderRepository.countWaiting(selectedProject.id);
+        if (waiting > 0) throw new Error('미동기화 주문이 남아 있습니다. 주문 동기화를 완료한 뒤 기본 상품 작업을 다시 시도해주세요.');
+      }
+      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: selectedProject.id, action, payload }) });
       applyState(data);
       success?.(data);
     } catch (err) {
@@ -153,7 +236,6 @@ export default function App() {
 
   const persistProducts = (next) => mutate('replaceProducts', { products: next });
   const persistBundles = (next) => mutate('replaceBundles', { bundles: next });
-  const persistCatalog = (nextProducts, nextBundles) => mutate('saveCatalog', { products: nextProducts, bundles: nextBundles });
 
   const reservedQty = (productId, targetCart = cart) => targetCart.reduce((sum, line) => {
     if (line.type === 'product' && line.id === productId) return sum + line.qty;
@@ -247,6 +329,7 @@ export default function App() {
     }
   };
   const finalizeSale = async (method) => {
+    if (!selectedProject?.id) return alert('프로젝트를 먼저 선택해주세요.');
     if (!cart.length || saving) return;
     setSaving(true);
     setError('');
@@ -255,9 +338,10 @@ export default function App() {
       const createdAt = new Date().toISOString();
       const saleCart = cart.map((line) => ({ ...line }));
       const orderPayload = { localOrderId, createdAt, method, total, cart: saleCart };
-      const apiPayload = { action: 'finalizeSale', payload: orderPayload };
+      const apiPayload = { projectId: selectedProject.id, action: 'finalizeSale', payload: orderPayload };
 
       await orderRepository.add({
+        projectId: selectedProject.id,
         localOrderId,
         createdAt,
         payload: apiPayload,
@@ -282,11 +366,11 @@ export default function App() {
     }
   };
   const resetDefaults = () => {
-    if (!confirm('현재 상품/세트 목록을 지우고 기본 44종 목록으로 되돌릴까요? (판매 내역은 유지됩니다)')) return;
+    if (!confirm('현재 상품/세트 목록과 재고를 기본 44종으로 초기화할까요? 직접 추가·수정한 상품/세트는 제거됩니다. 판매 내역은 유지되지만, 과거 판매의 제작자 집계와 세트 취소 결과는 변경될 수 있습니다.')) return;
     mutate('resetDefaults', {}, () => setCart([]));
   };
   const updateToLatestDefaults = () => {
-    if (!confirm('최신 기본 상품/세트를 추가/업데이트할까요? 기존 판매 재고 수량은 유지되고, 없는 상품/세트만 추가됩니다.')) return;
+    if (!confirm('없는 기본 상품/세트만 추가할까요? 기존 상품·세트 설정, 현재·초기 재고와 판매 내역은 모두 유지됩니다.')) return;
     mutate('upsertDefaults', {}, () => setCart([]));
   };
   const addBundleToSettings = () => {
@@ -311,11 +395,11 @@ export default function App() {
     URL.revokeObjectURL(a.href);
   };
   const backupOrdersJson = async () => {
-    const orders = await orderRepository.getAll();
+    const orders = await orderRepository.getAll(selectedProject.id);
     downloadBlob(JSON.stringify(orders, null, 2), 'application/json;charset=utf-8;', `orders_backup_${new Date().toISOString().slice(0, 10)}.json`);
   };
   const backupOrdersCsv = async () => {
-    const orders = await orderRepository.getAll();
+    const orders = await orderRepository.getAll(selectedProject.id);
     const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const rows = orders.map((order) => [
       order.id,
@@ -339,13 +423,14 @@ export default function App() {
       setSales(nextSales);
       await persistLocalState(nextProducts, bundles, nextSales);
 
-      const removedPendingSale = await orderRepository.deletePendingByLocalOrderId(sale.id);
+      const removedPendingSale = await orderRepository.deletePendingByLocalOrderId(selectedProject.id, sale.id);
       if (!removedPendingSale) {
         const createdAt = new Date().toISOString();
         await orderRepository.add({
+          projectId: selectedProject.id,
           localOrderId: `void_${sale.id}_${Date.now()}`,
           createdAt,
-          payload: { action: 'voidSale', payload: { id: sale.id } },
+          payload: { projectId: selectedProject.id, action: 'voidSale', payload: { id: sale.id } },
           syncStatus: 'PENDING',
           retryCount: 0,
           lastSyncAt: null,
@@ -460,13 +545,14 @@ export default function App() {
   }, [saleLineProductEntries, sales]);
   const selectedCreatorSummary = creatorSalesSummary.find((summary) => summary.creator === logCreatorFilter);
 
-  if (!token) return <LoginPage loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginError={loginError} onSubmit={login} />;
-  if (loading) return <div className="flex h-full items-center justify-center bg-paper text-register"><div className="rounded-xl border border-line bg-white p-6 font-bold">DB에서 데이터를 불러오는 중...</div></div>;
+  if (!token) return <LoginPage authMode={authMode} setAuthMode={setAuthMode} loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginError={loginError} onSubmit={login} />;
+  if (loading || projectLoading) return <div className="flex h-full items-center justify-center bg-paper text-register"><div className="rounded-xl border border-line bg-white p-6 font-bold">DB에서 데이터를 불러오는 중...</div></div>;
+  if (!selectedProject) return <ProjectPage adminId={adminId} projects={projects} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} onLogout={logout} />;
 
   return <div className="flex h-full flex-col bg-paper text-ink">
     <header className="flex shrink-0 items-center justify-between border-b-[3px] border-amber-pos bg-register px-4 py-2.5 text-[#eef3ee]">
-      <div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-pos" /><h1 className="display-font text-base font-semibold tracking-wide">부스 포스기</h1>{saving && <span className="text-xs text-amber-pos">저장 중...</span>}</div>
-      <nav className="flex flex-wrap items-center justify-end gap-1.5"><SyncStatus sync={sync} />{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} onClick={() => setScreen(key)} className={`rounded-md border px-3.5 py-2 text-[13px] ${screen === key ? 'border-amber-pos bg-amber-pos font-bold text-ink' : 'border-white/20 bg-white/10'}`}>{label}</button>)}<button onClick={loadState} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">새로고침</button><button onClick={logout} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">로그아웃</button></nav>
+      <div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-pos" /><h1 className="display-font text-base font-semibold tracking-wide">부스 포스기</h1><span className="rounded bg-white/10 px-2 py-1 text-xs">{selectedProject.name}</span>{saving && <span className="text-xs text-amber-pos">저장 중...</span>}</div>
+      <nav className="flex flex-wrap items-center justify-end gap-1.5"><SyncStatus sync={sync} />{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} onClick={() => setScreen(key)} className={`rounded-md border px-3.5 py-2 text-[13px] ${screen === key ? 'border-amber-pos bg-amber-pos font-bold text-ink' : 'border-white/20 bg-white/10'}`}>{label}</button>)}<button onClick={leaveProject} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">프로젝트 변경</button><button onClick={loadState} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">새로고침</button><button onClick={logout} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">로그아웃</button></nav>
     </header>
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
 
@@ -493,7 +579,7 @@ export default function App() {
       </aside>
     </main>}
 
-    {screen === 'settings' && <main className="flex-1 overflow-y-auto p-4 md:p-6"><div className="mb-4 flex flex-wrap gap-2"><button onClick={() => setSettingsTab('products')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'products' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>상품 관리</button><button onClick={() => setSettingsTab('bundles')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'bundles' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>세트 관리</button><button onClick={() => setSettingsTab('backup')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'backup' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>주문 백업</button></div>{settingsTab === 'products' && <ProductSettingsPanel products={products} bundles={bundles} persistProducts={persistProducts} persistCatalog={persistCatalog} onResetDefaults={resetDefaults} saving={saving} />}{settingsTab === 'bundles' && <Panel title="세트 할인 구성"><div className="space-y-2.5">{bundles.length ? bundles.map((b) => <div key={b.id} className="rounded-lg border border-line bg-[#fbfaf5] p-2.5"><div className="flex justify-between text-[13px] font-bold"><span>{b.name} — {won(b.price)}원</span><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="mt-1 text-xs text-[#6b6555]">{b.items.map((it) => `${products.find((p) => p.id === it.productId)?.name || '???'} x${it.qty}`).join(', ')}</div></div>) : <p className="text-xs text-[#8a8370]">등록된 세트가 없습니다</p>}</div><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><Input value={bundleName} onChange={setBundleName} placeholder="세트 이름 (예: 아크릴+포카 세트)" />{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select className="flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input type="number" className="w-[60px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: Number(v) || 1 } : r))} /></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><Input type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="세트 판매가 (원)" /><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></Panel>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#6b6555]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</main>}
+    {screen === 'settings' && <main className="flex-1 overflow-y-auto p-4 md:p-6"><div className="mb-4 flex flex-wrap gap-2"><button onClick={() => setSettingsTab('products')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'products' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>상품 관리</button><button onClick={() => setSettingsTab('bundles')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'bundles' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>세트 관리</button><button onClick={() => setSettingsTab('backup')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'backup' ? 'border-amber-pos bg-amber-pos text-ink' : 'border-line bg-white text-[#6b6555]'}`}>주문 백업</button></div>{settingsTab === 'products' && <ProductSettingsPanel products={products} bundles={bundles} persistProducts={persistProducts} persistBundles={persistBundles} onResetDefaults={resetDefaults} onUpdateLatest={updateToLatestDefaults} />}{settingsTab === 'bundles' && <Panel title="세트 할인 구성"><div className="space-y-2.5">{bundles.length ? bundles.map((b) => <div key={b.id} className="rounded-lg border border-line bg-[#fbfaf5] p-2.5"><div className="flex justify-between text-[13px] font-bold"><span>{b.name} — {won(b.price)}원</span><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="mt-1 text-xs text-[#6b6555]">{b.items.map((it) => `${products.find((p) => p.id === it.productId)?.name || '???'} x${it.qty}`).join(', ')}</div></div>) : <p className="text-xs text-[#8a8370]">등록된 세트가 없습니다</p>}</div><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><Input value={bundleName} onChange={setBundleName} placeholder="세트 이름 (예: 아크릴+포카 세트)" />{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select className="flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input type="number" className="w-[60px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: Number(v) || 1 } : r))} /></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><Input type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="세트 판매가 (원)" /><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></Panel>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#6b6555]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</main>}
 
     {screen === 'log' && <main className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="mb-4 grid gap-3.5 md:grid-cols-4"><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></div>
@@ -512,38 +598,56 @@ export default function App() {
   </div>;
 }
 
-function LoginPage({ loginId, setLoginId, loginPassword, setLoginPassword, loginError, onSubmit }) {
+function LoginPage({ authMode, setAuthMode, loginId, setLoginId, loginPassword, setLoginPassword, loginError, onSubmit }) {
   return <div className="flex h-full items-center justify-center bg-register px-4 text-ink">
     <form onSubmit={onSubmit} className="w-full max-w-sm rounded-2xl border-[3px] border-amber-pos bg-paper p-6 shadow-2xl">
-      <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">부스 포스기</div><p className="mt-1 text-sm text-[#6b6555]">관리자 로그인 후 이용할 수 있습니다.</p></div>
+      <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">부스 포스기</div><p className="mt-1 text-sm text-[#6b6555]">관리자별 행사 프로젝트를 관리합니다.</p></div>
+      <div className="mb-4 grid grid-cols-2 rounded-lg border border-line bg-white p-1 text-sm font-bold">
+        <button type="button" onClick={() => setAuthMode('login')} className={`rounded-md py-2 ${authMode === 'login' ? 'bg-register text-white' : 'text-[#6b6555]'}`}>로그인</button>
+        <button type="button" onClick={() => setAuthMode('signup')} className={`rounded-md py-2 ${authMode === 'signup' ? 'bg-register text-white' : 'text-[#6b6555]'}`}>회원가입</button>
+      </div>
       <label className="mb-3 block text-sm font-bold">아이디<Input value={loginId} onChange={setLoginId} autoFocus className="mt-1" /></label>
       <label className="mb-3 block text-sm font-bold">패스워드<Input type="password" value={loginPassword} onChange={setLoginPassword} className="mt-1" /></label>
       {loginError && <div className="mb-3 rounded bg-danger px-3 py-2 text-xs text-white">{loginError}</div>}
-      <button className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white">로그인</button>
-      <p className="mt-4 text-xs leading-5 text-[#8a8370]">Vercel 환경변수 <b>ADMIN_ID</b>, <b>ADMIN_PASSWORD</b>, <b>AUTH_SECRET</b>를 설정하세요.</p>
+      <button className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white">{authMode === 'signup' ? '회원가입하고 시작' : '로그인'}</button>
+      <p className="mt-4 text-xs leading-5 text-[#8a8370]">기존 <b>ADMIN_ID/ADMIN_PASSWORD</b> 환경변수 계정은 첫 실행 시 관리자 계정으로 자동 등록됩니다.</p>
     </form>
   </div>;
 }
 
-function ProductSettingsPanel({ products, bundles, persistProducts, persistCatalog, onResetDefaults, saving }) {
-  const [draftProducts, setDraftProducts] = useState(products);
-  const [draftBundles, setDraftBundles] = useState(bundles);
-  useEffect(() => {
-    setDraftProducts(products);
-    setDraftBundles(bundles);
-  }, [products, bundles]);
-  const hasChanges = useMemo(() => JSON.stringify(draftProducts) !== JSON.stringify(products) || JSON.stringify(draftBundles) !== JSON.stringify(bundles), [draftProducts, draftBundles, products, bundles]);
-  const sortedProducts = useMemo(() => [...draftProducts].sort((a, b) => String(a.productCode || a.id).localeCompare(String(b.productCode || b.id), 'ko-KR', { numeric: true })), [draftProducts]);
-  const updateProduct = (product, patch) => {
+function ProjectPage({ adminId, projects, newProjectName, setNewProjectName, onCreateProject, onSelectProject, onLogout }) {
+  return <div className="min-h-full bg-paper p-4 text-ink md:p-8">
+    <div className="mx-auto max-w-4xl">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-register p-4 text-white">
+        <div><h1 className="display-font text-xl font-bold">행사 프로젝트 선택</h1><p className="mt-1 text-sm text-white/70">관리자 <b>{adminId}</b>님의 프로젝트입니다.</p></div>
+        <button onClick={onLogout} className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs">로그아웃</button>
+      </header>
+      <form onSubmit={onCreateProject} className="mb-5 rounded-xl border border-line bg-white p-4 shadow-[0_2px_0_#e7e1d1]">
+        <label className="block text-sm font-bold">새 프로젝트 만들기</label>
+        <div className="mt-2 flex gap-2"><Input value={newProjectName} onChange={setNewProjectName} placeholder="예: 8월 행사, 10월 행사" /><button className="shrink-0 rounded-md bg-register px-4 py-2 text-sm font-bold text-white">생성</button></div>
+      </form>
+      <div className="grid gap-3 md:grid-cols-2">
+        {projects.map((project) => <button key={project.id} onClick={() => onSelectProject(project)} className="rounded-xl border border-line bg-white p-4 text-left shadow-[0_2px_0_#e7e1d1] hover:border-amber-pos">
+          <div className="text-lg font-bold text-register">{project.name}</div>
+          <div className="mt-2 text-xs text-[#8a8370]">생성: {new Date(project.createdAt).toLocaleDateString('ko-KR')} · 최근 수정: {new Date(project.updatedAt).toLocaleString('ko-KR')}</div>
+        </button>)}
+      </div>
+      {!projects.length && <div className="rounded-xl border border-dashed border-line bg-white p-8 text-center text-sm text-[#8a8370]">아직 프로젝트가 없습니다. 예: “8월 행사” 프로젝트를 만들어 시작하세요.</div>}
+    </div>
+  </div>;
+}
+
+function ProductSettingsPanel({ products, bundles, persistProducts, persistBundles, onResetDefaults, onUpdateLatest }) {
+  const sortedProducts = useMemo(() => [...products].sort((a, b) => String(a.productCode || a.id).localeCompare(String(b.productCode || b.id), 'ko-KR', { numeric: true })), [products]);
+  const updateProduct = (id, patch) => persistProducts(products.map((product) => {
+    if (product.id !== id) return product;
     const next = { ...product, ...patch };
     const stockQty = Number(next.stockQty ?? next.stock ?? 0) || 0;
-    const normalized = { ...next, stockQty, stock: stockQty, name: productNameFromFields(next) };
-    setDraftProducts((prev) => prev.map((item) => item.id === product.id ? normalized : item));
-  };
-  const saveChanges = () => persistCatalog(draftProducts, draftBundles);
+    return { ...next, stockQty, stock: stockQty, name: productNameFromFields(next) };
+  }));
   const addProduct = () => {
     const id = uid();
-    setDraftProducts((prev) => [...prev, {
+    persistProducts([...products, {
       id,
       productCode: id,
       goodsType: '새 굿즈',
@@ -564,29 +668,34 @@ function ProductSettingsPanel({ products, bundles, persistProducts, persistCatal
   };
   const deleteProduct = (productId) => {
     if (!confirm('이 굿즈를 삭제할까요? 세트 구성에서도 제거됩니다.')) return;
-    setDraftProducts((prev) => prev.filter((x) => x.id !== productId));
-    setDraftBundles((prev) => prev.map((b) => ({ ...b, items: b.items.filter((it) => it.productId !== productId) })).filter((b) => b.items.length));
+    persistProducts(products.filter((x) => x.id !== productId));
+    persistBundles(bundles.map((b) => ({ ...b, items: b.items.filter((it) => it.productId !== productId) })).filter((b) => b.items.length));
   };
 
-  return <Panel title="굿즈 목록 (최신 상품 타입)" actions={<div className="flex flex-wrap justify-end gap-2"><button className="rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addProduct}>+ 굿즈 추가</button><button className="rounded-md bg-danger px-3.5 py-2 text-[13px] text-white" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button><button className="rounded-md bg-cash px-4 py-2 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:bg-[#b8b1a1]" disabled={!hasChanges || saving} onClick={saveChanges}>{saving ? '저장 중...' : '저장'}</button></div>}>
+  return <Panel title="굿즈 목록 (최신 상품 타입)">
+    <div className="mb-2 flex flex-wrap gap-2">
+      <button className="rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addProduct}>+ 굿즈 추가</button>
+      <button className="rounded-md bg-transfer px-3.5 py-2 text-[13px] text-white" onClick={onUpdateLatest}>없는 기본 상품/세트 추가</button>
+      <button className="rounded-md bg-danger px-3.5 py-2 text-[13px] text-white" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button>
+    </div>
     <div className="overflow-x-auto">
       <table className="min-w-[940px] w-full border-collapse text-[12px]">
         <thead><tr className="text-left"><th className="border-b border-line p-1">코드</th><th className="border-b border-line p-1">버튜버</th><th className="border-b border-line p-1">굿즈종류</th><th className="border-b border-line p-1">제작자</th><th className="border-b border-line p-1">가격</th><th className="border-b border-line p-1">현재재고</th><th className="border-b border-line p-1">초기재고</th><th className="border-b border-line p-1">세트명</th><th className="border-b border-line p-1">세트가</th><th /></tr></thead>
         <tbody>{sortedProducts.map((p) => <tr key={p.id}>
-          <td className="border-b border-line p-1"><Input value={p.productCode || p.id} className="w-[72px]" onChange={(v) => updateProduct(p, { productCode: v })} /></td>
-          <td className="border-b border-line p-1"><Input value={p.vtuberName || ''} className="w-[86px]" onChange={(v) => updateProduct(p, { vtuberName: v })} /></td>
-          <td className="border-b border-line p-1"><Input value={p.goodsType || ''} className="w-[112px]" onChange={(v) => updateProduct(p, { goodsType: v })} /></td>
-          <td className="border-b border-line p-1"><Input value={p.creatorName || ''} className="w-[82px]" onChange={(v) => updateProduct(p, { creatorName: v })} /></td>
-          <td className="border-b border-line p-1"><Input type="number" value={p.price} className="w-[78px]" onChange={(v) => updateProduct(p, { price: Number(v) || 0 })} /></td>
-          <td className="border-b border-line p-1"><Input type="number" value={p.stockQty ?? p.stock ?? 0} className="w-[72px]" onChange={(v) => updateProduct(p, { stockQty: Number(v) || 0, stock: Number(v) || 0 })} /></td>
-          <td className="border-b border-line p-1"><Input type="number" value={p.initialStockQty ?? 0} className="w-[72px]" onChange={(v) => updateProduct(p, { initialStockQty: Number(v) || 0 })} /></td>
-          <td className="border-b border-line p-1"><Input value={p.setGroupName || ''} className="w-[130px]" onChange={(v) => updateProduct(p, { setGroupName: v || null, setCreatorName: v ? (p.creatorName || p.setCreatorName) : null })} /></td>
-          <td className="border-b border-line p-1"><Input type="number" value={p.setPrice ?? ''} className="w-[78px]" onChange={(v) => updateProduct(p, { setPrice: v === '' ? null : Number(v) || 0 })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.productCode || p.id} className="w-[72px]" onChange={(v) => updateProduct(p.id, { productCode: v })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.vtuberName || ''} className="w-[86px]" onChange={(v) => updateProduct(p.id, { vtuberName: v })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.goodsType || ''} className="w-[112px]" onChange={(v) => updateProduct(p.id, { goodsType: v })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.creatorName || ''} className="w-[82px]" onChange={(v) => updateProduct(p.id, { creatorName: v })} /></td>
+          <td className="border-b border-line p-1"><Input type="number" value={p.price} className="w-[78px]" onChange={(v) => updateProduct(p.id, { price: Number(v) || 0 })} /></td>
+          <td className="border-b border-line p-1"><Input type="number" value={p.stockQty ?? p.stock ?? 0} className="w-[72px]" onChange={(v) => updateProduct(p.id, { stockQty: Number(v) || 0, stock: Number(v) || 0 })} /></td>
+          <td className="border-b border-line p-1"><Input type="number" value={p.initialStockQty ?? 0} className="w-[72px]" onChange={(v) => updateProduct(p.id, { initialStockQty: Number(v) || 0 })} /></td>
+          <td className="border-b border-line p-1"><Input value={p.setGroupName || ''} className="w-[130px]" onChange={(v) => updateProduct(p.id, { setGroupName: v || null, setCreatorName: v ? (p.creatorName || p.setCreatorName) : null })} /></td>
+          <td className="border-b border-line p-1"><Input type="number" value={p.setPrice ?? ''} className="w-[78px]" onChange={(v) => updateProduct(p.id, { setPrice: v === '' ? null : Number(v) || 0 })} /></td>
           <td className="border-b border-line p-1"><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => deleteProduct(p.id)}>삭제</button></td>
         </tr>)}</tbody>
       </table>
     </div>
-    <p className="mt-2 text-[11px] leading-5 text-[#8a8370]">입력 내용은 바로 서버에 저장되지 않습니다. 모든 수정을 마친 뒤 저장 버튼을 눌러 한 번에 반영해주세요.</p>
+    <p className="mt-2 text-[11px] leading-5 text-[#8a8370]">버튜버/굿즈종류/제작자를 수정하면 판매 화면 이름도 최신 상품 타입 형식으로 자동 갱신됩니다.</p>
   </Panel>;
 }
 

@@ -1,15 +1,11 @@
 import { sql } from '@vercel/postgres';
-import { requireAuth, validateAdminPassword } from './lib/auth.js';
+import { assertPostgresConnectionString, requireAuth, validateAdminPassword } from './lib/auth.js';
 import { CURRENT_SEED_VERSION, getDefaultBundles, getDefaultProducts } from './lib/defaultData.js';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
+const displayName = (product) => product.name || [product.vtuberName, product.goodsType, product.creatorName ? `(${product.creatorName})` : ''].filter(Boolean).join(' ') || '새 굿즈';
 
-function productDisplayName(product) {
-  if (product.name) return product.name;
-  return [product.vtuberName, product.goodsType, product.creatorName ? `(${product.creatorName})` : ''].filter(Boolean).join(' ') || '새 굿즈';
-}
-
-function normalizeProduct(product) {
+function normalizeProduct(product = {}) {
   const now = new Date().toISOString();
   const productCode = product.productCode || product.id || uid();
   const stockQty = Number(product.stockQty ?? product.stock ?? 0) || 0;
@@ -33,322 +29,157 @@ function normalizeProduct(product) {
   };
 }
 
-function hasPostgresConnectionString() {
-  return Boolean(
-    process.env.POSTGRES_URL ||
-    process.env.POSTGRES_PRISMA_URL ||
-    process.env.POSTGRES_URL_NON_POOLING ||
-    process.env.DATABASE_URL,
-  );
-}
-
-function assertPostgresConnectionString() {
-  if (hasPostgresConnectionString()) return;
-  throw new Error('Vercel 환경변수 POSTGRES_URL이 설정되지 않았습니다. Vercel Storage에서 Postgres를 연결하거나 POSTGRES_URL을 Environment Variables에 추가하세요.');
-}
-
 async function initDb() {
   assertPostgresConnectionString();
-  await sql`CREATE TABLE IF NOT EXISTS pos_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`;
-  await sql`CREATE TABLE IF NOT EXISTS pos_products (id TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL, stock INTEGER NOT NULL)`;
-  await sql`CREATE TABLE IF NOT EXISTS pos_bundles (id TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL, items JSONB NOT NULL)`;
-  await sql`CREATE TABLE IF NOT EXISTS pos_sales (id TEXT PRIMARY KEY, time TIMESTAMPTZ NOT NULL, method TEXT NOT NULL, total INTEGER NOT NULL, lines JSONB NOT NULL)`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS product_code TEXT`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS goods_type TEXT`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS vtuber_name TEXT`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS creator_name TEXT`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS stock_qty INTEGER`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS initial_stock_qty INTEGER`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS size TEXT`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS set_creator_name TEXT`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS set_group_name TEXT`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS set_price INTEGER`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS set_description TEXT`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`;
-  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_projects (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL REFERENCES pos_admins(id) ON DELETE CASCADE, name TEXT NOT NULL, seed_version INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+  await sql`CREATE INDEX IF NOT EXISTS pos_projects_admin_id_idx ON pos_projects(admin_id)`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_products (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, stock INTEGER NOT NULL, product_code TEXT, goods_type TEXT, vtuber_name TEXT, creator_name TEXT, stock_qty INTEGER, initial_stock_qty INTEGER, size TEXT, set_creator_name TEXT, set_group_name TEXT, set_price INTEGER, set_description TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY(project_id, id))`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_bundles (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, items JSONB NOT NULL, PRIMARY KEY(project_id, id))`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_sales (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, time TIMESTAMPTZ NOT NULL, method TEXT NOT NULL, total INTEGER NOT NULL, lines JSONB NOT NULL, PRIMARY KEY(project_id, id))`;
+  await sql`CREATE INDEX IF NOT EXISTS pos_sales_project_time_idx ON pos_sales(project_id, time)`;
 }
 
-async function seedIfNeeded() {
+async function assertProject(adminId, projectId) {
   await initDb();
-  const meta = await sql`SELECT value FROM pos_meta WHERE key = 'seed_version'`;
-  const count = await sql`SELECT COUNT(*)::int AS count FROM pos_products`;
-  const seeded = Number(meta.rows[0]?.value || 0) === CURRENT_SEED_VERSION && count.rows[0]?.count > 0;
-  if (seeded) return;
-
-  await sql`DELETE FROM pos_products`;
-  await sql`DELETE FROM pos_bundles`;
-  for (const p of getDefaultProducts()) {
-    const product = normalizeProduct(p);
-    await sql`INSERT INTO pos_products (id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at) VALUES (${product.id}, ${productDisplayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt})`;
-  }
-  for (const b of getDefaultBundles()) {
-    await sql`INSERT INTO pos_bundles (id, name, price, items) VALUES (${b.id}, ${b.name}, ${b.price}, ${JSON.stringify(b.items)}::jsonb)`;
-  }
-  await sql`INSERT INTO pos_meta (key, value) VALUES ('seed_version', ${String(CURRENT_SEED_VERSION)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+  const project = (await sql`SELECT id FROM pos_projects WHERE id = ${projectId} AND admin_id = ${adminId}`).rows[0];
+  if (!project) throw new Error('프로젝트를 찾을 수 없거나 접근 권한이 없습니다.');
 }
 
-async function readState() {
-  await seedIfNeeded();
+async function listProjects(adminId) {
+  await initDb();
+  const result = await sql`SELECT id, name, seed_version, created_at, updated_at FROM pos_projects WHERE admin_id = ${adminId} ORDER BY updated_at DESC, created_at DESC`;
+  return { projects: result.rows.map((project) => ({ id: project.id, name: project.name, seedVersion: Number(project.seed_version || 0), createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString() })) };
+}
+
+async function insertProduct(projectId, input, onlyMissing = false) {
+  const product = normalizeProduct(input);
+  if (onlyMissing) {
+    await sql`INSERT INTO pos_products (project_id, id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at) VALUES (${projectId}, ${product.id}, ${displayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt}) ON CONFLICT (project_id, id) DO NOTHING`;
+    return;
+  }
+  await sql`INSERT INTO pos_products (project_id, id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at) VALUES (${projectId}, ${product.id}, ${displayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt})`;
+}
+
+async function seedProject(adminId, projectId) {
+  await assertProject(adminId, projectId);
+  await sql`DELETE FROM pos_products WHERE project_id = ${projectId}`;
+  await sql`DELETE FROM pos_bundles WHERE project_id = ${projectId}`;
+  for (const product of getDefaultProducts()) await insertProduct(projectId, product);
+  for (const bundle of getDefaultBundles()) await sql`INSERT INTO pos_bundles (project_id, id, name, price, items) VALUES (${projectId}, ${bundle.id}, ${bundle.name}, ${bundle.price}, ${JSON.stringify(bundle.items)}::jsonb)`;
+  await sql`UPDATE pos_projects SET seed_version = ${CURRENT_SEED_VERSION}, updated_at = NOW() WHERE id = ${projectId}`;
+}
+
+async function addMissingDefaults(adminId, projectId) {
+  await assertProject(adminId, projectId);
+  // Existing rows, including inactive products and customized bundles, are preserved.
+  for (const product of getDefaultProducts()) await insertProduct(projectId, product, true);
+  for (const bundle of getDefaultBundles()) await sql`INSERT INTO pos_bundles (project_id, id, name, price, items) VALUES (${projectId}, ${bundle.id}, ${bundle.name}, ${bundle.price}, ${JSON.stringify(bundle.items)}::jsonb) ON CONFLICT (project_id, id) DO NOTHING`;
+  await sql`UPDATE pos_projects SET seed_version = ${CURRENT_SEED_VERSION}, updated_at = NOW() WHERE id = ${projectId}`;
+}
+
+async function createProject(adminId, name) {
+  const projectName = String(name || '').trim();
+  if (!projectName) throw new Error('프로젝트 이름을 입력해주세요.');
+  await initDb();
+  const id = uid();
+  await sql`INSERT INTO pos_projects (id, admin_id, name) VALUES (${id}, ${adminId}, ${projectName})`;
+  await seedProject(adminId, id);
+  return { project: { id, name: projectName } };
+}
+
+async function readState(adminId, projectId) {
+  await assertProject(adminId, projectId);
   const [products, bundles, sales] = await Promise.all([
-    sql`SELECT id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at FROM pos_products WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY id`,
-    sql`SELECT id, name, price, items FROM pos_bundles ORDER BY id`,
-    sql`SELECT id, time, method, total, lines FROM pos_sales ORDER BY time ASC`,
+    sql`SELECT * FROM pos_products WHERE project_id = ${projectId} AND COALESCE(is_active, TRUE) = TRUE ORDER BY id`,
+    sql`SELECT id, name, price, items FROM pos_bundles WHERE project_id = ${projectId} ORDER BY id`,
+    sql`SELECT id, time, method, total, lines FROM pos_sales WHERE project_id = ${projectId} ORDER BY time ASC`,
   ]);
   return {
-    products: products.rows.map((p) => ({
-      id: p.id,
-      productCode: p.product_code || p.id,
-      goodsType: p.goods_type || p.name,
-      vtuberName: p.vtuber_name || '',
-      creatorName: p.creator_name || '',
-      stockQty: Number(p.stock_qty ?? p.stock ?? 0),
-      initialStockQty: Number(p.initial_stock_qty ?? p.stock_qty ?? p.stock ?? 0),
-      size: p.size || null,
-      price: Number(p.price) || 0,
-      setCreatorName: p.set_creator_name || null,
-      setGroupName: p.set_group_name || null,
-      setPrice: p.set_price == null ? null : Number(p.set_price) || 0,
-      setDescription: p.set_description || null,
-      isActive: p.is_active !== false,
-      createdAt: p.created_at ? new Date(p.created_at).toISOString() : new Date().toISOString(),
-      updatedAt: p.updated_at ? new Date(p.updated_at).toISOString() : new Date().toISOString(),
-      name: p.name || productDisplayName({ vtuberName: p.vtuber_name, goodsType: p.goods_type, creatorName: p.creator_name }),
-      stock: Number(p.stock_qty ?? p.stock ?? 0),
-    })),
-    bundles: bundles.rows.map((b) => ({ ...b, items: b.items || [] })),
-    sales: sales.rows.map((s) => ({ ...s, time: new Date(s.time).toISOString(), lines: s.lines || [] })),
+    products: products.rows.map((product) => ({ id: product.id, productCode: product.product_code || product.id, goodsType: product.goods_type || product.name, vtuberName: product.vtuber_name || '', creatorName: product.creator_name || '', stockQty: Number(product.stock_qty ?? product.stock ?? 0), initialStockQty: Number(product.initial_stock_qty ?? product.stock_qty ?? product.stock ?? 0), size: product.size || null, price: Number(product.price) || 0, setCreatorName: product.set_creator_name || null, setGroupName: product.set_group_name || null, setPrice: product.set_price == null ? null : Number(product.set_price) || 0, setDescription: product.set_description || null, isActive: product.is_active !== false, createdAt: new Date(product.created_at).toISOString(), updatedAt: new Date(product.updated_at).toISOString(), name: product.name, stock: Number(product.stock_qty ?? product.stock ?? 0) })),
+    bundles: bundles.rows.map((bundle) => ({ ...bundle, items: bundle.items || [] })),
+    sales: sales.rows.map((sale) => ({ ...sale, time: new Date(sale.time).toISOString(), lines: sale.lines || [] })),
   };
 }
 
-async function replaceProducts(products) {
-  await initDb();
-  await sql`DELETE FROM pos_products`;
-  for (const p of products) {
-    const product = normalizeProduct(p);
-    await sql`INSERT INTO pos_products (id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at) VALUES (${product.id}, ${productDisplayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt})`;
-  }
+async function replaceProducts(adminId, projectId, products) {
+  await assertProject(adminId, projectId);
+  await sql`DELETE FROM pos_products WHERE project_id = ${projectId}`;
+  for (const product of products) await insertProduct(projectId, product);
+  await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
 
-async function updateProduct(productInput) {
-  await initDb();
-  const product = normalizeProduct(productInput || {});
-  const result = await sql`
-    UPDATE pos_products
-    SET name = ${productDisplayName(product)},
-        price = ${product.price},
-        stock = ${product.stockQty},
-        product_code = ${product.productCode},
-        goods_type = ${product.goodsType},
-        vtuber_name = ${product.vtuberName},
-        creator_name = ${product.creatorName},
-        stock_qty = ${product.stockQty},
-        initial_stock_qty = ${product.initialStockQty},
-        size = ${product.size},
-        set_creator_name = ${product.setCreatorName},
-        set_group_name = ${product.setGroupName},
-        set_price = ${product.setPrice},
-        set_description = ${product.setDescription},
-        is_active = ${product.isActive},
-        updated_at = NOW()
-    WHERE id = ${product.id}
-  `;
-  if (result.rowCount === 0) throw new Error('수정할 상품을 찾을 수 없습니다. 새 상품은 + 굿즈 추가 후 저장해주세요.');
+async function replaceBundles(adminId, projectId, bundles) {
+  await assertProject(adminId, projectId);
+  await sql`DELETE FROM pos_bundles WHERE project_id = ${projectId}`;
+  for (const bundle of bundles) await sql`INSERT INTO pos_bundles (project_id, id, name, price, items) VALUES (${projectId}, ${bundle.id || uid()}, ${bundle.name || '새 세트'}, ${Number(bundle.price) || 0}, ${JSON.stringify(bundle.items || [])}::jsonb)`;
+  await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
 
-async function saveCatalog({ products = [], bundles = [] }) {
-  await initDb();
-  await sql`UPDATE pos_products SET is_active = FALSE, updated_at = NOW()`;
-  for (const p of products) {
-    const product = normalizeProduct(p);
-    await sql`
-      INSERT INTO pos_products (id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at)
-      VALUES (${product.id}, ${productDisplayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, TRUE, ${product.createdAt}, ${product.updatedAt})
-      ON CONFLICT (id) DO UPDATE
-      SET name = EXCLUDED.name,
-          price = EXCLUDED.price,
-          stock = EXCLUDED.stock,
-          product_code = EXCLUDED.product_code,
-          goods_type = EXCLUDED.goods_type,
-          vtuber_name = EXCLUDED.vtuber_name,
-          creator_name = EXCLUDED.creator_name,
-          stock_qty = EXCLUDED.stock_qty,
-          initial_stock_qty = EXCLUDED.initial_stock_qty,
-          size = EXCLUDED.size,
-          set_creator_name = EXCLUDED.set_creator_name,
-          set_group_name = EXCLUDED.set_group_name,
-          set_price = EXCLUDED.set_price,
-          set_description = EXCLUDED.set_description,
-          is_active = TRUE,
-          updated_at = NOW()
-    `;
-  }
-
-  await sql`DELETE FROM pos_bundles`;
-  for (const b of bundles) {
-    await sql`INSERT INTO pos_bundles (id, name, price, items) VALUES (${b.id || uid()}, ${b.name || '새 세트'}, ${Number(b.price) || 0}, ${JSON.stringify(b.items || [])}::jsonb)`;
-  }
-}
-
-async function upsertDefaultCatalog() {
-  await initDb();
-  for (const p of getDefaultProducts()) {
-    const product = normalizeProduct(p);
-    await sql`
-      INSERT INTO pos_products (id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at)
-      VALUES (${product.id}, ${productDisplayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt})
-      ON CONFLICT (id) DO UPDATE
-      SET name = EXCLUDED.name,
-          price = EXCLUDED.price,
-          product_code = EXCLUDED.product_code,
-          goods_type = EXCLUDED.goods_type,
-          vtuber_name = EXCLUDED.vtuber_name,
-          creator_name = EXCLUDED.creator_name,
-          initial_stock_qty = EXCLUDED.initial_stock_qty,
-          size = EXCLUDED.size,
-          set_creator_name = EXCLUDED.set_creator_name,
-          set_group_name = EXCLUDED.set_group_name,
-          set_price = EXCLUDED.set_price,
-          set_description = EXCLUDED.set_description,
-          is_active = TRUE,
-          updated_at = NOW()
-    `;
-  }
-  for (const b of getDefaultBundles()) {
-    await sql`
-      INSERT INTO pos_bundles (id, name, price, items)
-      VALUES (${b.id}, ${b.name}, ${b.price}, ${JSON.stringify(b.items)}::jsonb)
-      ON CONFLICT (id) DO UPDATE
-      SET name = EXCLUDED.name,
-          price = EXCLUDED.price,
-          items = EXCLUDED.items
-    `;
-  }
-  await sql`INSERT INTO pos_meta (key, value) VALUES ('seed_version', ${String(CURRENT_SEED_VERSION)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
-}
-
-async function replaceBundles(bundles) {
-  await initDb();
-  await sql`DELETE FROM pos_bundles`;
-  for (const b of bundles) {
-    await sql`INSERT INTO pos_bundles (id, name, price, items) VALUES (${b.id || uid()}, ${b.name || '새 세트'}, ${Number(b.price) || 0}, ${JSON.stringify(b.items || [])}::jsonb)`;
-  }
-}
-
-async function finalizeSale({ localOrderId, createdAt, method, total, cart }) {
-  await initDb();
+async function finalizeSale(adminId, projectId, { localOrderId, createdAt, method, total, cart }) {
+  await assertProject(adminId, projectId);
   if (!Array.isArray(cart) || !cart.length) throw new Error('장바구니가 비어 있습니다.');
   const saleId = localOrderId || uid();
-  const exists = (await sql`SELECT id FROM pos_sales WHERE id = ${saleId}`).rows[0];
-  if (exists) return;
-
-  const products = (await sql`SELECT id, stock, stock_qty FROM pos_products`).rows;
+  if ((await sql`SELECT id FROM pos_sales WHERE project_id = ${projectId} AND id = ${saleId}`).rows[0]) return;
+  const products = (await sql`SELECT id, stock, stock_qty FROM pos_products WHERE project_id = ${projectId}`).rows;
   const soldByProduct = new Map();
   for (const line of cart) {
     if (line.type === 'product') soldByProduct.set(line.id, (soldByProduct.get(line.id) || 0) + Number(line.qty || 0));
     if (line.type === 'bundle') {
-      const bundle = (await sql`SELECT items FROM pos_bundles WHERE id = ${line.id}`).rows[0];
-      for (const item of bundle?.items || []) {
-        soldByProduct.set(item.productId, (soldByProduct.get(item.productId) || 0) + Number(item.qty || 0) * Number(line.qty || 0));
-      }
+      const bundle = (await sql`SELECT items FROM pos_bundles WHERE project_id = ${projectId} AND id = ${line.id}`).rows[0];
+      for (const item of bundle?.items || []) soldByProduct.set(item.productId, (soldByProduct.get(item.productId) || 0) + Number(item.qty || 0) * Number(line.qty || 0));
     }
   }
-
   for (const [productId, sold] of soldByProduct) {
-    const product = products.find((p) => p.id === productId);
+    const product = products.find((item) => item.id === productId);
     if (!product || Number(product.stock_qty ?? product.stock ?? 0) < sold) throw new Error('재고가 부족합니다. 새로고침 후 다시 시도해주세요.');
   }
-  for (const [productId, sold] of soldByProduct) {
-    await sql`UPDATE pos_products SET stock = stock - ${sold}, stock_qty = COALESCE(stock_qty, stock) - ${sold}, updated_at = NOW() WHERE id = ${productId}`;
-  }
-
+  for (const [productId, sold] of soldByProduct) await sql`UPDATE pos_products SET stock = stock - ${sold}, stock_qty = COALESCE(stock_qty, stock) - ${sold}, updated_at = NOW() WHERE project_id = ${projectId} AND id = ${productId}`;
   const sale = { id: saleId, time: createdAt || new Date().toISOString(), method, total: Number(total) || 0, lines: cart.map(({ subItems, ...line }) => line) };
-  await sql`INSERT INTO pos_sales (id, time, method, total, lines) VALUES (${sale.id}, ${sale.time}, ${sale.method}, ${sale.total}, ${JSON.stringify(sale.lines)}::jsonb)`;
+  await sql`INSERT INTO pos_sales (project_id, id, time, method, total, lines) VALUES (${projectId}, ${sale.id}, ${sale.time}, ${sale.method}, ${sale.total}, ${JSON.stringify(sale.lines)}::jsonb)`;
+  await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
 
-async function finalizeExternalSale(order) {
-  const items = Array.isArray(order.items) ? order.items : [];
-  if (!items.length) throw new Error('주문 상품이 비어 있습니다.');
-
-  await initDb();
-  const products = (await sql`SELECT id, name, price, product_code, goods_type, vtuber_name, creator_name FROM pos_products`).rows;
-  const cart = items.map((item) => {
-    const product = products.find((p) => (
-      p.product_code === item.productCode ||
-      p.id === item.productCode ||
-      p.id === item.id ||
-      (
-        p.goods_type === item.goodsType &&
-        p.vtuber_name === item.vtuberName &&
-        p.creator_name === item.creatorName
-      )
-    ));
-    const qty = Number(item.qty ?? item.quantity ?? item.count ?? 1) || 1;
-    return {
-      type: 'product',
-      id: product?.id || item.productCode || item.id,
-      productCode: item.productCode || product?.product_code || product?.id,
-      name: product?.name || productDisplayName(item),
-      unitPrice: Number(item.price ?? item.unitPrice ?? product?.price ?? 0) || 0,
-      qty,
-      goodsType: item.goodsType,
-      vtuberName: item.vtuberName,
-      creatorName: item.creatorName,
-    };
-  });
-
-  const method = order.paymentMethod === 'BANK_TRANSFER' || order.paymentMethod === 'transfer' ? 'transfer' : 'cash';
-  await finalizeSale({
-    localOrderId: order.localOrderId || order.orderId || uid(),
-    createdAt: order.createdAt || new Date().toISOString(),
-    method,
-    total: Number(order.totalAmount ?? order.total ?? cart.reduce((sum, line) => sum + line.unitPrice * line.qty, 0)) || 0,
-    cart,
-  });
-}
-
-async function voidSale(id) {
-  await initDb();
-  const sale = (await sql`SELECT lines FROM pos_sales WHERE id = ${id}`).rows[0];
+async function voidSale(adminId, projectId, id) {
+  await assertProject(adminId, projectId);
+  const sale = (await sql`SELECT lines FROM pos_sales WHERE project_id = ${projectId} AND id = ${id}`).rows[0];
   if (!sale) return;
   for (const line of sale.lines || []) {
-    if (line.type === 'product') await sql`UPDATE pos_products SET stock = stock + ${Number(line.qty) || 0}, stock_qty = COALESCE(stock_qty, stock) + ${Number(line.qty) || 0}, updated_at = NOW() WHERE id = ${line.id}`;
+    if (line.type === 'product') await sql`UPDATE pos_products SET stock = stock + ${Number(line.qty) || 0}, stock_qty = COALESCE(stock_qty, stock) + ${Number(line.qty) || 0}, updated_at = NOW() WHERE project_id = ${projectId} AND id = ${line.id}`;
     if (line.type === 'bundle') {
-      const bundle = (await sql`SELECT items FROM pos_bundles WHERE id = ${line.id}`).rows[0];
-      for (const item of bundle?.items || []) {
-        await sql`UPDATE pos_products SET stock = stock + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, stock_qty = COALESCE(stock_qty, stock) + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, updated_at = NOW() WHERE id = ${item.productId}`;
-      }
+      const bundle = (await sql`SELECT items FROM pos_bundles WHERE project_id = ${projectId} AND id = ${line.id}`).rows[0];
+      for (const item of bundle?.items || []) await sql`UPDATE pos_products SET stock = stock + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, stock_qty = COALESCE(stock_qty, stock) + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, updated_at = NOW() WHERE project_id = ${projectId} AND id = ${item.productId}`;
     }
   }
-  await sql`DELETE FROM pos_sales WHERE id = ${id}`;
+  await sql`DELETE FROM pos_sales WHERE project_id = ${projectId} AND id = ${id}`;
+  await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
 
-async function clearSales(password) {
-  if (!validateAdminPassword(password)) throw new Error('패스워드가 올바르지 않습니다.');
-  await initDb();
-  await sql`DELETE FROM pos_sales`;
+async function clearSales(adminId, projectId, password) {
+  if (!await validateAdminPassword(adminId, password)) throw new Error('패스워드가 올바르지 않습니다.');
+  await assertProject(adminId, projectId);
+  await sql`DELETE FROM pos_sales WHERE project_id = ${projectId}`;
+  await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
 
 export default async function handler(req, res) {
-  if (!requireAuth(req, res)) return;
+  const admin = requireAuth(req, res);
+  if (!admin) return;
   try {
-    if (req.method === 'GET') return res.status(200).json(await readState());
+    const projectId = req.query?.projectId || req.body?.projectId || req.body?.payload?.projectId;
+    if (req.method === 'GET') return res.status(200).json(projectId ? await readState(admin.id, projectId) : await listProjects(admin.id));
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-    const { action, payload } = req.body || {};
-    if (!action && Array.isArray(req.body?.items)) await finalizeExternalSale(req.body);
-    else if (action === 'replaceProducts') await replaceProducts(payload?.products || []);
-    else if (action === 'updateProduct') await updateProduct(payload?.product);
-    else if (action === 'saveCatalog') await saveCatalog(payload || {});
-    else if (action === 'replaceBundles') await replaceBundles(payload?.bundles || []);
-    else if (action === 'finalizeSale') await finalizeSale(payload || {});
-    else if (action === 'voidSale') await voidSale(payload?.id);
-    else if (action === 'clearSales') await clearSales(payload?.password);
-    else if (action === 'upsertDefaults') await upsertDefaultCatalog();
-    else if (action === 'resetDefaults') { await replaceProducts(getDefaultProducts()); await replaceBundles(getDefaultBundles()); }
+    const { action, payload = {} } = req.body || {};
+    if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
+    if (!projectId) return res.status(400).json({ error: 'projectId가 필요합니다.' });
+    if (action === 'replaceProducts') await replaceProducts(admin.id, projectId, payload.products || []);
+    else if (action === 'replaceBundles') await replaceBundles(admin.id, projectId, payload.bundles || []);
+    else if (action === 'finalizeSale') await finalizeSale(admin.id, projectId, payload || {});
+    else if (action === 'voidSale') await voidSale(admin.id, projectId, payload.id);
+    else if (action === 'clearSales') await clearSales(admin.id, projectId, payload.password);
+    else if (action === 'resetDefaults') await seedProject(admin.id, projectId);
+    else if (action === 'upsertDefaults') await addMissingDefaults(admin.id, projectId);
     else return res.status(400).json({ error: '알 수 없는 작업입니다.' });
-
-    return res.status(200).json(await readState());
+    return res.status(200).json(await readState(admin.id, projectId));
   } catch (error) {
     return res.status(500).json({ error: error.message || '서버 오류가 발생했습니다.' });
   }
