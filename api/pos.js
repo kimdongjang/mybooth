@@ -33,11 +33,53 @@ function normalizeProduct(product = {}) {
 async function initDb() {
   assertPostgresConnectionString();
   await sql`CREATE TABLE IF NOT EXISTS pos_projects (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL REFERENCES pos_admins(id) ON DELETE CASCADE, name TEXT NOT NULL, seed_version INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+  await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS seed_version INTEGER NOT NULL DEFAULT 0`;
   await sql`CREATE INDEX IF NOT EXISTS pos_projects_admin_id_idx ON pos_projects(admin_id)`;
   await sql`CREATE TABLE IF NOT EXISTS pos_products (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, stock INTEGER NOT NULL, product_code TEXT, goods_type TEXT, vtuber_name TEXT, creator_name TEXT, stock_qty INTEGER, initial_stock_qty INTEGER, size TEXT, set_creator_name TEXT, set_group_name TEXT, set_price INTEGER, set_description TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY(project_id, id))`;
   await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS image_url TEXT`;
   await sql`CREATE TABLE IF NOT EXISTS pos_bundles (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, items JSONB NOT NULL, PRIMARY KEY(project_id, id))`;
   await sql`CREATE TABLE IF NOT EXISTS pos_sales (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, time TIMESTAMPTZ NOT NULL, method TEXT NOT NULL, total INTEGER NOT NULL, lines JSONB NOT NULL, PRIMARY KEY(project_id, id))`;
+  // Upgrade pre-project tables atomically. Unowned legacy rows stay NULL and
+  // cannot be read/deleted by project-scoped requests; never guess their owner.
+  await sql`DO $$
+    DECLARE table_name TEXT; legacy_pk TEXT;
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_class t
+        WHERE t.oid IN ('pos_products'::regclass, 'pos_bundles'::regclass, 'pos_sales'::regclass)
+          AND (NOT EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = t.oid AND a.attname = 'project_id' AND NOT a.attisdropped)
+            OR EXISTS (SELECT 1 FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attname = 'id'
+              WHERE c.conrelid = t.oid AND c.contype = 'p' AND c.conkey = ARRAY[a.attnum]))
+      ) THEN RETURN; END IF;
+      LOCK TABLE pos_products, pos_bundles, pos_sales IN ACCESS EXCLUSIVE MODE;
+      FOREACH table_name IN ARRAY ARRAY['pos_products', 'pos_bundles', 'pos_sales'] LOOP
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS project_id TEXT REFERENCES pos_projects(id) ON DELETE CASCADE', table_name);
+        SELECT c.conname INTO legacy_pk
+          FROM pg_constraint c JOIN pg_attribute a
+            ON a.attrelid = c.conrelid AND a.attname = 'id'
+          WHERE c.conrelid = table_name::regclass AND c.contype = 'p'
+            AND c.conkey = ARRAY[a.attnum];
+        IF legacy_pk IS NOT NULL THEN
+          EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', table_name, legacy_pk);
+        END IF;
+        EXECUTE format('CREATE UNIQUE INDEX IF NOT EXISTS %I ON %I (project_id, id)', table_name || '_project_id_id_uidx', table_name);
+      END LOOP;
+    END $$`;
+  await sql`ALTER TABLE pos_products
+    ADD COLUMN IF NOT EXISTS product_code TEXT,
+    ADD COLUMN IF NOT EXISTS goods_type TEXT,
+    ADD COLUMN IF NOT EXISTS vtuber_name TEXT,
+    ADD COLUMN IF NOT EXISTS creator_name TEXT,
+    ADD COLUMN IF NOT EXISTS stock_qty INTEGER,
+    ADD COLUMN IF NOT EXISTS initial_stock_qty INTEGER,
+    ADD COLUMN IF NOT EXISTS size TEXT,
+    ADD COLUMN IF NOT EXISTS set_creator_name TEXT,
+    ADD COLUMN IF NOT EXISTS set_group_name TEXT,
+    ADD COLUMN IF NOT EXISTS set_price INTEGER,
+    ADD COLUMN IF NOT EXISTS set_description TEXT,
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`;
   await sql`CREATE INDEX IF NOT EXISTS pos_sales_project_time_idx ON pos_sales(project_id, time)`;
 }
 

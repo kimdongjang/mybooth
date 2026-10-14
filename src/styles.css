@@ -23,6 +23,7 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+:root { color-scheme: light; }
 html, body, #root { height: 100%; margin: 0; }
 body {
   font-family: 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
