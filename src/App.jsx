@@ -54,6 +54,7 @@ export default function App() {
   const [adminId, setAdminId] = useState(() => sessionStorage.getItem(AUTH_ADMIN_KEY) || '');
   const [loginId, setLoginId] = useState('admin');
   const [loginPassword, setLoginPassword] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [authMode, setAuthMode] = useState('login');
   const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(Boolean(token));
@@ -246,12 +247,13 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
     try {
-      const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify({ mode: authMode, id: loginId, password: loginPassword }) });
+      const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify({ mode: authMode, id: loginId, password: loginPassword, ...(authMode === 'signup' ? { email: loginEmail } : {}) }) });
       sessionStorage.setItem(AUTH_TOKEN_KEY, data.token);
       sessionStorage.setItem(AUTH_ADMIN_KEY, data.admin?.id || loginId);
       setToken(data.token);
       setAdminId(data.admin?.id || loginId);
       setLoginPassword('');
+      setLoginEmail('');
     } catch (err) {
       setLoginError(err.message);
     }
@@ -592,7 +594,7 @@ export default function App() {
   }, [saleLineProductEntries, sales]);
   const selectedCreatorSummary = creatorSalesSummary.find((summary) => summary.creator === logCreatorFilter);
 
-  if (!token) return <LoginPage authMode={authMode} setAuthMode={setAuthMode} loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginError={loginError} onSubmit={login} />;
+  if (!token) return <LoginPage authMode={authMode} setAuthMode={setAuthMode} loginId={loginId} setLoginId={setLoginId} loginPassword={loginPassword} setLoginPassword={setLoginPassword} loginEmail={loginEmail} setLoginEmail={setLoginEmail} loginError={loginError} onSubmit={login} />;
   if (loading || projectLoading) return <div className="flex h-full items-center justify-center bg-paper text-register"><div className="rounded-xl border border-line bg-white p-6 font-bold">DB에서 데이터를 불러오는 중...</div></div>;
   if (!selectedProject) return <ProjectPage adminId={adminId} projects={projects} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} onLogout={logout} />;
 
@@ -657,7 +659,7 @@ export default function App() {
   </div>;
 }
 
-function LoginPage({ authMode, setAuthMode, loginId, setLoginId, loginPassword, setLoginPassword, loginError, onSubmit }) {
+function LoginPage({ authMode, setAuthMode, loginId, setLoginId, loginPassword, setLoginPassword, loginEmail, setLoginEmail, loginError, onSubmit }) {
   return <div className="flex min-h-full items-center justify-center bg-paper px-4 py-10 text-ink">
     <form onSubmit={onSubmit} className="w-full max-w-sm rounded-2xl border border-line bg-white p-8 shadow-xl shadow-blue-900/5">
       <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">마이 부스</div><p className="mt-1 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
@@ -666,6 +668,7 @@ function LoginPage({ authMode, setAuthMode, loginId, setLoginId, loginPassword, 
         <button type="button" onClick={() => setAuthMode('signup')} className={`rounded-md py-2 ${authMode === 'signup' ? 'bg-register text-white' : 'text-[#526078]'}`}>회원가입</button>
       </div>
       <label className="mb-3 block text-sm font-bold">아이디<Input value={loginId} onChange={setLoginId} autoFocus className="mt-1" /></label>
+      {authMode === 'signup' && <label className="mb-3 block text-sm font-bold">이메일<Input type="email" name="email" autoComplete="email" required maxLength={254} value={loginEmail} onChange={setLoginEmail} className="mt-1" /></label>}
       <label className="mb-3 block text-sm font-bold">패스워드<Input type="password" value={loginPassword} onChange={setLoginPassword} className="mt-1" /></label>
       {loginError && <div className="mb-3 rounded bg-danger px-3 py-2 text-xs text-white">{loginError}</div>}
       <button className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white">{authMode === 'signup' ? '회원가입하고 시작' : '로그인'}</button>
