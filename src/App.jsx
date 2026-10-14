@@ -66,6 +66,26 @@ export default function App() {
   const [readyScope, setReadyScope] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [screen, setScreen] = useState('pos');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [orderExpanded, setOrderExpanded] = useState(false);
+  const menuToggle = useRef(null);
+
+  useEffect(() => {
+    setMenuOpen(false);
+    setOrderExpanded(false);
+  }, [screen, selectedProject?.id]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        menuToggle.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [menuOpen]);
   const [settingsTab, setSettingsTab] = useState('products');
   const [products, setProducts] = useState([]);
   const [bundles, setBundles] = useState([]);
@@ -298,8 +318,10 @@ export default function App() {
           if (availableStock(product, prev) <= 0) return prev;
         } else if (bundleAvailable(bundles.find((b) => b.id === line.id), prev) <= 0) return prev;
       }
-      line.qty += diff;
-      return line.qty <= 0 ? next.filter((_, i) => i !== index) : next;
+      const qty = line.qty + diff;
+      if (qty <= 0) return next.filter((_, i) => i !== index);
+      next[index] = { ...line, qty };
+      return next;
     });
   };
   const productsAfterSale = (sourceProducts, saleCart) => {
@@ -570,16 +592,21 @@ export default function App() {
   if (!selectedProject) return <ProjectPage adminId={adminId} projects={projects} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} onLogout={logout} />;
 
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
-    <header className="app-header flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-line bg-white px-6 py-4 text-ink">
-      <div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-pos" /><h1 className="display-font text-base font-semibold tracking-wide">마이 부스</h1><span className="rounded-full bg-paper px-3 py-1 text-xs text-register">{selectedProject.name}</span>{saving && <span className="text-xs text-amber-pos">저장 중...</span>}</div>
-      <nav className="flex flex-wrap items-center justify-end gap-1.5"><SyncStatus sync={sync} />{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} onClick={() => setScreen(key)} className={`rounded-md border px-3.5 py-2 text-[13px] ${screen === key ? 'border-register bg-register font-bold text-white' : 'border-line bg-paper'}`}>{label}</button>)}<button onClick={leaveProject} className="rounded-md border border-line bg-paper px-3 py-2 text-xs">프로젝트 변경</button><button onClick={loadState} className="rounded-md border border-line bg-paper px-3 py-2 text-xs">새로고침</button><button onClick={logout} className="rounded-md border border-line bg-paper px-3 py-2 text-xs">로그아웃</button></nav>
+    <header className="app-header border-b border-line bg-white text-ink">
+      <div className="header-brand flex min-w-0 items-center gap-2.5"><span className="h-2 w-2 shrink-0 rounded-full bg-register" /><div className="min-w-0"><h1 className="display-font text-base font-bold">마이 부스</h1><p className="truncate text-xs text-slate-500" title={selectedProject.name}>{selectedProject.name}</p></div>{saving && <span className="shrink-0 text-xs text-register">저장 중...</span>}</div>
+      <button ref={menuToggle} type="button" className="menu-toggle" aria-label={menuOpen ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={menuOpen} aria-controls="booth-navigation" onClick={() => setMenuOpen(!menuOpen)}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">{menuOpen ? <path d="m6 6 12 12M6 18 18 6" /> : <path d="M4 6h16M4 12h16M4 18h16" />}</svg></button>
+      <nav id="booth-navigation" aria-label="부스 메뉴" className={`booth-navigation ${menuOpen ? 'is-open' : ''}`}>
+        <div className="nav-screens">{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} aria-current={screen === key ? 'page' : undefined} onClick={() => { setScreen(key); setMenuOpen(false); }} className={screen === key ? 'is-active' : ''}>{label}</button>)}</div>
+        <div className="nav-utilities"><button onClick={() => { setMenuOpen(false); leaveProject(); }}>프로젝트 변경</button><button onClick={() => { setMenuOpen(false); loadState(); }}>새로고침</button><button onClick={() => { setMenuOpen(false); logout(); }}>로그아웃</button></div>
+      </nav>
+      <div className="header-sync"><SyncStatus sync={sync} /></div>
     </header>
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
 
-    {screen === 'pos' && <main className="pos-layout flex min-h-0 flex-1 gap-6 p-6">
+    {screen === 'pos' && <main className="pos-layout flex min-h-0 flex-1 gap-5 p-5">
       <section className="catalog min-w-0 flex-1 overflow-y-auto">
-        <div className="mb-5"><p className="text-xs font-semibold text-register">SELL / 판매</p><h2 className="mt-1 text-2xl font-bold tracking-tight">어떤 상품을 판매할까요?</h2><p className="mt-2 text-sm text-slate-500">상품을 선택하면 주문에 추가됩니다.</p></div><SectionTitle>굿즈</SectionTitle>
-        <div className="mb-3 rounded-2xl border border-line bg-white p-3 shadow-[0_2px_0_#e2e8f0]">
+        <div className="mb-4 flex items-end justify-between gap-3"><div><h2 className="text-xl font-bold tracking-tight">상품 판매</h2><p className="mt-1 text-xs text-slate-500">상품을 눌러 주문에 추가하세요.</p></div><span className="shrink-0 text-xs text-slate-500">{visibleProducts.length}개 상품</span></div>
+        <div className="mb-4 rounded-xl border border-line bg-white p-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-[#526078]">제작자별 보기</span>
             <span className="text-[11px] text-[#64748b]">표시 {visibleProducts.length}/{products.length}개</span>
@@ -589,13 +616,13 @@ export default function App() {
             {creators.map((creator) => <button key={creator} type="button" onClick={() => setCreatorFilter(creator)} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${creatorFilter === creator ? 'ring-2 ring-amber-pos' : ''}`} style={{ backgroundColor: creatorColors[creator]?.bg, color: creatorColors[creator]?.text, borderColor: creatorColors[creator]?.border }}>{creator}</button>)}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">{visibleProducts.map((p) => <ItemButton key={p.id} imageUrl={p.imageUrl} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} creatorColor={creatorColors[creatorNameOf(p)]} onClick={() => addProduct(p)} />)}</div>
-        {!!visibleBundles.length && <><SectionTitle>세트 할인</SectionTitle><div className="grid grid-cols-2 gap-3 xl:grid-cols-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div></>}
+        <div className="product-grid grid gap-3">{visibleProducts.map((p) => <ItemButton key={p.id} imageUrl={p.imageUrl} soldout={availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} creatorColor={creatorColors[creatorNameOf(p)]} onClick={() => addProduct(p)} />)}</div>
+        {!!visibleBundles.length && <><SectionTitle>세트 할인</SectionTitle><div className="product-grid grid gap-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div></>}
       </section>
-      <aside className="order-panel flex w-[390px] shrink-0 flex-col rounded-2xl border border-line bg-white text-ink">
-        <div className="border-b border-line px-4.5 py-3.5"><div className="mb-4 flex items-center justify-between"><h2 className="text-base font-bold">현재 주문</h2><span className="rounded-full bg-paper px-3 py-1 text-xs text-register">{cart.reduce((count, line) => count + line.qty, 0)}개</span></div><div className="text-xs text-slate-500">결제할 금액</div><div className="text-[34px] font-bold">{won(total)}<span className="ml-1 text-lg text-[#64748b]">원</span></div></div>
-        <div className="flex-1 overflow-y-auto px-3 py-1.5">{cart.length ? cart.map((line, i) => <div key={`${line.type}-${line.id}`} className="flex items-center gap-2 border-b border-line px-1.5 py-2.5"><div className="flex-1 text-[13.5px]">{line.type === 'bundle' && <span className="mr-1 rounded bg-amber-pos px-1.5 py-0.5 text-[9px] text-white">SET</span>}{line.name}<div className="text-xs text-[#64748b]">{won(line.unitPrice)}원</div></div><button className="h-9 w-9 shrink-0 rounded-lg border border-line bg-paper" aria-label={`${line.name} 수량 줄이기`} onClick={() => updateCartQty(i, -1)}>−</button><span className="w-5 text-center text-sm">{line.qty}</span><button className="h-9 w-9 shrink-0 rounded-lg border border-line bg-paper" aria-label={`${line.name} 수량 늘리기`} onClick={() => updateCartQty(i, 1)}>+</button><div className="mono w-[70px] text-right text-[13.5px] font-bold">{won(line.unitPrice * line.qty)}</div><button aria-label={`${line.name} 주문에서 제거`} className="h-9 w-9 shrink-0 text-[#dc2626]" onClick={() => setCart(cart.filter((_, idx) => idx !== i))}>✕</button></div>) : <div className="px-5 py-10 text-center text-sm text-[#64748b]">굿즈를 선택해주세요</div>}</div>
-        <div className="border-t border-line p-3.5"><p className="mb-3 text-xs leading-5 text-slate-500">실제 수령을 확인한 뒤 결제를 기록하세요.</p><div className="flex gap-2.5"><button disabled={!cart.length || saving} onClick={() => finalizeSale('cash')} className="flex-1 rounded-2xl bg-cash px-2 py-4 font-bold text-white disabled:bg-slate-200 disabled:text-slate-500">현금 결제</button><button disabled={!cart.length || saving} onClick={() => finalizeSale('transfer')} className="flex-1 rounded-2xl bg-transfer px-2 py-4 font-bold text-white disabled:bg-slate-200 disabled:text-slate-500">계좌이체 결제</button></div><button onClick={() => cart.length && confirm('장바구니를 비울까요?') && setCart([])} className="mt-2 w-full rounded-lg border border-line py-2 text-xs text-[#526078]">비우기</button></div>
+      <aside className="order-panel flex shrink-0 flex-col rounded-2xl border border-line bg-white text-ink">
+        <div className="order-summary"><div><div className="flex items-center gap-2"><h2 className="text-sm font-bold">현재 주문</h2><span className="text-xs text-slate-500">{cart.reduce((count, line) => count + line.qty, 0)}개</span></div><button type="button" className="order-detail-toggle" aria-expanded={orderExpanded} aria-controls="order-lines" onClick={() => setOrderExpanded(!orderExpanded)}>{orderExpanded ? '주문 접기 ∨' : '주문 상세 ∧'}</button></div><div className="text-right"><div className="text-xs text-slate-500">결제할 금액</div><div className="order-total mono font-bold text-register" aria-live="polite">{won(total)}<span className="ml-1 text-sm text-slate-500">원</span></div></div></div>
+        <div id="order-lines" className={`order-lines flex-1 overflow-y-auto px-3 py-1.5 ${orderExpanded ? 'is-expanded' : ''}`}>{cart.length ? cart.map((line, i) => <div key={`${line.type}-${line.id}`} className="flex items-center gap-2 border-b border-line px-1.5 py-2.5"><div className="flex-1 text-[13.5px]">{line.type === 'bundle' && <span className="mr-1 rounded bg-amber-pos px-1.5 py-0.5 text-[9px] text-white">SET</span>}{line.name}<div className="text-xs text-[#64748b]">{won(line.unitPrice)}원</div></div><button className="h-9 w-9 shrink-0 rounded-lg border border-line bg-paper" aria-label={`${line.name} 수량 줄이기`} onClick={() => updateCartQty(i, -1)}>−</button><span className="w-5 text-center text-sm">{line.qty}</span><button className="h-9 w-9 shrink-0 rounded-lg border border-line bg-paper" aria-label={`${line.name} 수량 늘리기`} onClick={() => updateCartQty(i, 1)}>+</button><div className="mono w-[70px] text-right text-[13.5px] font-bold">{won(line.unitPrice * line.qty)}</div><button aria-label={`${line.name} 주문에서 제거`} className="h-9 w-9 shrink-0 text-[#dc2626]" onClick={() => setCart(cart.filter((_, idx) => idx !== i))}>✕</button></div>) : <div className="px-5 py-10 text-center text-sm text-[#64748b]">굿즈를 선택해주세요</div>}</div>
+        <div className="order-actions border-t border-line p-3.5"><p className="mb-3 text-xs leading-5 text-slate-500">실제 수령을 확인한 뒤 결제를 기록하세요.</p><div className="flex gap-2.5"><button disabled={!cart.length || saving} onClick={() => finalizeSale('cash')} className="flex-1 rounded-2xl bg-cash px-2 py-4 font-bold text-white disabled:bg-slate-200 disabled:text-slate-500">현금 결제</button><button disabled={!cart.length || saving} onClick={() => finalizeSale('transfer')} className="flex-1 rounded-2xl bg-transfer px-2 py-4 font-bold text-white disabled:bg-slate-200 disabled:text-slate-500">계좌이체</button></div><button onClick={() => cart.length && confirm('장바구니를 비울까요?') && setCart([])} className="mt-2 w-full rounded-lg border border-line py-2 text-xs text-[#526078]">비우기</button></div>
       </aside>
     </main>}
 
@@ -746,13 +773,23 @@ function ProductImage({ imageUrl, name }) {
   const [defaultFailed, setDefaultFailed] = useState(false);
   const isDefault = !imageUrl || imageUrl === failedUrl;
   const source = isDefault ? '/images/default-product.svg' : imageUrl;
-  return <div className="flex aspect-square w-full max-w-[180px] items-center justify-center overflow-hidden rounded-lg bg-[#f1f5f9]">
+  return <div className="product-image flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-[#f1f5f9]">
     {isDefault && defaultFailed ? <span className="text-xs text-[#64748b]">No Image</span> : <img key={source} src={source} alt={isDefault ? 'No Image' : name || '상품 이미지'} loading="lazy" className="h-full w-full object-contain" onError={() => isDefault ? setDefaultFailed(true) : setFailedUrl(imageUrl)} />}
   </div>;
 }
 
 function SectionTitle({ children }) { return <div className="my-3.5 flex items-center gap-2 text-xs uppercase tracking-[1.5px] text-[#526078] after:h-px after:flex-1 after:bg-line">{children}</div>; }
-function ItemButton({ name, imageUrl, price, stock, soldout, bundle, creatorName, creatorColor, onClick }) { return <button disabled={soldout} onClick={onClick} className={`relative flex product-card min-h-[150px] flex-col justify-between rounded-2xl border p-3 text-left transition hover:border-register hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${bundle ? 'border-amber-pos bg-[#eff6ff]' : 'border-line bg-white'}`}>{!bundle && <ProductImage imageUrl={imageUrl} name={name} />}{bundle && <span className="absolute left-2 top-2 rounded bg-amber-pos px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-white">SET</span>}<span className="absolute right-2 top-2 rounded-lg bg-[#eff6ff] px-2 py-1 text-xs font-bold text-register shadow-sm">{stock}</span><span className={`text-sm font-semibold leading-relaxed ${bundle ? 'mt-3.5' : 'mt-5'}`}>{name}</span><div className="mt-2 flex items-end justify-between gap-2"><span className={`text-[15px] font-bold ${bundle ? 'text-amber-pos' : 'text-register-2'}`}>{won(price)}원</span>{creatorName && <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}</div></button>; }
+function ItemButton({ name, imageUrl, price, stock, soldout, bundle, creatorName, creatorColor, onClick }) {
+  return <button disabled={soldout} onClick={onClick} className={`product-card flex min-w-0 flex-col overflow-hidden rounded-xl border text-left transition hover:border-register hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed ${bundle ? 'border-blue-200 bg-blue-50' : 'border-line bg-white'} ${soldout ? 'is-soldout' : ''}`}>
+    {!bundle && <ProductImage imageUrl={imageUrl} name={name} />}
+    <div className="flex flex-1 flex-col p-3">
+      {bundle && <span className="mb-2 text-[10px] font-bold tracking-wide text-register">세트 할인</span>}
+      <span className="break-words text-sm font-semibold leading-snug">{name}</span>
+      {creatorName && <span className="mt-2 self-start max-w-full break-words rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: creatorColor?.bg, color: creatorColor?.text, borderColor: creatorColor?.border }}>{creatorName}</span>}
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="mono text-sm font-bold text-register">{won(price)}원</span><span className={`text-[11px] font-semibold ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>
+    </div>
+  </button>;
+}
 function Panel({ title, children, actions }) { return <section className="rounded-2xl border border-line bg-white p-3.5"><div className="mb-2.5 flex items-center justify-between gap-3"><h2 className="text-[15px] font-bold">{title}</h2>{actions}</div>{children}</section>; }
 function Input({ value, onChange, className = '', ...props }) { return <input {...props} value={value} onChange={(e) => onChange(e.target.value)} className={`w-full rounded border border-line p-1.5 text-[13px] ${className}`} />; }
 function Stat({ label, value }) { return <div className="rounded-2xl border border-line bg-white p-3.5"><div className="text-[11px] uppercase tracking-wide text-[#64748b]">{label}</div><div className="mono mt-1 text-2xl font-bold">{value}</div></div>; }
