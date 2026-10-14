@@ -726,9 +726,9 @@ function ProductImage({ imageUrl, name }) {
   const [failedUrl, setFailedUrl] = useState(null);
   const [defaultFailed, setDefaultFailed] = useState(false);
   const isDefault = !imageUrl || imageUrl === failedUrl;
-  const source = isDefault ? '/images/default-product.png' : imageUrl;
+  const source = isDefault ? '/images/default-product.svg' : imageUrl;
   return <div className="flex aspect-square w-full max-w-[180px] items-center justify-center overflow-hidden rounded-lg bg-[#f1f5f9]">
-    {isDefault && defaultFailed ? <span className="text-xs text-[#64748b]">이미지 없음</span> : <img key={source} src={source} alt={isDefault ? '기본 상품 이미지: 파란 머리와 눈, 갈색 안경의 SD 캐릭터' : name || '상품 이미지'} loading="lazy" className="h-full w-full object-contain" onError={() => isDefault ? setDefaultFailed(true) : setFailedUrl(imageUrl)} />}
+    {isDefault && defaultFailed ? <span className="text-xs text-[#64748b]">No Image</span> : <img key={source} src={source} alt={isDefault ? 'No Image' : name || '상품 이미지'} loading="lazy" className="h-full w-full object-contain" onError={() => isDefault ? setDefaultFailed(true) : setFailedUrl(imageUrl)} />}
   </div>;
 }
 
