@@ -552,7 +552,7 @@ export default function App() {
 
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
     <header className="app-header flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-line bg-white px-6 py-4 text-ink">
-      <div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-pos" /><h1 className="display-font text-base font-semibold tracking-wide">부스 포스기</h1><span className="rounded-full bg-paper px-3 py-1 text-xs text-register">{selectedProject.name}</span>{saving && <span className="text-xs text-amber-pos">저장 중...</span>}</div>
+      <div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-pos" /><h1 className="display-font text-base font-semibold tracking-wide">마이 부스</h1><span className="rounded-full bg-paper px-3 py-1 text-xs text-register">{selectedProject.name}</span>{saving && <span className="text-xs text-amber-pos">저장 중...</span>}</div>
       <nav className="flex flex-wrap items-center justify-end gap-1.5"><SyncStatus sync={sync} />{[['pos', '판매'], ['settings', '상품/세트 관리'], ['log', '판매 내역']].map(([key, label]) => <button key={key} onClick={() => setScreen(key)} className={`rounded-md border px-3.5 py-2 text-[13px] ${screen === key ? 'border-register bg-register font-bold text-white' : 'border-line bg-paper'}`}>{label}</button>)}<button onClick={leaveProject} className="rounded-md border border-line bg-paper px-3 py-2 text-xs">프로젝트 변경</button><button onClick={loadState} className="rounded-md border border-line bg-paper px-3 py-2 text-xs">새로고침</button><button onClick={logout} className="rounded-md border border-line bg-paper px-3 py-2 text-xs">로그아웃</button></nav>
     </header>
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
@@ -602,7 +602,7 @@ export default function App() {
 function LoginPage({ authMode, setAuthMode, loginId, setLoginId, loginPassword, setLoginPassword, loginError, onSubmit }) {
   return <div className="flex min-h-full items-center justify-center bg-paper px-4 py-10 text-ink">
     <form onSubmit={onSubmit} className="w-full max-w-sm rounded-2xl border border-line bg-white p-8 shadow-xl shadow-blue-900/5">
-      <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">부스 포스기</div><p className="mt-1 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
+      <div className="mb-5 text-center"><div className="display-font text-2xl font-bold text-register">마이 부스</div><p className="mt-1 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
       <div className="mb-4 grid grid-cols-2 rounded-lg border border-line bg-white p-1 text-sm font-bold">
         <button type="button" onClick={() => setAuthMode('login')} className={`rounded-md py-2 ${authMode === 'login' ? 'bg-register text-white' : 'text-[#526078]'}`}>로그인</button>
         <button type="button" onClick={() => setAuthMode('signup')} className={`rounded-md py-2 ${authMode === 'signup' ? 'bg-register text-white' : 'text-[#526078]'}`}>회원가입</button>
