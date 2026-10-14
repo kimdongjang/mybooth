@@ -638,7 +638,7 @@ export default function App() {
       </aside>
     </main>}
 
-    {screen === 'settings' && <main className="settings-page flex-1 overflow-y-auto p-4 md:p-6"><div className="settings-navigation mb-4 flex flex-wrap gap-2"><button onClick={() => setSettingsTab('products')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'products' ? 'border-amber-pos bg-amber-pos text-white' : 'border-line bg-white text-[#526078]'}`}>상품 관리</button><button onClick={() => setSettingsTab('bundles')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'bundles' ? 'border-amber-pos bg-amber-pos text-white' : 'border-line bg-white text-[#526078]'}`}>세트 관리</button><button onClick={() => setSettingsTab('backup')} className={`rounded-md border px-4 py-2 text-[13px] font-bold ${settingsTab === 'backup' ? 'border-amber-pos bg-amber-pos text-white' : 'border-line bg-white text-[#526078]'}`}>주문 백업</button></div>{settingsTab === 'products' && <ProductSettingsPanel key={selectedProject.id} projectId={selectedProject.id} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} persistProducts={persistProducts} persistBundles={persistBundles} onResetDefaults={resetDefaults} onUpdateLatest={updateToLatestDefaults} />}{settingsTab === 'bundles' && <Panel title="세트 할인 구성"><div className="space-y-2.5">{bundles.length ? bundles.map((b) => <div key={b.id} className="rounded-lg border border-line bg-[#f8fafc] p-2.5"><div className="flex justify-between text-[13px] font-bold"><span>{b.name} — {won(b.price)}원</span><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="mt-1 text-xs text-[#526078]">{b.items.map((it) => `${products.find((p) => p.id === it.productId)?.name || '???'} x${it.qty}`).join(', ')}</div></div>) : <p className="text-xs text-[#64748b]">등록된 세트가 없습니다</p>}</div><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><Input value={bundleName} onChange={setBundleName} placeholder="세트 이름 (예: 아크릴+포카 세트)" />{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select className="flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input type="number" className="w-[60px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: Number(v) || 1 } : r))} /></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><Input type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="세트 판매가 (원)" /><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></Panel>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</main>}
+    {screen === 'settings' && <main className="settings-page flex-1 overflow-y-auto p-4 md:p-6"><SettingsTabs selected={settingsTab} onSelect={setSettingsTab} /><div id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} tabIndex={0} className="settings-content">{settingsTab === 'products' && <ProductSettingsPanel key={selectedProject.id} projectId={selectedProject.id} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} persistProducts={persistProducts} persistBundles={persistBundles} onResetDefaults={resetDefaults} onUpdateLatest={updateToLatestDefaults} />}{settingsTab === 'bundles' && <Panel title="세트 할인 구성"><div className="space-y-2.5">{bundles.length ? bundles.map((b) => <div key={b.id} className="rounded-lg border border-line bg-[#f8fafc] p-2.5"><div className="flex justify-between text-[13px] font-bold"><span>{b.name} — {won(b.price)}원</span><button className="rounded bg-danger px-2 py-1 text-[11px] text-white" onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((x) => x.id !== b.id))}>삭제</button></div><div className="mt-1 text-xs text-[#526078]">{b.items.map((it) => `${products.find((p) => p.id === it.productId)?.name || '???'} x${it.qty}`).join(', ')}</div></div>) : <p className="text-xs text-[#64748b]">등록된 세트가 없습니다</p>}</div><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><Input value={bundleName} onChange={setBundleName} placeholder="세트 이름 (예: 아크릴+포카 세트)" />{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select className="flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input type="number" className="w-[60px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: Number(v) || 1 } : r))} /></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><Input type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="세트 판매가 (원)" /><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={addBundleToSettings}>세트 저장</button></div></Panel>}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</div></main>}
 
     {screen === 'log' && <main className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="mb-4 grid gap-3.5 md:grid-cols-4"><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></div>
@@ -696,8 +696,35 @@ function ProjectPage({ adminId, projects, newProjectName, setNewProjectName, onC
   </div>;
 }
 
+function SettingsTabs({ selected, onSelect }) {
+  const tabs = [['products', '상품관리'], ['bundles', '세트관리'], ['backup', '주문백업']];
+  const changeWithKeyboard = (event, index) => {
+    let next;
+    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    onSelect(tabs[next][0]);
+    event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[next]?.focus();
+  };
+  return <div className="settings-navigation purchase-tabs" role="tablist" aria-label="상품 및 주문 관리">
+    {tabs.map(([key, label], index) => <button key={key} id={`settings-tab-${key}`} type="button" role="tab" aria-selected={selected === key} aria-controls="settings-panel" tabIndex={selected === key ? 0 : -1} onClick={() => onSelect(key)} onKeyDown={(event) => changeWithKeyboard(event, index)}>{label}</button>)}
+  </div>;
+}
+
 function ProductSettingsPanel({ projectId, saving, onImageChange, products, bundles, persistProducts, persistBundles, onResetDefaults, onUpdateLatest }) {
   const [uploadingId, setUploadingId] = useState(null);
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState(null);
+  const backButton = useRef(null);
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(products.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const selectedProduct = products.find((product) => product.id === selectedId);
+  useEffect(() => { setPage((previous) => Math.min(previous, pageCount)); }, [pageCount]);
+  useEffect(() => { if (selectedProduct) backButton.current?.focus(); }, [selectedProduct?.id]);
   const uploadImage = async (product, file) => {
     if (!file) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) return alert('JPG, PNG, WebP 이미지를 5MB 이하로 선택해주세요.');
@@ -740,7 +767,9 @@ function ProductSettingsPanel({ projectId, saving, onImageChange, products, bund
       isActive: true,
       name: '새 굿즈',
       stock: 0,
+      createdAt: new Date().toISOString(),
     }]);
+    setSelectedId(id);
   };
   const deleteProduct = (productId) => {
     if (!confirm('이 굿즈를 삭제할까요? 세트 구성에서도 제거됩니다.')) return;
@@ -752,12 +781,25 @@ function ProductSettingsPanel({ projectId, saving, onImageChange, products, bund
 
   return <section className="product-management">
     <header className="management-heading">
-      <div><h2>상품 관리</h2><p>상품 정보와 가격, 재고를 관리하세요. 수정한 내용은 자동으로 저장됩니다.</p></div>
-      <button type="button" className="management-add" onClick={addProduct}>+ 상품 추가</button>
+      <div><h2>{selectedProduct ? '상품 상세' : '상품 관리'}</h2><p>{selectedProduct ? '이미지와 상품 정보를 수정하세요. 수정한 내용은 자동으로 저장됩니다.' : '상품을 한눈에 확인하고 상세보기에서 정보를 수정하세요.'}</p></div>
+      {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <button type="button" className="management-add" onClick={addProduct}>+ 상품 추가</button>}
     </header>
     <div className="management-summary"><span>등록 상품 <b>{products.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '상품 정보를 수정할 수 있습니다'}</span></div>
-    <div className="management-products">
-      {sortedProducts.map((p) => <article className="management-product" key={p.id}>
+    {!selectedProduct && <>
+      <div className="management-table-wrap"><table className="management-table">
+        <caption className="sr-only">상품 이름, 제작자, 가격, 등록일 목록</caption>
+        <colgroup><col className="management-name-column" /><col /><col /><col /></colgroup>
+        <thead><tr><th scope="col">상품 이름</th><th scope="col">제작자</th><th scope="col">가격</th><th scope="col">등록일</th></tr></thead>
+        <tbody>{sortedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => <tr key={p.id}>
+          <td><span className="management-row-name">{productNameWithoutCreator(p)}</span><button type="button" className="management-detail-link" aria-label={`${productNameWithoutCreator(p)} 상세보기`} onClick={() => setSelectedId(p.id)}>상세보기</button></td>
+          <td>{creatorNameOf(p)}</td><td className="mono management-row-price">{won(p.price)}원</td>
+          <td>{p.createdAt && !Number.isNaN(new Date(p.createdAt).getTime()) ? <time dateTime={p.createdAt}>{new Date(p.createdAt).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\s/g, '')}</time> : '—'}</td>
+        </tr>)}</tbody>
+      </table>{!products.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}</div>
+      <nav className="management-pagination" aria-label="상품 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
+    </>}
+    {selectedProduct && <div className="management-products">
+      {[selectedProduct].map((p) => <article className="management-product" key={p.id}>
         <div className="management-product-header"><h3>{productNameWithoutCreator(p)}</h3><button type="button" className="management-delete" aria-label={`${p.name} 상품 삭제`} onClick={() => deleteProduct(p.id)}>삭제</button></div>
         <div className="management-product-body">
           <div className="management-image">
@@ -785,9 +827,8 @@ function ProductSettingsPanel({ projectId, saving, onImageChange, products, bund
           </div>
         </div>
       </article>)}
-      {!products.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}
-    </div>
-    <aside className="management-defaults"><div><h3>기본 상품 목록</h3><p>누락된 기본 상품·세트만 추가하거나, 상품·세트·재고를 기본 44종으로 초기화할 수 있습니다.</p></div><div className="management-default-actions"><button type="button" onClick={onUpdateLatest}>없는 기본 상품/세트 추가</button><button type="button" className="management-delete" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button></div></aside>
+    </div>}
+    {!selectedProduct && <aside className="management-defaults"><div><h3>기본 상품 목록</h3><p>누락된 기본 상품·세트만 추가하거나, 상품·세트·재고를 기본 44종으로 초기화할 수 있습니다.</p></div><div className="management-default-actions"><button type="button" onClick={onUpdateLatest}>없는 기본 상품/세트 추가</button><button type="button" className="management-delete" onClick={onResetDefaults}>기본 44종 목록으로 초기화</button></div></aside>}
   </section>;
 }
 
