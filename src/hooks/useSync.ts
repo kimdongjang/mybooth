@@ -19,15 +19,15 @@ export function useSync({ enabled, getAuthToken, projectId }: UseSyncOptions): U
   const [snapshot, setSnapshot] = useState<SyncSnapshot>({ isSyncing: false, pendingCount: 0, lastSyncedAt: null });
 
   useEffect(() => {
-    syncService.configure({ getAuthToken, projectId });
-  }, [getAuthToken, projectId]);
+    syncService.configure({ getAuthToken, projectId: enabled ? projectId : null });
+  }, [enabled, getAuthToken, projectId]);
 
   useEffect(() => syncService.subscribe(setSnapshot), []);
 
   const syncNow = useCallback(async () => {
     if (!enabled) return;
     await syncService.sync();
-  }, [enabled]);
+  }, [enabled, projectId, getAuthToken]);
 
   const refreshPendingCount = useCallback(async () => {
     await syncService.refreshPendingCount();
@@ -47,7 +47,7 @@ export function useSync({ enabled, getAuthToken, projectId }: UseSyncOptions): U
       window.clearInterval(timer);
       unsubscribe();
     };
-  }, [enabled]);
+  }, [enabled, projectId, getAuthToken]);
 
   return { ...snapshot, online, syncNow, refreshPendingCount };
 }

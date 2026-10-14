@@ -60,7 +60,7 @@ flowchart LR
 
 상품의 선택적 `imageUrl`은 Postgres `image_url` 및 IndexedDB 상품 스냅샷에 보존한다. `/api/product-images`는 인증·프로젝트 소유권·상품 존재·경로를 확인한 후 JPG/PNG/WebP, 최대 5MiB의 Blob 직접 업로드 토큰을 발급한다. 파일은 Public Vercel Blob에 저장되고 판매 카드와 상품 관리에서 URL로 표시한다. `updateProductImage`는 해당 프로젝트/상품 이미지 URL만 변경하며 null로 제거한다. 기존 DB의 image_url은 ADD COLUMN IF NOT EXISTS로 추가한다. 이미지 교체/제거 시 이전 Blob은 삭제하지 않으므로 별도 정리 정책이 필요하다. 이미지 URL은 공개이며 민감한 이미지를 저장하지 않는다. 오프라인에서 외부 이미지 표시를 보장하지 않고 로드 실패 시 대체 문구를 표시한다.
 
-테이블은 요청 중 `CREATE TABLE IF NOT EXISTS`로 생성한다. 이전 단일 행사 DB에는 project_id와 상품 메타데이터, 프로젝트 seed_version을 보완한다. 단일 id 기본키는 제거하고 (project_id,id) 고유 인덱스를 추가하며, 이 키 전환은 DO 블록의 한 트랜잭션에서 수행한다. 소유권을 알 수 없는 기존 행은 project_id=NULL로 보존하고 프로젝트 조회/변경에서 제외한다. 과거 데이터 연결은 백업 후 별도 소유권 확인 절차가 필요하다. 신규 DB는 기존처럼 복합 기본키를 사용한다. 신규 DB에서는 auth 초기화로 pos_admins가 먼저 생성되는 흐름을 전제한다.
+테이블은 요청 중 `CREATE TABLE IF NOT EXISTS`로 생성한다. 이전 단일 행사 DB에는 project_id와 상품 메타데이터, 프로젝트 seed_version을 보완한다. 단일 id 기본키는 제거하고 (project_id,id) 고유 인덱스를 추가하며, 이 키 전환은 DO 블록의 한 트랜잭션에서 수행한다. 사용자가 지정한 과거 project_id=NULL 행은 admin의 7월 서코행사에 원자적으로 연결한다. admin이 없으면 NULL로 보존한다. 신규 DB는 기존처럼 복합 기본키를 사용한다. 신규 DB에서는 auth 초기화로 pos_admins가 먼저 생성되는 흐름을 전제한다.
 
 ## API
 
@@ -71,7 +71,7 @@ flowchart LR
 | POST `/api/auth` | `{mode: 'signup' 또는 'login', id, password}` | token/admin; mode 생략 시 login |
 | GET `/api/pos` | 없음 | 로그인 관리자 projects 목록 |
 | GET `/api/pos?projectId=…` | projectId | products/bundles/sales 전체 상태 |
-| POST createProject | payload.name | 201 project; 기본 데이터로 초기화 |
+| POST createProject | payload.name | 201 project; 빈 상품·세트·판매로 시작 |
 | POST replaceProducts | payload.products | 상품 전체 삭제 후 재삽입 |
 | POST replaceBundles | payload.bundles | 세트 전체 삭제 후 재삽입 |
 | POST finalizeSale | localOrderId, createdAt, method, total, cart | 재고 차감, 판매 저장; 기존 판매 ID면 중복 검사 후 반환 |
@@ -107,7 +107,7 @@ POS POST body는 `{projectId, action, payload}`다. 서버는 query/body/payload
 5. 성공 응답의 서버 상태는 SyncService에서 UI/posState에 적용하지 않는다. 자동 서버 재조회도 없다.
 6. 취소는 로컬 재고·판매를 먼저 바꾼다. PENDING/FAILED 판매면 큐에서 제거하고, 제거하지 못하면 별도 voidSale 주문을 추가한다. 서버 취소는 현재 세트 구성으로 복구하고 판매를 삭제한다.
 
-서비스 워커는 navigation에 network-first, 다른 같은 출처 GET에 stale-while-revalidate를 적용한다. 설치 시 index의 `/assets/` 링크를 캐시한다. 버전은 `booth-pos-app-v8`, 설치/활성화 시 skipWaiting/clients.claim을 사용한다. 기본 상품 이미지 `/images/default-product.svg`도 앱 셸 캐시에 포함한다. 판매 카드와 상품 관리에서 이미지가 없거나 외부 이미지 로드 실패 시 No Image SVG를 표시한다. [기본 이미지 설명](default-product-image.md).
+서비스 워커는 navigation에 network-first, 다른 같은 출처 GET에 stale-while-revalidate를 적용한다. 설치 시 index의 `/assets/` 링크를 캐시한다. 버전은 `booth-pos-app-v9`, 설치/활성화 시 skipWaiting/clients.claim을 사용한다. 기본 상품 이미지 `/images/default-product.svg`도 앱 셸 캐시에 포함한다. 판매 카드와 상품 관리에서 이미지가 없거나 외부 이미지 로드 실패 시 No Image SVG를 표시한다. [기본 이미지 설명](default-product-image.md).
 
 제작자별 집계는 현재 상품·세트 정보를 참조한다. 세트 매출은 현재 구성품 단가×수량 비중으로 배분한다. 과거 구성/단가 변경 시 집계가 변할 수 있다. 판매 CSV와 IndexedDB 주문 JSON/CSV 다운로드가 있지만 복원 UI는 없다.
 
@@ -116,3 +116,12 @@ POS POST body는 `{projectId, action, payload}`다. 서버는 query/body/payload
 웹 앱 표시 이름은 **마이 부스**다. 로그인 화면, 판매 화면 상단과 브라우저 탭 제목에 동일하게 표시한다. 독립 구현 `pos.html`은 별도 구현이므로 기존 이름을 유지한다.
 
 Vite 화면은 흰색 카드/주문 패널과 파란색 주요 버튼, Pretendard 가변 폰트를 사용한다. 폰트와 OFL 라이선스는 public/fonts에 포함하며 서비스 워커 앱 셸 캐시에 폰트를 추가한다. 768px 미만에서는 상품과 주문 패널을 세로로 배치하고 페이지 스크롤을 사용한다. 판매·재고·주문 큐 및 API 계약은 유지한다. 독립 구현 pos.html은 변경하지 않았다.
+
+## 사용자·행사별 데이터 분리 (2026-10-14)
+
+- 새 프로젝트는 빈 상품·세트·재고로 시작한다. 기본값 추가/초기화는 선택한 행사에서 사용자가 명시적으로 실행한다.
+- 관리자 소유권 + project_id로 상품·가격·재고·세트·판매를 제한한다. IndexedDB 상태와 큐는 서버의 전역 고유 프로젝트 ID로 분리한다.
+- project_id=NULL인 과거 상품·세트·판매만 admin 계정의 '7월 서코행사'에 연결한다. 기존 지정 프로젝트는 이동하지 않는다. admin 계정이 없으면 연결을 보류한다. 대상 행사에 동일 ID가 있으면 트랜잭션 전체가 실패하고 원본을 보존한다.
+- 배포 후 인증된 POS 요청의 초기화에서 연결이 실행된다. 운영 적용 전에 백업 및 별도 DB 검증이 필요하다. 운영 DB는 이번 작업에서 조회/변경하지 않았다.
+- 프로젝트 전환/로그아웃 후 늦은 상태 응답을 무시하고 동기화 배치는 시작 당시 토큰과 프로젝트로 고정한다. 다른 범위 주문은 전송하지 않는다.
+- 검증: npm test 7개와 npm run build 통과. PGlite에서 빈 행사 생성, 다른 계정 접근/변경 제한, 과거 재고·무료 가격·세트·판매 보존 및 반복 연결 확인. 실제 브라우저 AUTH-01/SWITCH-01/OFF-01/02/CACHE-01 및 운영 마이그레이션은 미실행.

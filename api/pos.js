@@ -81,6 +81,26 @@ async function initDb() {
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`;
   await sql`CREATE INDEX IF NOT EXISTS pos_sales_project_time_idx ON pos_sales(project_id, time)`;
+  // The owner of the pre-project event has been explicitly designated as admin.
+  // One transaction and table locks make adoption repeatable across requests.
+  await sql`DO $$
+    DECLARE target_id TEXT;
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pos_admins WHERE id = 'admin') THEN RETURN; END IF;
+      LOCK TABLE pos_projects, pos_products, pos_bundles, pos_sales IN SHARE ROW EXCLUSIVE MODE;
+      IF NOT EXISTS (SELECT 1 FROM pos_products WHERE project_id IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM pos_bundles WHERE project_id IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM pos_sales WHERE project_id IS NULL) THEN RETURN; END IF;
+      SELECT id INTO target_id FROM pos_projects
+        WHERE admin_id = 'admin' AND name = '7월 서코행사' ORDER BY created_at, id LIMIT 1;
+      IF target_id IS NULL THEN
+        target_id := 'legacy-admin-july-seoul-comic';
+        INSERT INTO pos_projects (id, admin_id, name) VALUES (target_id, 'admin', '7월 서코행사');
+      END IF;
+      UPDATE pos_products SET project_id = target_id WHERE project_id IS NULL;
+      UPDATE pos_bundles SET project_id = target_id WHERE project_id IS NULL;
+      UPDATE pos_sales SET project_id = target_id WHERE project_id IS NULL;
+    END $$`;
 }
 
 async function assertProject(adminId, projectId) {
@@ -127,7 +147,6 @@ async function createProject(adminId, name) {
   await initDb();
   const id = uid();
   await sql`INSERT INTO pos_projects (id, admin_id, name) VALUES (${id}, ${adminId}, ${projectName})`;
-  await seedProject(adminId, id);
   return { project: { id, name: projectName } };
 }
 
