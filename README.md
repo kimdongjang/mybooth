@@ -11,6 +11,8 @@
 - [위험 분석과 개선 순서](docs/harness/risks.md)
 - [실행·배포·검증 절차](docs/harness/validation.md)
 
+작업 완료 시 변경 내용과 검증 결과를 정리해 PR을 생성하거나 기존 PR을 갱신한다. `main` 병합은 사용자가 검토 후 직접 수행하며 에이전트는 병합하지 않는다. 상세 절차는 [작업 지침](AGENTS.md#브랜치pr병합-정책)에 있다.
+
 ## 실행
 
 ```powershell
