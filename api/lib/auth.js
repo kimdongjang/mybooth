@@ -29,6 +29,8 @@ export function assertPostgresConnectionString() {
 export async function initAuthDb() {
   assertPostgresConnectionString();
   await sql`CREATE TABLE IF NOT EXISTS pos_admins (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+  await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS email TEXT`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS pos_admins_email_unique ON pos_admins (LOWER(BTRIM(email)))`;
 
   if (legacyAdminPassword()) {
     await sql`
@@ -37,29 +39,34 @@ export async function initAuthDb() {
       ON CONFLICT (id) DO NOTHING
     `;
   }
+  // Preserve an already assigned address and every existing password/project link.
+  await sql`UPDATE pos_admins SET email = 'naru3644@gmail.com' WHERE id = 'admin' AND email IS NULL`;
 }
 
-export async function createAdmin(id, password) {
-  await initAuthDb();
+export async function createAdmin(id, password, email) {
   const adminId = String(id || '').trim();
-  if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(adminId)) throw new Error('아이디는 영문/숫자/._- 조합 3~32자로 입력해주세요.');
-  if (String(password || '').length < 6) throw new Error('패스워드는 6자 이상 입력해주세요.');
+  const adminEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  const invalid = (message) => Object.assign(new Error(message), { status: 400 });
+  if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(adminId)) throw invalid('아이디는 영문/숫자/._- 조합 3~32자로 입력해주세요.');
+  if (typeof password !== 'string' || password.length < 6) throw invalid('패스워드는 6자 이상 입력해주세요.');
+  if (adminEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) throw invalid('올바른 이메일을 입력해주세요.');
+  await initAuthDb();
 
   try {
-    await sql`INSERT INTO pos_admins (id, password_hash) VALUES (${adminId}, ${hashPassword(password)})`;
+    await sql`INSERT INTO pos_admins (id, email, password_hash) VALUES (${adminId}, ${adminEmail}, ${hashPassword(password)})`;
   } catch (error) {
-    if (String(error.message).includes('duplicate') || String(error.code) === '23505') throw new Error('이미 사용 중인 아이디입니다.');
+    if (String(error.code) === '23505') throw Object.assign(new Error('이미 사용 중인 아이디 또는 이메일입니다.'), { status: 409 });
     throw error;
   }
-  return { id: adminId };
+  return { id: adminId, email: adminEmail };
 }
 
 export async function validateAdmin(id, password) {
   await initAuthDb();
   const adminId = String(id || '').trim();
-  const row = (await sql`SELECT id, password_hash FROM pos_admins WHERE id = ${adminId}`).rows[0];
+  const row = (await sql`SELECT id, email, password_hash FROM pos_admins WHERE id = ${adminId}`).rows[0];
   if (!row || !verifyPassword(password, row.password_hash)) return null;
-  return { id: row.id };
+  return { id: row.id, email: row.email };
 }
 
 export async function validateAdminPassword(adminId, password) {

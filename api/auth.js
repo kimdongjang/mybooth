@@ -4,10 +4,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { mode = 'login', id, password } = req.body || {};
+    const { mode = 'login', id, password, email } = req.body || {};
 
     if (mode === 'signup') {
-      const admin = await createAdmin(id, password);
+      const admin = await createAdmin(id, password, email);
       return res.status(201).json({ token: createToken(admin.id), admin });
     }
 
@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ token: createToken(admin.id), admin });
   } catch (error) {
-    const status = String(error.message || '').includes('이미 사용') ? 409 : 500;
+    const status = error.status || 500;
     return res.status(status).json({ error: error.message || '인증 처리에 실패했습니다.' });
   }
 }

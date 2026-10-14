@@ -50,7 +50,7 @@ flowchart LR
 | sessionStorage | `pos_admin_token`, `pos_admin_id`, `pos_selected_project_id` | 탭 세션 인증/선택; 새 세션 오프라인 인증 보장 없음 |
 | IndexedDB `booth-pos-offline-db.orders` | 자동증가 id, projectId, localOrderId, createdAt, payload, syncStatus, retryCount, lastSyncAt | 상태: PENDING/SYNCING/SYNCED/FAILED/ARCHIVED; 주문과 취소 명령 저장 |
 | IndexedDB `posState` | `project:{projectId}:latest`, state, updatedAt | products/bundles/sales 스냅샷; 주문 큐와 별도 저장 |
-| Postgres `pos_admins` | id PK, password_hash, created_at | 가입 또는 환경변수 기반 초기 관리자 생성 |
+| Postgres `pos_admins` | id PK, email (대소문자/양끝 공백 무시 UNIQUE), password_hash, created_at | 신규 가입 이메일 필수; 기존 계정 NULL 허용 |
 | `pos_projects` | id PK, admin_id FK, name, seed_version, timestamps | 관리자 소유 프로젝트; FK cascade |
 | `pos_products` | (project_id,id) PK, 가격/재고/제작자/굿즈/세트 메타데이터 | stock/stock_qty 병행; 가격·재고 INTEGER |
 | `pos_bundles` | (project_id,id) PK, name, price, items JSONB | items = productId/qty 목록 |
@@ -68,7 +68,7 @@ flowchart LR
 
 | 요청 | 입력 | 반환/효과 |
 | --- | --- | --- |
-| POST `/api/auth` | `{mode: 'signup' 또는 'login', id, password}` | token/admin; mode 생략 시 login |
+| POST `/api/auth` | `{mode: 'signup' 또는 'login', id, password, email}` | signup만 email 필수; token/admin(id,email); mode 생략 시 login |
 | GET `/api/pos` | 없음 | 로그인 관리자 projects 목록 |
 | GET `/api/pos?projectId=…` | projectId | products/bundles/sales 전체 상태 |
 | POST createProject | payload.name | 201 project; 빈 상품·세트·판매로 시작 |
@@ -148,3 +148,9 @@ Vite 화면은 흰색 카드/주문 패널과 파란색 주요 버튼, Pretendar
 ## 상품 관리 목록·상세·탭 (2026-10-14)
 
 상품 관리 첫 화면은 상품 이름·제작자·가격·등록일 네 열의 반응형 테이블이다. 상품명 아래 상세보기에서 해당 상품만 편집하며 목록 복귀 시 기존 페이지를 유지한다. 페이지당 10개, 이전/다음 이동과 끝 버튼 비활성화, 상품 삭제로 줄어든 페이지 수 보정을 제공한다. 등록일은 기존 createdAt을 표시하고 없거나 잘못된 날짜는 —로 표시한다. 신규 상품에는 createdAt을 넣고 즉시 상세 편집을 연다. 이미지·기본 정보·가격/재고·세트 편집과 기존 자동 저장 경로는 유지한다. 상품관리/세트관리/주문백업은 밑줄 탭과 tablist/tab/tabpanel 의미, 방향키/Home/End 이동을 사용한다. 서비스 워커 v17.
+
+## 이메일 회원가입 (2026-10-14)
+
+회원가입에 이메일을 필수로 입력하며 서버에서 형식/254자 제한을 검증하고 소문자/양끝 공백 제거 후 저장한다. id PK와 프로젝트 FK는 유지하며 이메일은 LOWER(BTRIM(email)) 고유 인덱스로 동시 요청에서도 중복을 차단한다. 비밀번호는 기존 scrypt 해시로 저장한다. 잘못된 가입 입력은 400, 중복 아이디/이메일은 409다. 로그인은 기존 아이디/비밀번호 방식을 유지한다.
+
+인증 DB 초기화에서 email 컬럼/고유 인덱스를 추가하고 이메일이 NULL인 admin 계정에 사용자가 지정한 주소를 설정한다. 기존 비밀번호/프로젝트 및 이미 설정한 이메일은 보존한다. 다른 기존 계정은 NULL 이메일로 로그인할 수 있다. 운영 DB에 직접 연결하지 않았으며 배포 후 인증 요청 때 적용된다. 이메일 소유 확인/비밀번호 재설정/SNS 로그인은 구현하지 않았다. SNS 연동 시 provider+provider user ID를 별도 고유 키로 저장하고 이메일 일치만으로 기존 계정을 자동 연결하지 않는다.
