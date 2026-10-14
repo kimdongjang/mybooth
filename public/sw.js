@@ -1,5 +1,5 @@
-const CACHE_NAME = 'booth-pos-app-v3';
-const APP_SHELL_URLS = ['/', '/index.html'];
+const CACHE_NAME = 'booth-pos-app-v4';
+const APP_SHELL_URLS = ['/', '/index.html', '/fonts/PretendardVariable.woff2'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
