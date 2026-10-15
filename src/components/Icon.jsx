@@ -5,11 +5,12 @@ const paths = {
   settings: <><path d="m12 3 9 5-9 5-9-5 9-5ZM3 8v9l9 5 9-5V8M12 13v9M7.5 5.5l9 5" /></>,
   log: <><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3ZM9 7h6M9 11h6M9 15h3" /></>,
   projects: <><path d="M3 7V5h6l2 2h10v13H3V7ZM7 12h10m-3-3 3 3-3 3M17 16H7m3-3-3 3 3 3" /></>,
+  project: <><path d="M4 5h16v15H4zM8 3v4m8-4v4M4 10h16M8 14h3m-3 3h6" /></>,
   refresh: <><path d="M20 8a8 8 0 0 0-14-2L3 9m0-5v5h5M4 16a8 8 0 0 0 14 2l3-3m0 5v-5h-5" /></>,
   logout: <><path d="M10 4H4v16h6M9 12h12m-4-4 4 4-4 4" /></>,
 };
 
-const colors = { pos: '#2563eb', settings: '#7c3aed', log: '#059669', projects: '#d97706', refresh: '#0891b2', logout: '#e11d48' };
+const colors = { pos: '#2563eb', settings: '#7c3aed', log: '#059669', project: '#0f766e', projects: '#d97706', refresh: '#0891b2', logout: '#e11d48' };
 
 export default function Icon({ name, className = '' }) {
   return <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`ui-icon ${className}`} style={colors[name] ? { color: colors[name] } : undefined}>{paths[name]}</svg>;

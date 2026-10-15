@@ -4,9 +4,11 @@ import SalesPage from './pages/SalesPage';
 import ProductsPage from './pages/ProductsPage';
 import SettlementPage from './pages/SettlementPage';
 import ProjectsPage from './pages/ProjectsPage';
+import ProjectManagementPage from './pages/ProjectManagementPage';
+import ProjectRestorePage from './pages/ProjectRestorePage';
 import { AppHeader } from './components/PageLayout';
 import { Input } from './components/PosUI';
-import { pagePaths, usePageRoute } from './hooks/usePageRoute';
+import { pagePaths, pageTitles, projectPages, usePageRoute } from './hooks/usePageRoute';
 import { uid, won, creatorNameOf, productNameFromFields, productNameWithoutCreator, normalizeProductForClient } from './utils/productDisplay';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { orderRepository } from './database/orderRepository';
@@ -53,7 +55,7 @@ export default function App() {
   const [readyScope, setReadyScope] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [routePage, setScreen] = usePageRoute();
-  const screen = selectedProject ? routePage : 'projects';
+  const screen = selectedProject || routePage === 'restore' ? routePage : 'projects';
   const [orderExpanded, setOrderExpanded] = useState(false);
 
 
@@ -66,9 +68,9 @@ export default function App() {
     }
     if (loading || projectLoading) return;
     if (['login', 'signup'].includes(routePage)) { setScreen(selectedProject ? 'pos' : 'projects', true); return; }
-    if (!selectedProject && routePage !== 'projects') setScreen('projects', true);
+    if (!selectedProject && !['projects', 'restore'].includes(routePage)) setScreen('projects', true);
     else if (!Object.values(pagePaths).some((path) => window.location.hash === `#${path}`)) setScreen(screen, true);
-    document.title = `${{ pos: '상품 판매', settings: '상품 관리', log: '정산', projects: '프로젝트 변경' }[screen]} · 마이 부스`;
+    document.title = `${pageTitles[screen]} · 마이 부스`;
     document.querySelector('.page-heading h1')?.focus();
   }, [screen, routePage, token, loading, projectLoading, selectedProject?.id, setScreen]);
   const [settingsTab, setSettingsTab] = useState('products');
@@ -235,7 +237,7 @@ export default function App() {
     if (activeToken.current !== token) return;
     if (action === 'backupProject') {
       downloadBlob(JSON.stringify(data.backup), 'application/json;charset=utf-8;', `project_${project.id}_${new Date().toISOString().slice(0, 10)}.json`);
-      return;
+      return data;
     }
     setProjects(data.projects);
     if (action === 'deleteProject') {
@@ -259,6 +261,7 @@ export default function App() {
         }
       }
     }
+    return { ...data, project: data.projects?.find(item => item.id === data.project?.id) || data.project };
   };
 
   const selectProject = (project) => {
@@ -632,12 +635,16 @@ export default function App() {
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onRefresh={screen === 'projects' ? loadProjects : loadState} onLogout={logout} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
-    {readOnly && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. 판매·취소·수정을 하려면 프로젝트 관리에서 비밀번호로 보관을 해제해주세요.</div>}
+    {readOnly && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
     {loading || projectLoading || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
 
-    {screen === 'projects' && <ProjectsPage projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} onManageProject={manageProject} />}
+    {screen === 'projects' && <ProjectsPage projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} navigate={setScreen} />}
 
-    {screen === 'pos' && <SalesPage readOnly={readOnly} purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
+    {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
+
+    {screen === 'restore' && <ProjectRestorePage key={selectedProject?.id || 'standalone'} project={selectedProject} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
+
+    {screen === 'pos' && <SalesPage project={selectedProject} onManageProject={() => setScreen('project')} readOnly={readOnly} purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
     {screen === 'settings' && <ProductsPage readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} resetDefaults={resetDefaults} updateToLatestDefaults={updateToLatestDefaults} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
