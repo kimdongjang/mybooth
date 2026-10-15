@@ -19,16 +19,6 @@ import { createLocalOrderId } from './utils/orderId';
 const AUTH_TOKEN_KEY = 'pos_admin_token';
 const AUTH_ADMIN_KEY = 'pos_admin_id';
 const SELECTED_PROJECT_KEY = 'pos_selected_project_id';
-const CREATOR_COLOR_PALETTE = [
-  { bg: '#fef3c7', text: '#92400e', border: '#f59e0b' },
-  { bg: '#dbeafe', text: '#1e40af', border: '#3b82f6' },
-  { bg: '#dcfce7', text: '#166534', border: '#22c55e' },
-  { bg: '#fce7f3', text: '#9d174d', border: '#ec4899' },
-  { bg: '#ede9fe', text: '#5b21b6', border: '#8b5cf6' },
-  { bg: '#cffafe', text: '#155e75', border: '#06b6d4' },
-  { bg: '#fee2e2', text: '#991b1b', border: '#ef4444' },
-  { bg: '#e0e7ff', text: '#3730a3', border: '#6366f1' },
-];
 
 async function requestJson(url, options = {}) {
   const token = sessionStorage.getItem(AUTH_TOKEN_KEY);
@@ -539,7 +529,6 @@ export default function App() {
   };
 
   const creators = useMemo(() => [...new Set(products.map(creatorNameOf))].sort((a, b) => a.localeCompare(b, 'ko-KR')), [products]);
-  const creatorColors = useMemo(() => Object.fromEntries(creators.map((creator, index) => [creator, CREATOR_COLOR_PALETTE[index % CREATOR_COLOR_PALETTE.length]])), [creators]);
   const productsById = useMemo(() => Object.fromEntries(products.map((product) => [product.id, product])), [products]);
   const saleLineCreators = useCallback((line) => {
     if (line.creatorName) return [line.creatorName];
@@ -643,7 +632,7 @@ export default function App() {
 
     {['settings', 'bundleNew', 'productNew'].includes(screen) && <ProductsPage creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={(page, tab = 'bundles') => { setSettingsTab(tab); setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
-    {screen === 'log' && <SettlementPage readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} creatorColors={creatorColors} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} voidSale={voidSale} />}
+    {screen === 'log' && <SettlementPage readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} voidSale={voidSale} />}
     </>}
 
   </div>;

@@ -1,5 +1,11 @@
 # 실행·배포·검증 하네스
 
+## 정산 화면 디자인 통일 (2026-10-15)
+
+- npm run build 통과. 소스 확인: PageIntro/PageTabs/catalog-filters/filter-options 재사용, 제작자 팔레트 및 스타일 전달 제거, 집계/내역 이름 보존, 전체 매출 요약 분리, CSV/초기화/취소 핸들러와 readOnly 유지. 서비스 워커 v38.
+- 브라우저 시각·조작 검증 미실행: 320/375/768/1440px 및 980px 터치에서 좌우/세로 배치, 표 내부 가로 스크롤과 페이지 넘침, 긴 제작자 이름, 탭 키보드 이동, 제작자 필터·빈 판매·CSV·취소·보관 상태 확인 필요.
+- npm test 미실행(UI 변경). 실제 API/DB/IndexedDB 동기화 및 배포 CACHE-01 미실행. 운영 URL은 웹 조회 도구에서 접근 불가했으며 운영 DB 연결 없음.
+
 ## 이미지 업로드 썸네일 축소 (2026-10-15)
 
 - npm run build, npm test 14개, git diff --check 통과. 운영 DB 연결 없음.
