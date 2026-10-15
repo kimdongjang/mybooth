@@ -318,7 +318,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .management-pagination button:disabled { opacity: .4; }
 .management-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
 .management-heading h2 { font-size: 24px; font-weight: 700; letter-spacing: -.03em; }
-.management-heading p, .management-defaults p { margin-top: 6px; font-size: 13px; line-height: 1.6; color: #64748b; }
+.management-heading p { margin-top: 6px; font-size: 13px; line-height: 1.6; color: #64748b; }
 .management-add { min-height: 40px; padding: 10px 16px; border-radius: 8px; background: #2563eb; color: white; font-size: 14px; font-weight: 600; }
 .management-add:hover { background: #1d4ed8; }
 .management-summary { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; color: #64748b; font-size: 12px; }
@@ -347,10 +347,6 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .management-empty { padding: 48px 16px; text-align: center; border: 1px dashed #cbd5e1; border-radius: 12px; background: white; }
 .management-empty h3 { font-size: 15px; font-weight: 600; }
 .management-empty p { margin-top: 8px; font-size: 13px; color: #64748b; }
-.management-defaults { margin-top: 24px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px; }
-.management-defaults h3 { font-size: 14px; font-weight: 600; }
-.management-default-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
-.management-default-actions button { min-height: 36px; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; font-size: 12px; }
 @media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
   .settings-navigation { gap: 20px; margin-bottom: 20px; }
   .management-table { font-size: 12px; }
@@ -363,7 +359,6 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .management-image { width: 152px; max-width: 100%; }
   .management-fields, .management-fields-three { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .management-field input { font-size: 16px; }
-  .management-defaults { padding: 16px; }
 }
 
 /* Keep rows and columns on narrow screens; secondary data lives in details. */
@@ -478,7 +473,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .management-detail-link { font-size: 12px; }
   .management-pagination { font-size: 12px; }
   .management-heading h2 { font-size: 24px; }
-  .management-heading p, .management-defaults p { font-size: 13px; }
+  .management-heading p { font-size: 13px; }
   .management-add { font-size: 14px; }
   .management-summary { font-size: 12px; }
   .management-product-header h3 { font-size: 15px; }
@@ -492,8 +487,6 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .management-field input { font-size: 14px; }
   .management-empty h3 { font-size: 15px; }
   .management-empty p { font-size: 13px; }
-  .management-defaults h3 { font-size: 14px; }
-  .management-default-actions button { font-size: 12px; }
   .management-table { font-size: 12px; }
   .management-table th { font-size: 11px; }
   .management-table time { font-size: 11px; }

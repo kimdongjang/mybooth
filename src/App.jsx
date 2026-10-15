@@ -74,6 +74,7 @@ export default function App() {
     document.querySelector('.page-heading h1')?.focus();
   }, [screen, routePage, token, loading, projectLoading, selectedProject?.id, setScreen]);
   const [settingsTab, setSettingsTab] = useState('products');
+  useEffect(() => { if (screen === 'bundleNew') setSettingsTab('bundles'); }, [screen, selectedProject?.id]);
   const [products, setProducts] = useState([]);
   const [bundles, setBundles] = useState([]);
   const [sales, setSales] = useState([]);
@@ -86,7 +87,7 @@ export default function App() {
   useEffect(() => {
     setCreatorFilter('all');
     setPurchaseTab('products');
-    setSettingsTab('products');
+    setSettingsTab(screen === 'bundleNew' ? 'bundles' : 'products');
     setLogCreatorFilter('all');
     setBundleRows([{ productId: '', qty: 1 }]);
     setBundleName('');
@@ -449,14 +450,6 @@ export default function App() {
       setSaving(false);
     }
   };
-  const resetDefaults = () => {
-    if (!confirm('현재 상품/세트 목록과 재고를 기본 44종으로 초기화할까요? 직접 추가·수정한 상품/세트는 제거됩니다. 판매 내역은 유지되지만, 과거 판매의 제작자 집계와 세트 취소 결과는 변경될 수 있습니다.')) return;
-    mutate('resetDefaults', {}, () => setCart([]));
-  };
-  const updateToLatestDefaults = () => {
-    if (!confirm('없는 기본 상품/세트만 추가할까요? 기존 상품·세트 설정, 현재·초기 재고와 판매 내역은 모두 유지됩니다.')) return;
-    mutate('upsertDefaults', {}, () => setCart([]));
-  };
   const addBundleToSettings = async () => {
     const price = Number(bundlePrice);
     const items = bundleRows.filter((r) => r.productId).map((r) => ({ productId: r.productId, qty: Number(r.qty) }));
@@ -464,6 +457,8 @@ export default function App() {
     const saved = await persistBundles([...bundles, { id: uid(), name: bundleName.trim(), price, items }]);
     if (!saved) return;
     setBundleName(''); setBundlePrice(''); setBundleRows([{ productId: '', qty: 1 }]);
+    setSettingsTab('bundles');
+    setScreen('settings');
   };
   const exportCsv = () => {
     const rows = sales.map((sale) => `"${new Date(sale.time).toLocaleString('ko-KR')}","${sale.method === 'cash' ? '현금' : '계좌이체'}","${sale.lines.map((l) => `${l.name} x${l.qty}`).join(' / ')}",${sale.total}`);
@@ -646,7 +641,7 @@ export default function App() {
 
     {screen === 'pos' && <SalesPage project={selectedProject} onManageProject={() => setScreen('project')} readOnly={readOnly} purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
-    {screen === 'settings' && <ProductsPage readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} resetDefaults={resetDefaults} updateToLatestDefaults={updateToLatestDefaults} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
+    {['settings', 'bundleNew'].includes(screen) && <ProductsPage creatingBundle={screen === 'bundleNew'} navigate={(page) => { setSettingsTab('bundles'); setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
     {screen === 'log' && <SettlementPage readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} creatorColors={creatorColors} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} voidSale={voidSale} />}
     </>}
