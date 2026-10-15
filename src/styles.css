@@ -535,10 +535,3 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .management-heading > button { flex-shrink: 0; }
 .bulk-product-images { margin-bottom: 20px; overflow-wrap: anywhere; }
 .bulk-product-images .management-back { margin: 8px 8px 0 0; }
-
-/* Shared transparent MyBooth wordmark in authenticated and auth headers. */
-.brand-title { display: inline-flex; align-items: center; max-width: 100%; vertical-align: middle; }
-.brand-logo { display: block; width: 144px; height: auto; max-width: 100%; }
-@media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
-  .brand-logo { width: 120px; }
-}
