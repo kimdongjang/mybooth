@@ -44,6 +44,11 @@ async function initDb() {
   await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS image_url TEXT`;
   await sql`CREATE TABLE IF NOT EXISTS pos_bundles (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, items JSONB NOT NULL, PRIMARY KEY(project_id, id))`;
   await sql`CREATE TABLE IF NOT EXISTS pos_sales (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, time TIMESTAMPTZ NOT NULL, method TEXT NOT NULL, total INTEGER NOT NULL, lines JSONB NOT NULL, PRIMARY KEY(project_id, id))`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_sale_receipts (
+    project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
+    id TEXT NOT NULL, voided BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY(project_id, id)
+  )`;
   // Upgrade pre-project tables atomically. Unowned legacy rows stay NULL and
   // cannot be read/deleted by project-scoped requests; never guess their owner.
   await sql`DO $$
@@ -229,14 +234,36 @@ async function finalizeSale(adminId, projectId, { localOrderId, createdAt, metho
   await assertProject(adminId, projectId);
   if (!Array.isArray(cart) || !cart.length) throw new Error('장바구니가 비어 있습니다.');
   const saleId = localOrderId || uid();
+  if ((await sql`SELECT id FROM pos_sale_receipts WHERE project_id = ${projectId} AND id = ${saleId}`).rows[0]) return;
   if ((await sql`SELECT id FROM pos_sales WHERE project_id = ${projectId} AND id = ${saleId}`).rows[0]) return;
-  const products = (await sql`SELECT id, stock, stock_qty FROM pos_products WHERE project_id = ${projectId}`).rows;
+  if (!['cash', 'transfer'].includes(method) || !Number.isSafeInteger(total) || total < 0 || total > 2147483647) throw new Error('결제수단과 정수 금액을 확인해주세요.');
+  if (cart.some(line => !['product', 'bundle'].includes(line.type) || typeof line.id !== 'string' || !Number.isSafeInteger(line.qty) || line.qty <= 0 || !Number.isSafeInteger(line.unitPrice) || line.unitPrice < 0 || line.unitPrice > 2147483647) || cart.reduce((sum, line) => sum + line.qty * line.unitPrice, 0) !== total) throw new Error('판매 수량과 가격을 확인해주세요.');
+  const products = (await sql`SELECT * FROM pos_products WHERE project_id = ${projectId}`).rows;
+  const lines = [];
   const soldByProduct = new Map();
   for (const line of cart) {
-    if (line.type === 'product') soldByProduct.set(line.id, (soldByProduct.get(line.id) || 0) + Number(line.qty || 0));
+    if (line.type === 'product') {
+      const product = products.find(item => item.id === line.id);
+      if (!product) throw new Error('상품을 찾을 수 없습니다.');
+      soldByProduct.set(line.id, (soldByProduct.get(line.id) || 0) + line.qty);
+      lines.push({ ...line, name: line.name || product.name, creatorName: line.creatorName ?? product.creator_name ?? '' });
+    }
     if (line.type === 'bundle') {
       const bundle = (await sql`SELECT items FROM pos_bundles WHERE project_id = ${projectId} AND id = ${line.id}`).rows[0];
-      for (const item of bundle?.items || []) soldByProduct.set(item.productId, (soldByProduct.get(item.productId) || 0) + Number(item.qty || 0) * Number(line.qty || 0));
+      if (!bundle?.items?.length) throw new Error('세트 구성을 찾을 수 없습니다.');
+      if (line.subItems && (!Array.isArray(line.subItems) || line.subItems.length !== bundle.items.length || bundle.items.some((item, index) => item.productId !== line.subItems[index]?.productId || item.qty !== line.subItems[index]?.qty))) {
+        const error = new Error('판매 시점과 서버의 세트 구성이 다릅니다. 미전송 주문을 보존하고 구성을 확인해주세요.');
+        error.code = '40001';
+        throw error;
+      }
+      const subItems = bundle.items.map(item => {
+        const product = products.find(product => product.id === item.productId);
+        if (!product || !Number.isSafeInteger(item.qty) || item.qty <= 0) throw new Error('세트 구성을 확인해주세요.');
+        soldByProduct.set(item.productId, (soldByProduct.get(item.productId) || 0) + item.qty * line.qty);
+        const historical = line.subItems?.find(saved => saved.productId === item.productId);
+        return { ...item, name: historical?.name ?? product.name, creatorName: historical?.creatorName ?? product.creator_name ?? '', unitPrice: historical?.unitPrice ?? product.price };
+      });
+      lines.push({ ...line, subItems });
     }
   }
   for (const [productId, sold] of soldByProduct) {
@@ -244,20 +271,23 @@ async function finalizeSale(adminId, projectId, { localOrderId, createdAt, metho
     if (!product || Number(product.stock_qty ?? product.stock ?? 0) < sold) throw new Error('재고가 부족합니다. 새로고침 후 다시 시도해주세요.');
   }
   for (const [productId, sold] of soldByProduct) await sql`UPDATE pos_products SET stock = stock - ${sold}, stock_qty = COALESCE(stock_qty, stock) - ${sold}, updated_at = NOW() WHERE project_id = ${projectId} AND id = ${productId}`;
-  const sale = { id: saleId, time: createdAt || new Date().toISOString(), method, total: Number(total) || 0, lines: cart.map(({ subItems, ...line }) => line) };
+  const sale = { id: saleId, time: createdAt || new Date().toISOString(), method, total: Number(total) || 0, lines };
+  await sql`INSERT INTO pos_sale_receipts (project_id, id) VALUES (${projectId}, ${saleId}) ON CONFLICT (project_id, id) DO NOTHING`;
   await sql`INSERT INTO pos_sales (project_id, id, time, method, total, lines) VALUES (${projectId}, ${sale.id}, ${sale.time}, ${sale.method}, ${sale.total}, ${JSON.stringify(sale.lines)}::jsonb)`;
   await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
 
 async function voidSale(adminId, projectId, id) {
   await assertProject(adminId, projectId);
+  if (typeof id !== 'string' || !id) throw new Error('취소할 판매 ID가 필요합니다.');
+  await sql`INSERT INTO pos_sale_receipts (project_id, id, voided) VALUES (${projectId}, ${id}, TRUE) ON CONFLICT (project_id, id) DO UPDATE SET voided = TRUE`;
   const sale = (await sql`SELECT lines FROM pos_sales WHERE project_id = ${projectId} AND id = ${id}`).rows[0];
   if (!sale) return;
   for (const line of sale.lines || []) {
     if (line.type === 'product') await sql`UPDATE pos_products SET stock = stock + ${Number(line.qty) || 0}, stock_qty = COALESCE(stock_qty, stock) + ${Number(line.qty) || 0}, updated_at = NOW() WHERE project_id = ${projectId} AND id = ${line.id}`;
     if (line.type === 'bundle') {
       const bundle = (await sql`SELECT items FROM pos_bundles WHERE project_id = ${projectId} AND id = ${line.id}`).rows[0];
-      for (const item of bundle?.items || []) await sql`UPDATE pos_products SET stock = stock + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, stock_qty = COALESCE(stock_qty, stock) + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, updated_at = NOW() WHERE project_id = ${projectId} AND id = ${item.productId}`;
+      for (const item of line.subItems || bundle?.items || []) await sql`UPDATE pos_products SET stock = stock + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, stock_qty = COALESCE(stock_qty, stock) + ${(Number(item.qty) || 0) * (Number(line.qty) || 0)}, updated_at = NOW() WHERE project_id = ${projectId} AND id = ${item.productId}`;
     }
   }
   await sql`DELETE FROM pos_sales WHERE project_id = ${projectId} AND id = ${id}`;
@@ -267,6 +297,7 @@ async function voidSale(adminId, projectId, id) {
 async function clearSales(adminId, projectId, password) {
   if (!await validateAdminPassword(adminId, password)) throw new Error('패스워드가 올바르지 않습니다.');
   await assertProject(adminId, projectId);
+  await sql`INSERT INTO pos_sale_receipts (project_id, id) SELECT project_id, id FROM pos_sales WHERE project_id = ${projectId} ON CONFLICT (project_id, id) DO NOTHING`;
   await sql`DELETE FROM pos_sales WHERE project_id = ${projectId}`;
   await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
@@ -307,7 +338,13 @@ function validateBackup(backup) {
   }
   for (const s of backup.sales) {
     if (!['cash', 'transfer'].includes(s.method) || !integer(s.total) || typeof s.time !== 'string' || !Number.isFinite(Date.parse(s.time)) || !Array.isArray(s.lines)) invalid();
-    for (const line of s.lines) if (!line || !['product', 'bundle'].includes(line.type) || !text(line.id) || !text(line.name) || !integer(line.qty, 1) || !integer(line.unitPrice)) invalid();
+    for (const line of s.lines) {
+      if (!line || !['product', 'bundle'].includes(line.type) || !text(line.id) || !text(line.name) || !integer(line.qty, 1) || !integer(line.unitPrice)) invalid();
+      if (line.subItems !== undefined) {
+        if (!Array.isArray(line.subItems) || !line.subItems.length) invalid();
+        for (const item of line.subItems) if (!item || !text(item.productId) || !integer(item.qty, 1) || !integer(item.unitPrice)) invalid();
+      }
+    }
   }
 }
 

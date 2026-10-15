@@ -29,8 +29,8 @@ export class DexieOrderRepository implements OrderRepository {
   async getPendingOrders(projectId: string): Promise<StoredOrder[]> {
     return db.orders
       .where('[projectId+syncStatus]')
-      .anyOf([[projectId, 'PENDING'], [projectId, 'FAILED']])
-      .sortBy('createdAt');
+      .anyOf([[projectId, 'PENDING'], [projectId, 'FAILED'], [projectId, 'SYNCING']])
+      .sortBy('id');
   }
 
   async countWaiting(projectId: string): Promise<number> {

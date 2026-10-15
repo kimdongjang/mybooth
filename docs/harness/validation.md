@@ -1,3 +1,11 @@
+## 오프라인 판매 저장·재전송 기반 (2026-10-15)
+
+- `npm run build`, `git diff --check` 통과. `npm test` 19개 통과(기존 15개 및 새 4개). 변경한 database/sync TS 모듈을 대상으로 `tsc --noEmit --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM --skipLibCheck` 통과(앱 전체 타입 검사와 구분). 운영 DB 사용 없음.
+- `tests/offline-storage.test.js`: 실제 Dexie 저장소를 fake-indexeddb에서 실행해 판매/취소 원자 저장, 상태 저장 실패 주입 시 큐까지 롤백, 오래된 화면 거절, 프로젝트 분리 조회, 대기 중 서버 상태 수신 보존, 조회 중 큐 전송 완료 후 늦은 응답 보존을 확인했다. Web Locks 모형으로 동시 전송 중복 방지, SYNCING 회수, 시계 역전과 무관한 삽입 순서, 응답 유실 후 후속 취소 중단/재시도, 요청 중 계정/프로젝트 전환 시 후속 중단을 검증했다.
+- `tests/project-lifecycle.test.js`: 격리 PGlite 실제 API 트랜잭션에서 중복 판매, 반복 취소, 취소 후 원 판매 재전송, 취소 선도착, clearSales 후 원 판매 재전송, 세트 마스터 변경 후 판매 스냅샷에 따른 재고 복원, 무료 판매, 잘못된 가격/수량/결제수단 거절, 구성 충돌 409 및 손상 subItems 백업 거절을 확인했다. 기존 판매 INSERT 실패 롤백 회귀도 유지한다.
+- 첫 저장 실패 테스트에서 재사용 입력 객체에 Dexie가 id를 추가하는 문제를 발견해 복사본 삽입으로 수정한 뒤 통과했다. 테스트 간 DB 재개방을 명시하여 최종 통과했다. 최초 패키지 설치는 네트워크 DNS 실패 후 승인된 실행으로 설치 완료했다.
+- 미실행: SALE/VOID/IDEM/RACE/TX/OFF/SWITCH의 실제 브라우저→API→별도 PostgreSQL 전 구간, 여러 실제 탭/프로세스의 Web Locks·종료 후 회수, 실기기/서비스 워커 갱신 CACHE-01. fake-indexeddb와 잠금 모형/PGlite는 실제 디스크 종료·용량 부족·PostgreSQL 다중 연결 경쟁 검증을 대체하지 않는다. 전체 계획 2~5단계와 계정 스키마/마이그레이션·서버 기준 상태 병합은 미구현이다.
+
 ## 페이지 설명 제거·상품 관리 버튼 통일 (2026-10-15)
 
 npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공통 설명 제거와 단품/세트 동일 버튼·제목 행 배치를 확인했다. 브라우저 모바일/데스크톱 시각·조작 및 배포 CACHE-01 미실행. 이번 UI 변경에서 npm test는 재실행하지 않았으며 이전 변경의 15개 통과와 구분한다. API/DB/주문 큐 변경 없음.
