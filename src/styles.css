@@ -533,6 +533,8 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 
 .management-heading > div { min-width: 0; }
 .management-heading > button { flex-shrink: 0; }
+.bulk-product-images { margin-bottom: 20px; overflow-wrap: anywhere; }
+.bulk-product-images .management-back { margin: 8px 8px 0 0; }
 
 /* Shared transparent MyBooth wordmark in authenticated and auth headers. */
 .brand-title { display: inline-flex; align-items: center; max-width: 100%; vertical-align: middle; }
