@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
 import { managementQuantities, managementBundleStock } from '../utils/managementQuantities';
-import { uid, won, creatorNameOf, productNameFromFields, productNameWithoutCreator } from '../utils/productDisplay';
+import { won, creatorNameOf, productNameFromFields, productNameWithoutCreator } from '../utils/productDisplay';
 import { Input, Panel, Quantity, StockAdjustment, ProductImage } from '../components/PosUI';
+import ProductCreatePage from './ProductCreatePage';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 const AUTH_TOKEN_KEY = 'pos_admin_token';
 
-export default function ProductsPage({ readOnly, projectId, settingsTab, setSettingsTab, saving, mutate, products, bundles, sales, persistProducts, persistBundles, creatingBundle, navigate, bundleName, setBundleName, bundleRows, setBundleRows, bundlePrice, setBundlePrice, addBundleToSettings, backupOrdersJson, backupOrdersCsv }) {
+export default function ProductsPage({ readOnly, projectId, settingsTab, setSettingsTab, saving, mutate, products, bundles, sales, persistProducts, persistBundles, creatingBundle, creatingProduct, navigate, bundleName, setBundleName, bundleRows, setBundleRows, bundlePrice, setBundlePrice, addBundleToSettings, backupOrdersJson, backupOrdersCsv }) {
   const [selectedBundleId, setSelectedBundleId] = useState(null);
   const selectedBundle = bundles.find((bundle) => bundle.id === selectedBundleId);
   useEffect(() => { setSelectedBundleId(null); }, [settingsTab, projectId]);
+  if (creatingProduct) return <ProductCreatePage key={projectId} readOnly={readOnly} saving={saving} products={products} persistProducts={persistProducts} onBack={() => navigate('settings', 'products')} />;
   if (creatingBundle) return <main className="page-content settings-page"><PageIntro title="새 세트 등록" description="구성품과 수량, 판매가를 입력해 세트를 추가하세요." actions={<button type="button" className="management-back" onClick={() => navigate('settings')}>← 세트 목록으로</button>} /><div className="settings-content"><fieldset disabled={readOnly || saving} className="min-w-0"><section className="management-product bundle-management-body"><h3>새 세트 등록</h3><div className="mt-3 flex flex-col gap-2 border-t border-dashed border-line pt-3"><label className="management-field"><span>세트 이름</span><Input value={bundleName} onChange={setBundleName} placeholder="예: 아크릴+포카 세트" /></label>{bundleRows.map((row, idx) => <div className="flex gap-1.5" key={idx}><select aria-label={`구성품 ${idx + 1}`} className="min-w-0 flex-1 rounded border border-line p-1.5 text-xs" value={row.productId} onChange={(e) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, productId: e.target.value } : r))}><option value="">굿즈 선택</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Input aria-label={`구성품 ${idx + 1} 수량`} min="1" step="1" type="number" className="w-[70px]" value={row.qty} onChange={(v) => setBundleRows(bundleRows.map((r, i) => i === idx ? { ...r, qty: v } : r))} /><button type="button" className="management-delete" aria-label={`구성품 ${idx + 1} 제거`} disabled={bundleRows.length === 1} onClick={() => setBundleRows(bundleRows.filter((_, i) => i !== idx))}>제거</button></div>)}<button className="self-start rounded bg-transfer px-2.5 py-1.5 text-xs text-white" onClick={() => setBundleRows([...bundleRows, { productId: '', qty: 1 }])}>+ 구성품 추가</button><label className="management-field"><span>판매가 (원)</span><Input min="0" step="1" type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="0" /></label><button className="self-start rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" disabled={saving} onClick={addBundleToSettings}>세트 저장</button></div></section></fieldset></div></main>;
-  return <main className="page-content settings-page"><PageIntro title="상품 관리" description="상품과 세트의 가격·재고를 관리하고 주문 데이터를 백업하세요."><PageTabs id="settings" label="상품 및 주문 관리" tabs={[["products", "상품 관리"], ["bundles", "세트 관리"], ["backup", "주문 백업"]]} selected={settingsTab} onSelect={setSettingsTab} /></PageIntro><div id={`settings-panel-${settingsTab}`} role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} tabIndex={0} className="settings-content">{settingsTab === 'products' && <ProductSettingsPanel readOnly={readOnly} key={projectId} projectId={projectId} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} />}{settingsTab === 'bundles' && (selectedBundle ? <BundleDetail readOnly={readOnly} bundle={selectedBundle} products={products} sales={sales} bundles={bundles} persistBundles={persistBundles} onBack={() => setSelectedBundleId(null)} /> : <section className="product-management"><header className="management-heading"><div><h2>세트 관리</h2><p>구성품과 판매 현황을 확인하고 새 세트를 등록하세요.</p></div><button type="button" disabled={readOnly || saving} className="rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={() => navigate('bundleNew')}>새 세트 등록</button></header><div className="management-summary"><span>등록 세트 <b>{bundles.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '수량은 자동으로 계산됩니다'}</span></div><p className="management-note">판매 가능 수량은 현재 구성품의 남은 재고 기준이며, 다른 세트와 재고를 공유합니다.</p><BundleManagementTable readOnly={readOnly} bundles={bundles} products={products} sales={sales} persistBundles={persistBundles} onSelect={setSelectedBundleId} />{!bundles.length && <div className="management-empty"><h3>등록된 세트가 없습니다</h3><p>새 세트 등록 버튼으로 구성품과 판매가를 입력하세요.</p></div>}</section>)}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</div></main>;
+  return <main className="page-content settings-page"><PageIntro title="상품 관리" description="상품과 세트의 가격·재고를 관리하고 주문 데이터를 백업하세요."><PageTabs id="settings" label="상품 및 주문 관리" tabs={[["products", "상품 관리"], ["bundles", "세트 관리"], ["backup", "주문 백업"]]} selected={settingsTab} onSelect={setSettingsTab} /></PageIntro><div id={`settings-panel-${settingsTab}`} role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} tabIndex={0} className="settings-content">{settingsTab === 'products' && <ProductSettingsPanel onAdd={() => navigate('productNew', 'products')} readOnly={readOnly} key={projectId} projectId={projectId} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} />}{settingsTab === 'bundles' && (selectedBundle ? <BundleDetail readOnly={readOnly} bundle={selectedBundle} products={products} sales={sales} bundles={bundles} persistBundles={persistBundles} onBack={() => setSelectedBundleId(null)} /> : <section className="product-management"><header className="management-heading"><div><h2>세트 관리</h2><p>구성품과 판매 현황을 확인하고 새 세트를 등록하세요.</p></div><button type="button" disabled={readOnly || saving} className="rounded-md bg-register-2 px-3.5 py-2 text-[13px] text-white" onClick={() => navigate('bundleNew')}>새 세트 등록</button></header><div className="management-summary"><span>등록 세트 <b>{bundles.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '수량은 자동으로 계산됩니다'}</span></div><p className="management-note">판매 가능 수량은 현재 구성품의 남은 재고 기준이며, 다른 세트와 재고를 공유합니다.</p><BundleManagementTable readOnly={readOnly} bundles={bundles} products={products} sales={sales} persistBundles={persistBundles} onSelect={setSelectedBundleId} />{!bundles.length && <div className="management-empty"><h3>등록된 세트가 없습니다</h3><p>새 세트 등록 버튼으로 구성품과 판매가를 입력하세요.</p></div>}</section>)}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</div></main>;
 }
 
 
@@ -55,7 +57,7 @@ function BundleDetail({ readOnly, bundle, products, sales, bundles, persistBundl
   </section>;
 }
 
-function ProductSettingsPanel({ readOnly, projectId, saving, onImageChange, products, bundles, sales, persistProducts, persistBundles }) {
+function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChange, products, bundles, sales, persistProducts, persistBundles }) {
   const quantities = managementQuantities(sales, bundles);
   const [uploadingId, setUploadingId] = useState(null);
   const [page, setPage] = useState(1);
@@ -90,29 +92,6 @@ function ProductSettingsPanel({ readOnly, projectId, saving, onImageChange, prod
     const stockQty = Number(next.stockQty ?? next.stock ?? 0) || 0;
     return { ...next, stockQty, stock: stockQty, name: productNameFromFields(next) };
   }));
-  const addProduct = () => {
-    const id = uid();
-    persistProducts([...products, {
-      id,
-      productCode: id,
-      goodsType: '새 굿즈',
-      vtuberName: '',
-      creatorName: '',
-      stockQty: 0,
-      initialStockQty: 0,
-      size: '',
-      price: 0,
-      setCreatorName: null,
-      setGroupName: null,
-      setPrice: null,
-      setDescription: null,
-      isActive: true,
-      name: '새 굿즈',
-      stock: 0,
-      createdAt: new Date().toISOString(),
-    }]);
-    setSelectedId(id);
-  };
   const deleteProduct = (productId) => {
     if (!confirm('이 굿즈를 삭제할까요? 세트 구성에서도 제거됩니다.')) return;
     persistProducts(products.filter((x) => x.id !== productId));
@@ -124,7 +103,7 @@ function ProductSettingsPanel({ readOnly, projectId, saving, onImageChange, prod
   return <section className="product-management">
     <header className="management-heading">
       <div><h2>{selectedProduct ? '상품 상세' : '상품 목록'}</h2>{selectedProduct && <p>이미지와 상품 정보를 수정하세요. 수정한 내용은 자동으로 저장됩니다.</p>}</div>
-      {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <button type="button" disabled={readOnly} className="management-add" onClick={addProduct}>+ 상품 추가</button>}
+      {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <button type="button" disabled={readOnly || saving} className="management-add" onClick={onAdd}>+ 상품 추가</button>}
     </header>
     <div className="management-summary"><span>등록 상품 <b>{products.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '상품 정보를 수정할 수 있습니다'}</span></div>
     <p className="management-note">등록 수량은 기존 초기 재고와 추가 입고의 합계입니다. 판매 수량은 현재 판매 내역의 단품·세트 구성품을 합산합니다. 취소된 판매는 제외하며, 구성 정보가 없는 과거 세트 판매는 현재 구성 기준입니다.</p>
@@ -143,7 +122,7 @@ function ProductSettingsPanel({ readOnly, projectId, saving, onImageChange, prod
     </>}
     {selectedProduct && <fieldset disabled={readOnly} className="min-w-0"><div className="management-products">
       {[selectedProduct].map((p) => <article className="management-product" key={p.id}>
-        <div className="management-product-header"><h3>{productNameWithoutCreator(p)}</h3><button type="button" className="management-delete" aria-label={`${p.name} 상품 삭제`} onClick={() => deleteProduct(p.id)}>삭제</button></div>
+        <div className="management-product-header"><h3>{productNameWithoutCreator(p)} ({p.productCode || p.id})</h3><button type="button" className="management-delete" aria-label={`${p.name} 상품 삭제`} onClick={() => deleteProduct(p.id)}>삭제</button></div>
         <div className="management-product-body">
           <div className="management-image">
             <ProductImage imageUrl={p.imageUrl} name={p.name} />
@@ -154,7 +133,7 @@ function ProductSettingsPanel({ readOnly, projectId, saving, onImageChange, prod
           <div className="management-details">
             <fieldset><legend>기본 정보</legend><div className="management-fields">
               {field(p, '상품 코드', p.productCode || p.id, (v) => ({ productCode: v }))}
-              {field(p, '버튜버', p.vtuberName || '', (v) => ({ vtuberName: v }))}
+              {field(p, '캐릭터', p.vtuberName || '', (v) => ({ vtuberName: v }))}
               {field(p, '굿즈 종류', p.goodsType || '', (v) => ({ goodsType: v }))}
               {field(p, '제작자', p.creatorName || '', (v) => ({ creatorName: v }))}
             </div></fieldset>
