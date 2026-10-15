@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { SyncStatus } from './SyncStatus';
 import { pagePaths, projectPages } from '../hooks/usePageRoute';
 
-export function PageIntro({ title, description, children, actions }) {
+export function PageIntro({ title, children, actions }) {
   return <div className="page-intro">
-    <div className="page-heading"><div><h1 tabIndex={-1}>{title}</h1><p>{description}</p></div>{actions && <div className="page-heading-actions">{actions}</div>}</div>
+    <div className="page-heading"><div><h1 tabIndex={-1}>{title}</h1></div>{actions && <div className="page-heading-actions">{actions}</div>}</div>
     {children}
   </div>;
 }

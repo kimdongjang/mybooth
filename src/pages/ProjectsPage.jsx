@@ -3,7 +3,7 @@ import { PageIntro } from '../components/PageLayout';
 
 export default function ProjectsPage({ creating, projects, selectedProject, newProjectName, setNewProjectName, onCreateProject, onSelectProject, navigate }) {
   return <main className="page-content projects-page"><div className="page-body event-picker">
-    <PageIntro title={creating ? '새 행사 추가' : '행사 선택'} description={creating ? '상품·세트·판매 내역이 없는 행사로 시작합니다.' : '운영할 행사를 선택하면 판매 화면으로 이동합니다. 행사별 설정은 판매 화면의 ‘행사 관리’에서 변경하세요.'} actions={<button type="button" className="event-button event-button-primary" onClick={() => navigate(creating ? 'projects' : 'projectNew')}>{creating ? '행사 목록으로' : '새 행사 추가'}</button>} />
+    <PageIntro title={creating ? '새 행사 추가' : '행사 선택'} actions={<button type="button" className="event-button event-button-primary" onClick={() => navigate(creating ? 'projects' : 'projectNew')}>{creating ? '행사 목록으로' : '새 행사 추가'}</button>} />
     <div>
       {creating ? <form onSubmit={onCreateProject} className="event-panel event-create-form">
         <h2>새 행사 만들기</h2><p>상품·세트·판매 내역이 없는 행사로 시작합니다.</p>
