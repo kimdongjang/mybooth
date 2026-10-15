@@ -1,8 +1,8 @@
 ## 파랑·보라 그라데이션 로고 검증 (2026-10-15)
 
-- 기본 이미지 도구로 이전 파란 PNG의 글자 형태에 중앙 보라/양끝 파랑 그라데이션을 적용하고 투명 PNG 출력. 이미지 시각 확인, System.Drawing으로 모서리 alpha=0 및 글자 내부/바깥 픽셀 구분 확인.
-- npm run build 및 git diff --check 통과. 두 헤더 경로/크기/alt/링크 유지, 서비스 워커 v47 자산 경로 및 빌드 PNG 포함 확인.
-- UI-01 실제 브라우저 모바일/데스크톱 헤더·넘침·링크와 배포 CACHE-01 미실행. npm test 미실행(정적 로고/UI 변경). API/DB/IndexedDB 변경 없음.
+- 기본 이미지 도구로 이전 파란 PNG의 글자 형태에 세로 중앙 보라/위·아래 파랑 그라데이션을 적용하고 투명 PNG 출력. 이미지 시각 확인, System.Drawing으로 모서리 alpha=0 및 글자 내부/바깥 픽셀 구분 확인.
+- npm run build 및 git diff --check 통과. 두 헤더 경로/크기/alt/링크 유지, 서비스 워커 v48 자산 경로 및 빌드 PNG 포함 확인.
+- 세로 방향 수정 후 npm run build, npm test 22개, git diff --check 통과. 최신 main 통합 시 두 하네스 기록 보존 및 캐시 v48 충돌 해결. UI-01 실제 브라우저 모바일/데스크톱 헤더·넘침·링크와 배포 CACHE-01 미실행. API/DB/IndexedDB 변경 없음.
 ## 이미지 상품 일괄 추가 검증 (2026-10-15)
 
 - npm run build 및 npm test 22개 통과. 신규 3개는 실제 BulkProductImages 컴포넌트의 비동기 처리에 React 훅/이미지 변환/Blob/API 모형을 주입해 기존 상품 보존, 이미지별 신규 기본값·고유 ID, 잘못된 파일 제외, 상품 등록 실패 시 업로드0회, 연결 실패 후 동일 URL 재시도·상품/Blob 중복 생성 방지를 검증했다. 초기 테스트 모형의 Fragment export 누락을 수정한 후 통과. 기존 API/PGlite/IndexedDB 회귀 포함, 운영 DB 사용 없음.
