@@ -9,12 +9,16 @@ test('upload tokens require authentication, owned product and matching path; res
   const module = new vm.SourceTextModule(source, { context });
   let tokenOptions;
   let owned = true;
+  let archived = false;
   const dependencies = {
     '@vercel/blob/client': { handleUpload: async options => {
       tokenOptions = await options.onBeforeGenerateToken(options.body.pathname, options.body.clientPayload);
       return { type: 'token' };
     } },
-    '@vercel/postgres': { sql: async () => ({ rows: owned ? [{ id: 'P001' }] : [] }) },
+    '@vercel/postgres': { sql: async parts => {
+      assert.match(parts.join('?'), /project\.archived_at IS NULL/);
+      return { rows: owned && !archived ? [{ id: 'P001' }] : [] };
+    } },
     './lib/auth.js': { requireAuth: (req, res) => {
       if (req.authenticated) return { id: 'admin-a' };
       res.status(401).json({ error: 'Unauthorized' });
@@ -36,6 +40,9 @@ test('upload tokens require authentication, owned product and matching path; res
   assert.equal(tokenOptions.maximumSizeInBytes, 5 * 1024 * 1024);
   assert.equal(tokenOptions.allowOverwrite, false);
   assert.equal(await invoke(true, 'products/project-b/P001/image.png'), 400);
+  archived = true;
+  assert.equal(await invoke(true), 400);
+  archived = false;
   owned = false;
   assert.equal(await invoke(true), 400);
 });

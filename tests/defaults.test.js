@@ -15,7 +15,7 @@ async function fixture() {
     const query = parts.join('?').replace(/\s+/g, ' ').trim();
     statements.push(query);
     if ((query.startsWith('CREATE ') || query.startsWith('ALTER ') || query.startsWith('DO '))) return { rows: [] };
-    if (query.startsWith('SELECT id FROM pos_projects')) {
+    if (query.startsWith('SELECT id FROM pos_projects') || query.startsWith('SELECT id, archived_at FROM pos_projects')) {
       return { rows: rows.pos_projects.filter(p => p.id === values[0] && p.admin_id === values[1]) };
     }
     if (query.startsWith('INSERT INTO ')) {
@@ -65,7 +65,7 @@ async function fixture() {
   await module.evaluate();
   const invoke = async (action, projectId = 'project-a', adminId = 'admin-a', payload = {}) => {
     const result = {};
-    await module.namespace.default({ method: 'POST', adminId, body: { action, projectId, payload } }, {
+    await module.namespace.createHandler(sql)({ method: 'POST', adminId, body: { action, projectId, payload } }, {
       status(code) { result.status = code; return this; },
       json(body) { result.body = body; return this; },
     });

@@ -1,6 +1,7 @@
 import { db } from './dexie';
 
 export interface PosStateCache {
+  archivedAt?: string | null;
   dataRevision?: string | null;
   products: unknown[];
   bundles: unknown[];
@@ -10,6 +11,11 @@ export interface PosStateCache {
 const stateKey = (projectId: string) => `project:${projectId}:latest`;
 
 export const stateRepository = {
+  async setArchivedAt(projectId: string, archivedAt: string | null): Promise<void> {
+    await db.posState.update(stateKey(projectId), cached => {
+      cached.state = { ...(cached.state as PosStateCache), archivedAt };
+    });
+  },
   async remove(projectId: string): Promise<void> {
     await db.posState.delete(stateKey(projectId));
   },

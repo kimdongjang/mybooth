@@ -13,7 +13,7 @@ export default async function handler(req, res) {
         if (!admin) throw new Error('인증이 필요합니다.');
         const { projectId, productId } = JSON.parse(clientPayload || '{}');
         if (!projectId || !productId) throw new Error('상품과 프로젝트가 필요합니다.');
-        const product = (await sql`SELECT p.id FROM pos_products p JOIN pos_projects project ON project.id = p.project_id WHERE p.project_id = ${projectId} AND p.id = ${productId} AND project.admin_id = ${admin.id}`).rows[0];
+        const product = (await sql`SELECT p.id FROM pos_products p JOIN pos_projects project ON project.id = p.project_id WHERE p.project_id = ${projectId} AND p.id = ${productId} AND project.admin_id = ${admin.id} AND project.archived_at IS NULL`).rows[0];
         if (!product || !pathname.startsWith(`products/${encodeURIComponent(projectId)}/${encodeURIComponent(productId)}/`)) throw new Error('상품 접근 권한이 없습니다.');
         return { allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'], maximumSizeInBytes: 5 * 1024 * 1024, addRandomSuffix: true, allowOverwrite: false, validUntil: Date.now() + 5 * 60 * 1000 };
       },
