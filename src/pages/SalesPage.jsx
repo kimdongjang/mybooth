@@ -1,12 +1,11 @@
-import Icon from '../components/Icon';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 import { ItemButton } from '../components/PosUI';
 import { won, productNameWithoutCreator, creatorNameOf } from '../utils/productDisplay';
 
-export default function SalesPage({ readOnly, project, onManageProject, purchaseTab, setPurchaseTab, visibleProducts, visibleBundles, creators, creatorFilter, setCreatorFilter, availableStock, bundleAvailable, addProduct, addBundle, cart, setCart, orderExpanded, setOrderExpanded, total, updateCartQty, saving, finalizeSale }) {
+export default function SalesPage({ readOnly, project, purchaseTab, setPurchaseTab, visibleProducts, visibleBundles, creators, creatorFilter, setCreatorFilter, availableStock, bundleAvailable, addProduct, addBundle, cart, setCart, orderExpanded, setOrderExpanded, total, updateCartQty, saving, finalizeSale }) {
   return <main className="pos-layout flex min-h-0 flex-1 gap-5 p-5">
       <section className="catalog min-w-0 flex-1 overflow-y-auto">
-        <PageIntro title="상품 판매" actions={<button type="button" className="event-entry-button" onClick={onManageProject}><Icon name="project" />행사 관리</button>}>
+        <PageIntro title="상품 판매">
           <PageTabs id="purchase" label="구매 방식" tabs={[["products", "단품 구매"], ["bundles", "세트 구매"]]} selected={purchaseTab} onSelect={setPurchaseTab} />
         </PageIntro>
         <div className="sales-event-context"><span className="event-status" data-archived={readOnly}>{readOnly ? '보관 중' : '진행 중'}</span><strong>{project.name}</strong><span>{purchaseTab === 'products' ? `${visibleProducts.length}개 상품` : `${visibleBundles.length}개 세트`}</span></div>

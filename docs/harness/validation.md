@@ -1,3 +1,8 @@
+## 정산 상단 요약·판매 버튼 제거 (2026-10-15)
+
+- npm run build 및 git diff --check 통과. 소스 diff에서 제목 → 전체 매출 요약 → 탭 → 집계/판매 내역 순서, 데스크톱 4열·모바일/넓은 터치 2열, 판매 제목 버튼 및 전용 prop/import 제거, 공통 메뉴 유지 확인.
+- UI-01 실제 브라우저 모바일/데스크톱 표시·탭 전환·긴 금액/가로 넘침, 실기기 및 배포 CACHE-01은 미실행. npm test 미실행(UI 배치만 변경). API/DB/IndexedDB 로직 변경 없음.
+
 ## 오프라인 판매 저장·재전송 기반 (2026-10-15)
 
 - `npm run build`, `git diff --check` 통과. `npm test` 19개 통과(기존 15개 및 새 4개). 변경한 database/sync TS 모듈을 대상으로 `tsc --noEmit --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM --skipLibCheck` 통과(앱 전체 타입 검사와 구분). 운영 DB 사용 없음.
