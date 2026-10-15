@@ -74,7 +74,7 @@ export default function App() {
     document.querySelector('.page-heading h1')?.focus();
   }, [screen, routePage, token, loading, projectLoading, selectedProject?.id, setScreen]);
   const [settingsTab, setSettingsTab] = useState('products');
-  useEffect(() => { if (screen === 'bundleNew') setSettingsTab('bundles'); }, [screen, selectedProject?.id]);
+  useEffect(() => { if (screen === 'bundleNew') setSettingsTab('bundles'); else if (screen === 'productNew') setSettingsTab('products'); }, [screen, selectedProject?.id]);
   const [products, setProducts] = useState([]);
   const [bundles, setBundles] = useState([]);
   const [sales, setSales] = useState([]);
@@ -641,7 +641,7 @@ export default function App() {
 
     {screen === 'pos' && <SalesPage project={selectedProject} onManageProject={() => setScreen('project')} readOnly={readOnly} purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
-    {['settings', 'bundleNew'].includes(screen) && <ProductsPage creatingBundle={screen === 'bundleNew'} navigate={(page) => { setSettingsTab('bundles'); setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
+    {['settings', 'bundleNew', 'productNew'].includes(screen) && <ProductsPage creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={(page, tab = 'bundles') => { setSettingsTab(tab); setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
     {screen === 'log' && <SettlementPage readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} creatorColors={creatorColors} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} voidSale={voidSale} />}
     </>}
