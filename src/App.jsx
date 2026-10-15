@@ -104,16 +104,14 @@ export default function App() {
   }, [token, adminId, selectedProject?.id]);
   const sync = useSync({ enabled: Boolean(token && selectedProject?.id && readyScope === scope && !readOnly), getAuthToken, projectId: selectedProject?.id });
 
-  const persistLocalState = async (nextProducts = products, nextBundles = bundles, nextSales = sales) => {
-    if (!selectedProject?.id) return;
-    await stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales, dataRevision, archivedAt: selectedProject.archivedAt || null });
-  };
-
-  const applyState = (data, fromCache = false) => {
+  const applyState = async (data, fromCache = false, queueVersion) => {
+    if (activeScope.current !== scope) return;
+    if (!fromCache) data = await stateRepository.acceptRemote(selectedProject.id, { ...data, products: (data.products || []).map(normalizeProductForClient), dataRevision: data.dataRevision || null }, queueVersion);
     if (activeScope.current !== scope) return;
     const nextProducts = (data.products || []).map(normalizeProductForClient);
     const nextBundles = data.bundles || [];
     const nextSales = data.sales || [];
+    if (activeScope.current !== scope) return;
     setProducts(nextProducts);
     setBundles(nextBundles);
     setSales(nextSales);
@@ -122,7 +120,6 @@ export default function App() {
     setSelectedProject(current => current?.id === selectedProject.id ? { ...current, archivedAt: nextArchivedAt } : current);
     if (nextArchivedAt) setCart([]);
     setReadyScope(scope);
-    void stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales, dataRevision: data.dataRevision || null, archivedAt: nextArchivedAt });
   };
 
   const logout = () => {
@@ -149,7 +146,7 @@ export default function App() {
         const cached = await stateRepository.get(selectedProject.id);
         if (activeScope.current !== scope) return;
         if (cached && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
-          applyState(cached, true);
+          await applyState(cached, true);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
           return;
         }
@@ -157,10 +154,16 @@ export default function App() {
         return;
       }
 
+      const queueVersion = await stateRepository.queueVersion(selectedProject.id);
       const data = await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}`);
       if (activeScope.current !== scope) return;
-      if (data.dataRevision) await orderRepository.archivePreviousRevision(selectedProject.id, data.dataRevision);
-      applyState(data);
+      // Preserve the durable local projection until every command is acknowledged.
+      if (await orderRepository.countWaiting(selectedProject.id)) {
+        const cached = await stateRepository.get(selectedProject.id);
+        if (!cached) throw new Error('미전송 주문의 로컬 상태를 찾을 수 없습니다. 주문 백업을 보존하고 복구해주세요.');
+        await applyState(cached, true);
+        setError('미동기화 주문을 보존했습니다. 동기화 완료 후 새로고침하면 서버 변경을 불러옵니다.');
+      } else await applyState(data, false, queueVersion);
     } catch (err) {
       if (activeToken.current !== token) return;
       if (String(err.message).includes('인증')) logout();
@@ -168,7 +171,7 @@ export default function App() {
         const cached = await stateRepository.get(selectedProject.id);
         if (activeScope.current !== scope) return;
         if (cached && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
-          applyState(cached, true);
+          await applyState(cached, true);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
         } else setError(err.message);
       }
@@ -285,14 +288,15 @@ export default function App() {
     setSaving(true);
     setError('');
     try {
-      if (['resetDefaults', 'upsertDefaults', 'replaceProducts', 'replaceBundles'].includes(action)) {
+      if (['resetDefaults', 'upsertDefaults', 'replaceProducts', 'replaceBundles', 'clearSales'].includes(action)) {
         const waiting = await orderRepository.countWaiting(selectedProject.id);
         if (waiting > 0) throw new Error('미동기화 주문이 남아 있습니다. 주문 동기화를 완료한 뒤 상품·세트 변경을 다시 시도해주세요.');
       }
       if (activeScope.current !== scope) return false;
+      const queueVersion = await stateRepository.queueVersion(selectedProject.id);
       const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: selectedProject.id, dataRevision, action, payload }) });
       if (activeScope.current !== scope) return;
-      applyState(data);
+      await applyState(data, false, queueVersion);
       success?.(data);
       return true;
     } catch (err) {
@@ -379,7 +383,7 @@ export default function App() {
       if (line.type === 'product') restoredByProduct.set(line.id, (restoredByProduct.get(line.id) || 0) + Number(line.qty || 0));
       if (line.type === 'bundle') {
         const bundle = bundles.find((b) => b.id === line.id);
-        for (const item of bundle?.items || []) {
+        for (const item of line.subItems || bundle?.items || []) {
           restoredByProduct.set(item.productId, (restoredByProduct.get(item.productId) || 0) + Number(item.qty || 0) * Number(line.qty || 0));
         }
       }
@@ -390,9 +394,6 @@ export default function App() {
       stock: Number(product.stock || 0) + Number(restoredByProduct.get(product.id) || 0),
       stockQty: Number(product.stockQty ?? product.stock ?? 0) + Number(restoredByProduct.get(product.id) || 0),
     }));
-  };
-  const applyLocalSale = (saleCart) => {
-    setProducts((prev) => productsAfterSale(prev, saleCart));
   };
   const refreshAndSyncOrders = async () => {
     try {
@@ -409,13 +410,23 @@ export default function App() {
     setSaving(true);
     setError('');
     try {
+      if (!['cash', 'transfer'].includes(method) || !Number.isSafeInteger(total) || total < 0 || total > 2147483647 || cart.some(line => !Number.isSafeInteger(line.qty) || line.qty <= 0 || !Number.isSafeInteger(line.unitPrice) || line.unitPrice < 0)) throw new Error('판매 수량과 0원 이상의 정수 가격을 확인해주세요.');
       const localOrderId = createLocalOrderId();
       const createdAt = new Date().toISOString();
-      const saleCart = cart.map((line) => ({ ...line }));
+      const saleCart = cart.map((line) => ({ ...line,
+        ...(line.type === 'product' ? { creatorName: creatorNameOf(products.find(p => p.id === line.id)) } : {
+          subItems: line.subItems.map(item => {
+            const product = products.find(p => p.id === item.productId);
+            return { ...item, name: productNameWithoutCreator(product), creatorName: creatorNameOf(product), unitPrice: product?.price || 0 };
+          }),
+        }),
+      }));
+      const nextProducts = productsAfterSale(products, saleCart);
+      const nextSales = [...sales, { id: localOrderId, time: createdAt, method, total, lines: saleCart }];
       const orderPayload = { localOrderId, createdAt, method, total, cart: saleCart };
       const apiPayload = { projectId: selectedProject.id, dataRevision, action: 'finalizeSale', payload: orderPayload };
 
-      await orderRepository.add({
+      await stateRepository.commitOrder(selectedProject.id, {
         projectId: selectedProject.id,
         localOrderId,
         createdAt,
@@ -423,13 +434,10 @@ export default function App() {
         syncStatus: 'PENDING',
         retryCount: 0,
         lastSyncAt: null,
-      });
-
-      const nextProducts = productsAfterSale(products, saleCart);
-      const nextSales = [...sales, { id: localOrderId, time: createdAt, method, total, lines: saleCart.map(({ subItems, ...line }) => line) }];
-      applyLocalSale(saleCart);
+      }, { products, bundles, sales, dataRevision }, { products: nextProducts, bundles, sales: nextSales, dataRevision, archivedAt: selectedProject.archivedAt || null });
+      if (activeScope.current !== scope) return;
+      setProducts(nextProducts);
       setSales(nextSales);
-      void persistLocalState(nextProducts, bundles, nextSales);
       setCart([]);
       alert(`${method === 'cash' ? '현금' : '계좌이체'} 결제가 완료되었습니다.\n결제 금액: ${won(total)}원`);
       void refreshAndSyncOrders();
@@ -484,29 +492,24 @@ export default function App() {
   };
   const voidSale = async (sale) => {
     if (readOnly) return alert('보관된 행사에서는 거래를 취소할 수 없습니다.');
+    if (saving || !selectedProject?.id) return;
     if (!confirm('이 거래를 취소하고 재고를 복구할까요?')) return;
     setSaving(true);
     setError('');
     try {
       const nextProducts = productsAfterVoidSale(products, sale);
       const nextSales = sales.filter((item) => item.id !== sale.id);
+      const createdAt = new Date().toISOString();
+      await stateRepository.commitOrder(selectedProject.id, {
+        projectId: selectedProject.id,
+        localOrderId: `void_${sale.id}`,
+        createdAt,
+        payload: { projectId: selectedProject.id, dataRevision, action: 'voidSale', payload: { id: sale.id } },
+        syncStatus: 'PENDING', retryCount: 0, lastSyncAt: null,
+      }, { products, bundles, sales, dataRevision }, { products: nextProducts, bundles, sales: nextSales, dataRevision, archivedAt: selectedProject.archivedAt || null });
+      if (activeScope.current !== scope) return;
       setProducts(nextProducts);
       setSales(nextSales);
-      await persistLocalState(nextProducts, bundles, nextSales);
-
-      const removedPendingSale = await orderRepository.deletePendingByLocalOrderId(selectedProject.id, sale.id);
-      if (!removedPendingSale) {
-        const createdAt = new Date().toISOString();
-        await orderRepository.add({
-          projectId: selectedProject.id,
-          localOrderId: `void_${sale.id}_${Date.now()}`,
-          createdAt,
-          payload: { projectId: selectedProject.id, dataRevision, action: 'voidSale', payload: { id: sale.id } },
-          syncStatus: 'PENDING',
-          retryCount: 0,
-          lastSyncAt: null,
-        });
-      }
       void refreshAndSyncOrders();
     } catch (err) {
       alert(err.message || '판매 취소 처리에 실패했습니다.');
@@ -535,7 +538,7 @@ export default function App() {
     if (line.type === 'product') return [creatorNameOf(productsById[line.id])];
     if (line.type === 'bundle') {
       const bundle = bundles.find((b) => b.id === line.id);
-      return [...new Set((bundle?.items || []).map((item) => creatorNameOf(productsById[item.productId])))];
+      return [...new Set((line.subItems || bundle?.items || []).map((item) => item.creatorName || creatorNameOf(productsById[item.productId])))];
     }
     return ['미지정'];
   }, [bundles, productsById]);
@@ -544,7 +547,7 @@ export default function App() {
       const product = productsById[line.id];
       return [{
         productId: line.id,
-        name: productNameWithoutCreator(product) || line.name,
+        name: line.name || productNameWithoutCreator(product),
         creator: line.creatorName || creatorNameOf(product),
         qty: Number(line.qty || 0),
         amount: Number(line.unitPrice || 0) * Number(line.qty || 0),
@@ -552,21 +555,21 @@ export default function App() {
     }
     if (line.type === 'bundle') {
       const bundle = bundles.find((b) => b.id === line.id);
-      const items = bundle?.items || [];
+      const items = line.subItems || bundle?.items || [];
       const lineQty = Number(line.qty || 0);
       const lineTotal = Number(line.unitPrice || 0) * lineQty;
       const weights = items.map((item) => {
         const product = productsById[item.productId];
         const itemQty = Number(item.qty || 0);
-        return Math.max(0, Number(product?.price || 0) * itemQty) || itemQty;
+        return Math.max(0, Number(item.unitPrice ?? product?.price ?? 0) * itemQty) || itemQty;
       });
       const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
       return items.map((item, index) => {
         const product = productsById[item.productId];
         return {
           productId: item.productId,
-          name: productNameWithoutCreator(product) || product?.name || '알 수 없는 굿즈',
-          creator: creatorNameOf(product),
+          name: item.name || productNameWithoutCreator(product) || product?.name || '알 수 없는 굿즈',
+          creator: item.creatorName || creatorNameOf(product),
           qty: Number(item.qty || 0) * lineQty,
           amount: lineTotal * (weights[index] / totalWeight),
         };

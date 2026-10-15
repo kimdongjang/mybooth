@@ -5,6 +5,7 @@ export interface SyncSnapshot {
   isSyncing: boolean;
   pendingCount: number;
   lastSyncedAt: string | null;
+  lastError?: string | null;
 }
 
 export type SyncListener = (snapshot: SyncSnapshot) => void;
@@ -51,6 +52,19 @@ class SyncService {
   }
 
   async sync(): Promise<SyncSnapshot> {
+    // Browser locks are released on tab termination, allowing safe recovery.
+    if (typeof navigator === 'undefined' || !navigator.locks) {
+      this.snapshot = { ...this.snapshot, lastError: '안전한 동기화를 위해 Web Locks를 지원하는 HTTPS 브라우저가 필요합니다.' };
+      await this.refreshPendingCount();
+      return this.snapshot;
+    }
+    return navigator.locks.request('pos-order-upload', { ifAvailable: true }, async lock => {
+      if (!lock) return this.snapshot;
+      return this.syncLocked();
+    });
+  }
+
+  private async syncLocked(): Promise<SyncSnapshot> {
     if (this.locked) return this.snapshot;
     if (!isOnline()) {
       await this.refreshPendingCount();
@@ -58,7 +72,7 @@ class SyncService {
     }
 
     this.locked = true;
-    this.snapshot = { ...this.snapshot, isSyncing: true };
+    this.snapshot = { ...this.snapshot, isSyncing: true, lastError: null };
     this.emit();
 
     try {
@@ -81,16 +95,20 @@ class SyncService {
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify(order.payload),
+            signal: AbortSignal.timeout(20_000),
           });
-          const data = await response.json().catch(() => ({}));
+          // A truncated success response is uncertain, so retain and retry the ID.
+          const data = await response.json();
           if (!response.ok) throw new Error(data.error || '주문 동기화에 실패했습니다.');
 
           const syncedAt = new Date().toISOString();
           await this.repository.updateStatus(order.id, 'SYNCED', { lastSyncAt: syncedAt });
           this.snapshot = { ...this.snapshot, lastSyncedAt: syncedAt };
         } catch (error) {
+          this.snapshot = { ...this.snapshot, lastError: error instanceof Error ? error.message : '동기화에 실패했습니다.' };
           await this.repository.updateStatus(order.id, 'FAILED', { retryCount: (order.retryCount || 0) + 1 });
           console.warn('[sync] order sync failed', order.localOrderId, error);
+          break; // Preserve sale-before-cancellation dependencies.
         }
       }
     } finally {

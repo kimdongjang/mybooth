@@ -159,5 +159,49 @@ test('sale failure rolls back stock and unauthenticated requests never initializ
     assert.equal(result.status, 500);
     assert.equal((await db.query("SELECT stock_qty FROM pos_products WHERE project_id = $1 AND id = 'p1'", [id])).rows[0].stock_qty, 7);
     assert.equal((await db.query('SELECT * FROM pos_sales WHERE project_id = $1', [id])).rows.length, 1);
+    assert.equal((await db.query('SELECT * FROM pos_sale_receipts WHERE project_id = $1', [id])).rows.length, 0);
+  } finally { await db.close(); }
+});
+
+test('sale receipts prevent replay after void/clear and cancellation uses historical bundle stock', async () => {
+  const { db, id, invoke } = await fixture();
+  try {
+    const payload = { localOrderId: 'retry-sale', method: 'cash', total: 0, cart: [{ type: 'bundle', id: 'b1', name: 'bundle', unitPrice: 0, qty: 1 }] };
+    assert.equal((await invoke('finalizeSale', id, payload)).status, 200);
+    assert.equal((await invoke('finalizeSale', id, payload)).status, 200);
+    assert.equal((await db.query("SELECT stock_qty FROM pos_products WHERE project_id=$1 AND id='p1'", [id])).rows[0].stock_qty, 5);
+    const recorded = (await invoke(null, id)).body.sales.find(s => s.id === 'retry-sale');
+    assert.equal(recorded.lines[0].subItems[0].creatorName, 'creator');
+    await db.query("UPDATE pos_bundles SET items='[{\"productId\":\"p2\",\"qty\":1}]' WHERE project_id=$1 AND id='b1'", [id]);
+    assert.equal((await invoke('voidSale', id, { id: 'retry-sale' })).status, 200);
+    assert.equal((await invoke('voidSale', id, { id: 'retry-sale' })).status, 200);
+    assert.equal((await invoke('finalizeSale', id, payload)).status, 200);
+    const stock = (await db.query('SELECT id,stock_qty FROM pos_products WHERE project_id=$1 ORDER BY id', [id])).rows;
+    assert.deepEqual(stock.map(p => p.stock_qty), [7, 2]);
+    assert.ok(!(await invoke(null, id)).body.sales.some(s => s.id === 'retry-sale'));
+    // A cancellation arriving before the sale leaves a durable tombstone.
+    await invoke('voidSale', id, { id: 'late-sale' });
+    await invoke('finalizeSale', id, { ...payload, localOrderId: 'late-sale' });
+    assert.ok(!(await invoke(null, id)).body.sales.some(s => s.id === 'late-sale'));
+    await invoke('clearSales', id, { password: 'test-password' });
+    await invoke('finalizeSale', id, { ...payload, localOrderId: 'sale1' });
+    assert.equal((await invoke(null, id)).body.sales.length, 0);
+    for (const patch of [{ total: -1 }, { method: 'card' }, { cart: [{ ...payload.cart[0], qty: 0 }] }, { cart: [{ ...payload.cart[0], qty: 1.5 }] }, { cart: [{ ...payload.cart[0], unitPrice: -1 }] }]) {
+      assert.equal((await invoke('finalizeSale', id, { ...payload, localOrderId: 'invalid', ...patch })).status, 500);
+    }
+  } finally { await db.close(); }
+});
+
+test('bundle snapshot mismatch and malformed restored component quantities preserve server state', async () => {
+  const { db, id, invoke } = await fixture();
+  try {
+    const result = await invoke('finalizeSale', id, { localOrderId: 'conflict', method: 'cash', total: 0, cart: [{ type: 'bundle', id: 'b1', name: 'bundle', qty: 1, unitPrice: 0, subItems: [{ productId: 'p2', qty: 1 }] }] });
+    assert.equal(result.status, 409);
+    assert.equal((await db.query('SELECT * FROM pos_sale_receipts WHERE project_id=$1', [id])).rows.length, 0);
+    assert.equal((await invoke(null, id)).body.products[0].stock, 7);
+    const backup = (await invoke('backupProject', id, { password: 'test-password' })).body.backup;
+    backup.sales[0].lines[0].subItems = [{ productId: 'p1', qty: -2, unitPrice: 0 }];
+    assert.equal((await invoke('restoreProject', null, { password: 'test-password', name: 'bad', backup })).status, 400);
+    assert.equal((await db.query('SELECT * FROM pos_projects')).rows.length, 1);
   } finally { await db.close(); }
 });
