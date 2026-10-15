@@ -268,7 +268,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .management-defaults { padding: 16px; }
 }
 
-/* Fit columns to the container; narrow screens repeat labels inside each row. */
+/* Keep rows and columns on narrow screens; secondary data lives in details. */
 .management-table { min-width: 0; table-layout: fixed; }
 .management-table :is(th, td) { white-space: normal; overflow-wrap: anywhere; padding: 12px 8px; }
 .product-management-table th:first-child { width: 24%; }
@@ -277,15 +277,20 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .bundle-table-components { list-style: none; margin: 0; padding: 0; }
 .bundle-table-components li + li { margin-top: 10px; }
 .bundle-table-components small { display: block; color: #64748b; }
-@media (max-width: 1099px) {
-  .management-table, .management-table tbody { display: block; width: 100%; }
-  .management-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
-  .management-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; padding: 16px; }
-  .management-table tbody tr + tr { border-top: 1px solid #e2e8f0; }
-  .management-table td { display: block; min-width: 0; border: 0; padding: 0; text-align: left; }
-  .management-table td::before { content: attr(data-label); display: block; margin-bottom: 4px; color: #64748b; font-family: Pretendard, sans-serif; }
-  .management-table td:first-child, .management-components-cell { grid-column: 1 / -1; }
-  .management-table .management-delete { min-height: 44px; }
+.management-name-link { display: block; width: 100%; min-height: 44px; color: #2563eb; text-align: left; line-height: 1.5; overflow-wrap: anywhere; }
+.management-name-link:hover { text-decoration: underline; }
+.management-name-link:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 4px; }
+.management-mobile-meta { display: none; color: #64748b; margin-top: 4px; overflow-wrap: anywhere; }
+@media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
+  .management-table :is(th, td) { padding: 10px 4px; }
+  .product-management-table :is(th, td):nth-child(2),
+  .product-management-table :is(th, td):nth-child(4),
+  .product-management-table :is(th, td):nth-child(7),
+  .bundle-management-table :is(th, td):nth-child(2),
+  .bundle-management-table :is(th, td):nth-child(6) { display: none; }
+  .product-management-table th:first-child, .bundle-management-table th:first-child { width: 40%; }
+  .management-mobile-meta { display: block; }
+  .management-table .management-row-price { text-align: right; }
 }
 .management-quantity { display: block; padding: 8px 10px; border-radius: 6px; background: #f1f5f9; font-weight: 600; }
 .management-note { color: #64748b; font-size: var(--font-small); line-height: 1.7; margin: 10px 0; }
