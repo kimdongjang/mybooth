@@ -1,4 +1,4 @@
-const CACHE_NAME = 'booth-pos-app-v32';
+const CACHE_NAME = 'booth-pos-app-v33';
 const APP_SHELL_URLS = ['/', '/index.html', '/fonts/PretendardVariable.woff2', '/images/default-product.svg'];
 
 self.addEventListener('install', (event) => {
