@@ -2,9 +2,18 @@
 
 ## 프로젝트 관리 (2026-10-15)
 
-프로젝트 목록의 각 카드에서 관리 패널을 열어 이름 변경/영구 삭제를 수행한다. POST renameProject는 payload.name(공백 제거 후 1~100자)을 검증하고 이름/수정일만 변경한다. POST deleteProject는 payload.confirmName과 계정 비밀번호(payload.password)를 확인하고 소유자/id/이름 조건 DELETE 한 문장의 FK cascade로 상품·세트·판매를 원자적으로 삭제한다. 두 요청 모두 관리자 소유권을 확인하고 갱신된 projects 목록을 반환한다. 프로젝트 메타데이터 작업이므로 행사 dataRevision 검사와 독립적이다.
+프로젝트 목록의 각 카드에서 관리 패널을 열어 이름 변경/영구 삭제/행사 보관·해제/복제/백업을 수행하고 별도 백업 복원 탭을 제공한다. 모든 관리 작업(이름 변경 포함)은 계정 비밀번호(payload.password)를 서버에서 확인한다. 빈 프로젝트 신규 생성은 기존처럼 비밀번호 재확인 없이 진행한다. POST renameProject는 payload.name(공백 제거 후 1~100자)을 검증하고 이름/수정일만 변경한다. POST deleteProject는 payload.confirmName을 확인하고 소유자/id/이름 조건 DELETE 한 문장의 FK cascade로 상품·세트·판매를 원자적으로 삭제한다. 관리자 소유권을 확인하고 갱신된 projects 목록을 반환한다. 프로젝트 메타데이터 작업이므로 행사 dataRevision 검사와 독립적이다.
 
-삭제는 온라인에서만 가능하며 현재 기기 해당 프로젝트의 PENDING/FAILED/SYNCING 주문이 있으면 UI에서 차단한다. 성공 시 해당 상태 캐시를 제거하고 선택된 프로젝트였다면 선택/장바구니/화면 상태를 비운다. 로컬 주문 백업, 업로드 Blob 및 pos_event_archives 원본/재실행 표식은 유지하며 UI에도 명시한다. 다른 기기·탭의 새 주문과 삭제 간 경쟁은 서버가 감지하지 못하므로 모든 기기에서 판매 중단/동기화 후 삭제해야 한다. 삭제한 프로젝트에 대한 이후 주문은 소유권 검사에서 거절된다. 읽기 전용 보관/복원 기능은 없다. 캐시 v30.
+관리는 온라인에서만 가능하며 삭제·보관·복제·백업은 현재 기기 해당 프로젝트의 PENDING/FAILED/SYNCING 주문이 있으면 UI에서 차단한다. 삭제 성공 시 해당 상태 캐시를 제거하고 선택된 프로젝트였다면 선택/장바구니/화면 상태를 비운다. 로컬 주문 백업, 업로드 Blob 및 pos_event_archives 원본/재실행 표식은 유지하며 UI에도 명시한다. 다른 기기·탭의 새 주문과 삭제 간 경쟁은 서버가 감지하지 못하므로 모든 기기에서 판매 중단/동기화 후 삭제해야 한다. 삭제한 프로젝트에 대한 이후 주문은 소유권 검사에서 거절된다. 캐시 v31.
+
+### 행사 보관·해제/복제/백업 계약
+
+- `pos_projects.archived_at`(nullable TIMESTAMPTZ)을 반복 가능한 ALTER로 추가한다. 목록/상태/IndexedDB 캐시에 archivedAt을 반환·보존한다. archiveProject/unarchiveProject는 비밀번호로 이 값만 변경하고 판매/재고/정산 자료는 유지한다. 보관 중에는 서버에서 모든 판매·취소·상품·세트 변경·기본값·판매 삭제·이름 변경을 409로 거절하며 이미지 업로드 토큰도 발급하지 않는다. 조회/정산 CSV/프로젝트 백업·복제·삭제는 가능하다.
+- 클라이언트는 판매·수정 컨트롤을 비활성화하고 동기화를 중지한다. 같은 브라우저의 탭에는 BroadcastChannel로 보관/해제를 전달하고 캐시 표식을 갱신한다. 이미 열린 다른 기기/연결이 끊긴 기기의 로컬 판매를 원격으로 중단할 수는 없다. 대기 큐는 삭제/자동 보관하지 않으며 서버에서 거절된 주문은 유지한다. 해제 후 다시 전송될 수 있으므로 모든 기기에서 판매 중단·동기화 후 보관하고 해제 전에 대기 내역을 확인한다.
+- duplicateProject(payload.name, password)는 새로운 UUID 프로젝트에 상품(비활성 포함)·세트/구성·가격·이미지 URL을 복사하고 등록/현재 재고는 0, 판매는 빈 목록으로 시작한다. 새로운 행사에 실제 입고를 등록한다.
+- backupProject(password)는 `{backup: {format:'my-booth-project', version:1, exportedAt, project, products, bundles, sales}}`를 반환한다. 원본 DB 컬럼을 보존하므로 비활성 상품·무료 가격·재고·제작자·세트·판매 lines/날짜도 포함한다. 비밀번호/인증 정보, IndexedDB 미전송 명령 및 과거 정리용 pos_event_archives는 제외한다. 이미지 바이너리 대신 공개 Blob URL만 보존한다. UTF-8 JSON 3MiB 한도이며 초과 백업은 413으로 안내한다.
+- restoreProject(payload.name, password, backup)는 v1 형식/배열/중복 ID/정수 가격·재고·수량/결제수단/날짜/이미지 출처와 크기를 검증한다. 기존 프로젝트를 덮어쓰지 않고 요청 계정 소유의 새 UUID 프로젝트에 제품·세트·판매를 복원하며 보관 상태로 시작한다. 파일의 소유자/프로젝트 ID는 신뢰하지 않고 각 행의 project_id를 새 ID로 치환한다. 검토 후 비밀번호로 해제할 수 있다. 기존 주문 큐 JSON/CSV는 이 기능의 복원 형식이 아니다.
+- 실제 API 진입점은 전용 pool client를 확보하고 스키마 초기화 후 REPEATABLE READ 트랜잭션에서 처리한다. 프로젝트 변경 요청은 소유자 범위의 프로젝트 행을 FOR UPDATE로 잠가 보관/해제와 판매/설정 작업을 직렬화한다. 성공 응답은 COMMIT 후 전달하고 실패 응답은 ROLLBACK한다. 복제/복원의 일부 테이블만 저장되는 것을 방지한다. 초기화 마이그레이션은 기존처럼 요청 트랜잭션 밖에서 실행한다. 직렬화 충돌은 409로 재시도를 안내한다. 실제 여러 연결의 부하/동시성 검증은 별도 PostgreSQL에서 수행해야 한다.
 
 분석 기준: 2026-10-14 로컬 작업 트리. `api/pos.js`, `src/App.jsx`, `vite.config.js`에 기존 변경이 있는 상태를 분석했다. 운영 Vercel 계정/DB를 조회하지 않았다.
 
@@ -86,7 +95,7 @@ flowchart LR
 | POST resetDefaults | 빈 payload | 상품·세트 삭제 후 기본값 삽입, 재고 초기화; 판매 내역 유지 |
 | POST upsertDefaults | 빈 payload | (project_id,id) 충돌은 DO NOTHING; 없는 기본 상품·세트만 추가, 기존 설정/현재·초기 재고/판매 유지 |
 
-POS POST body는 `{projectId, action, payload}`다. 서버는 query/body/payload에서도 projectId를 찾는다. createProject 외 성공 응답은 전체 상태다. 인증 실패 401, 미지원 method 405, 미지원 action/projectId 누락 400, 처리 예외는 대체로 500이다. 입력/재고 충돌을 구분한 오류 계약은 아직 없다.
+POS POST body는 `{projectId, action, payload}`다. 서버는 query/body/payload에서도 projectId를 찾는다. 판매/상품/세트 작업의 성공 응답은 전체 상태이며 프로젝트 관리 응답은 위 별도 계약을 따른다. 인증 실패 401, 관리 비밀번호 실패 403, 관리 대상 소유권/존재 실패 404, 미지원 method 405, 미지원 action/projectId 누락/잘못된 백업 400, 보관 상태/직렬화 충돌 409, 백업 크기 초과 413이며 처리 예외는 대체로 500이다. 판매 입력/재고 충돌을 세분화한 오류 계약은 아직 없다.
 
 기본값 작업은 미동기화(PENDING/FAILED/SYNCING) 주문이 있으면 UI에서 차단한다. 비활성 기본 상품이나 수정한 세트도 업데이트 시 덮어쓰지 않는다. resetDefaults는 사용자 상품/세트를 제거하므로 유지된 과거 판매의 제작자 집계·세트 취소 결과가 달라질 수 있음을 확인 문구에 명시한다. 서버는 다른 기기의 대기 큐를 알 수 없으며 트랜잭션/동시성 문제는 P1에 남아 있다.
 
@@ -109,13 +118,13 @@ POS POST body는 `{projectId, action, payload}`다. 서버는 query/body/payload
 1. UI가 단품 및 세트 구성품의 장바구니 예약 수량을 계산한다. 세트 가용 수량은 구성품별 가용 재고/필요 수량의 최솟값이다.
 2. 결제 시 주문 큐에 PENDING을 먼저 저장하고 로컬 재고·판매를 갱신한다. 상태 스냅샷 저장은 await하지 않는다. 결제 완료 알림은 이 시점에 표시된다.
 3. SyncService가 현재 프로젝트 PENDING/FAILED를 createdAt 순으로 전송한다. 각 주문은 SYNCING → SYNCED 또는 FAILED가 되고 실패 횟수가 증가한다.
-4. 서버는 단품/현재 세트 구성으로 재고를 검사하고 차감 후 판매를 삽입한다. 이 일련의 SQL은 트랜잭션으로 묶이지 않는다.
+4. 서버는 단품/현재 세트 구성으로 재고를 검사하고 차감 후 판매를 삽입한다. 2026-10-15부터 실제 API 진입점은 요청 트랜잭션과 프로젝트 행 잠금으로 처리하며 보관 중 판매를 거절한다.
 5. 성공 응답의 서버 상태는 SyncService에서 UI/posState에 적용하지 않는다. 자동 서버 재조회도 없다.
 6. 취소는 로컬 재고·판매를 먼저 바꾼다. PENDING/FAILED 판매면 큐에서 제거하고, 제거하지 못하면 별도 voidSale 주문을 추가한다. 서버 취소는 현재 세트 구성으로 복구하고 판매를 삭제한다.
 
 서비스 워커는 navigation에 network-first, 다른 같은 출처 GET에 stale-while-revalidate를 적용한다. 설치 시 index의 `/assets/` 링크를 캐시한다. 버전은 `booth-pos-app-v17`, 설치/활성화 시 skipWaiting/clients.claim을 사용한다. 기본 상품 이미지 `/images/default-product.svg`도 앱 셸 캐시에 포함한다. 판매 카드와 상품 관리에서 이미지가 없거나 외부 이미지 로드 실패 시 No Image SVG를 표시한다. [기본 이미지 설명](default-product-image.md).
 
-제작자별 집계는 현재 상품·세트 정보를 참조한다. 세트 매출은 현재 구성품 단가×수량 비중으로 배분한다. 과거 구성/단가 변경 시 집계가 변할 수 있다. 판매 CSV와 IndexedDB 주문 JSON/CSV 다운로드가 있지만 복원 UI는 없다.
+제작자별 집계는 현재 상품·세트 정보를 참조한다. 세트 매출은 현재 구성품 단가×수량 비중으로 배분한다. 과거 구성/단가 변경 시 집계가 변할 수 있다. 판매 CSV와 IndexedDB 주문 JSON/CSV 다운로드는 제공하지만 주문 큐 복원은 없다. 서버 프로젝트의 v1 JSON 백업/복원은 위 프로젝트 관리 계약을 따른다.
 
 ## 화면 디자인 (2026-10-14)
 

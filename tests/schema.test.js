@@ -22,7 +22,7 @@ for (const legacy of [true, false]) {
       `);
       if (legacy) await assert.rejects(db.query('SELECT project_id FROM pos_sales'), /column "project_id" does not exist/);
       const sql = (parts, ...values) => db.query(parts.reduce((query, part, i) => query + (i ? `$${i}` : '') + part, ''), values);
-      const context = vm.createContext({ URL });
+      const context = vm.createContext({ URL, crypto: globalThis.crypto });
       const module = new vm.SourceTextModule(await readFile(new URL('../api/pos.js', import.meta.url), 'utf8'), { context });
       await module.link(specifier => {
         const exports = specifier === '@vercel/postgres' ? { sql }
@@ -38,7 +38,7 @@ for (const legacy of [true, false]) {
       await module.evaluate();
       const invoke = async (action, projectId, adminId = 'admin-a', extraBody = {}) => {
         const result = {};
-        await module.namespace.default({ method: action ? 'POST' : 'GET', adminId, query: { projectId }, body: { action, projectId, payload: { name: '12월 행사' }, ...extraBody } }, {
+        await module.namespace.createHandler(sql)({ method: action ? 'POST' : 'GET', adminId, query: { projectId }, body: { action, projectId, payload: { name: '12월 행사' }, ...extraBody } }, {
           status(code) { result.status = code; return this; },
           json(body) { result.body = body; return this; },
         });
@@ -112,7 +112,7 @@ for (const legacy of [true, false]) {
         assert.equal((await invoke(null, project.id, 'admin-b')).status, 500);
       }
       const target = first.body.project.id;
-      const manage = (action, payload, adminId = 'admin-a') => invoke(action, target, adminId, { payload });
+      const manage = (action, payload, adminId = 'admin-a') => invoke(action, target, adminId, { payload: { password: 'test-password', ...payload } });
       assert.equal((await manage('renameProject', { name: '   ' })).status, 400);
       assert.equal((await manage('renameProject', { name: 'x'.repeat(101) })).status, 400);
       assert.equal((await manage('renameProject', { name: 'stolen' }, 'admin-b')).status, 404);

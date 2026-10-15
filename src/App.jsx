@@ -49,6 +49,7 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
   const [dataRevision, setDataRevision] = useState(null);
+  const readOnly = Boolean(selectedProject?.archivedAt);
   const [readyScope, setReadyScope] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [routePage, setScreen] = usePageRoute();
@@ -96,14 +97,26 @@ export default function App() {
   const activeToken = useRef(token);
   activeToken.current = token;
   const getAuthToken = useCallback(() => token, [token]);
-  const sync = useSync({ enabled: Boolean(token && selectedProject?.id && readyScope === scope), getAuthToken, projectId: selectedProject?.id });
+  useEffect(() => {
+    if (!token || typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel('pos-project-lifecycle');
+    channel.onmessage = ({ data }) => {
+      if (data.adminId !== adminId || !data.projectId || !['archiveProject', 'unarchiveProject'].includes(data.action)) return;
+      setProjects(current => current.map(project => project.id === data.projectId ? { ...project, archivedAt: data.archivedAt } : project));
+      setSelectedProject(current => current?.id === data.projectId ? { ...current, archivedAt: data.archivedAt } : current);
+      if (selectedProject?.id === data.projectId) setCart([]);
+      void stateRepository.setArchivedAt(data.projectId, data.archivedAt);
+    };
+    return () => channel.close();
+  }, [token, adminId, selectedProject?.id]);
+  const sync = useSync({ enabled: Boolean(token && selectedProject?.id && readyScope === scope && !readOnly), getAuthToken, projectId: selectedProject?.id });
 
   const persistLocalState = async (nextProducts = products, nextBundles = bundles, nextSales = sales) => {
     if (!selectedProject?.id) return;
-    await stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales, dataRevision });
+    await stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales, dataRevision, archivedAt: selectedProject.archivedAt || null });
   };
 
-  const applyState = (data) => {
+  const applyState = (data, fromCache = false) => {
     if (activeScope.current !== scope) return;
     const nextProducts = (data.products || []).map(normalizeProductForClient);
     const nextBundles = data.bundles || [];
@@ -112,8 +125,11 @@ export default function App() {
     setBundles(nextBundles);
     setSales(nextSales);
     setDataRevision(data.dataRevision || null);
+    const nextArchivedAt = (fromCache && selectedProject.archivedAt) || data.archivedAt || null;
+    setSelectedProject(current => current?.id === selectedProject.id ? { ...current, archivedAt: nextArchivedAt } : current);
+    if (nextArchivedAt) setCart([]);
     setReadyScope(scope);
-    void stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales, dataRevision: data.dataRevision || null });
+    void stateRepository.save(selectedProject.id, { products: nextProducts, bundles: nextBundles, sales: nextSales, dataRevision: data.dataRevision || null, archivedAt: nextArchivedAt });
   };
 
   const logout = () => {
@@ -140,7 +156,7 @@ export default function App() {
         const cached = await stateRepository.get(selectedProject.id);
         if (activeScope.current !== scope) return;
         if (cached && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
-          applyState(cached);
+          applyState(cached, true);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
           return;
         }
@@ -159,7 +175,7 @@ export default function App() {
         const cached = await stateRepository.get(selectedProject.id);
         if (activeScope.current !== scope) return;
         if (cached && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
-          applyState(cached);
+          applyState(cached, true);
           setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
         } else setError(err.message);
       }
@@ -179,7 +195,7 @@ export default function App() {
       setProjects(nextProjects);
       const rememberedId = sessionStorage.getItem(SELECTED_PROJECT_KEY);
       const remembered = nextProjects.find((project) => project.id === rememberedId);
-      setSelectedProject((current) => current && nextProjects.find((project) => project.id === current.id) ? current : remembered || null);
+      setSelectedProject((current) => nextProjects.find((project) => project.id === current?.id) || remembered || null);
     } catch (err) {
       if (activeToken.current !== token) return;
       if (String(err.message).includes('인증')) logout();
@@ -212,11 +228,15 @@ export default function App() {
 
   const manageProject = async (project, action, payload) => {
     if (!navigator.onLine) throw new Error('온라인에서 프로젝트를 관리해주세요.');
-    if (action === 'deleteProject' && await orderRepository.countWaiting(project.id)) {
-      throw new Error('이 기기에 미동기화 주문이 있습니다. 해당 프로젝트에서 동기화를 완료한 후 삭제해주세요.');
+    if (project && ['deleteProject', 'archiveProject', 'duplicateProject', 'backupProject'].includes(action) && await orderRepository.countWaiting(project.id)) {
+      throw new Error('이 기기에 미동기화 주문이 있습니다. 해당 프로젝트에서 동기화를 완료한 후 다시 진행해주세요.');
     }
-    const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: project.id, action, payload }) });
+    const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: project?.id, action, payload }) });
     if (activeToken.current !== token) return;
+    if (action === 'backupProject') {
+      downloadBlob(JSON.stringify(data.backup), 'application/json;charset=utf-8;', `project_${project.id}_${new Date().toISOString().slice(0, 10)}.json`);
+      return;
+    }
     setProjects(data.projects);
     if (action === 'deleteProject') {
       if (selectedProject?.id === project.id) {
@@ -226,8 +246,18 @@ export default function App() {
         setScreen('projects');
       }
       await stateRepository.remove(project.id);
-    } else {
+    } else if (project) {
       setSelectedProject(current => current?.id === project.id ? data.projects.find(item => item.id === project.id) : current);
+      if (['archiveProject', 'unarchiveProject'].includes(action)) {
+        const value = data.projects.find(item => item.id === project.id)?.archivedAt || null;
+        if (activeScope.current === scope && selectedProject?.id === project.id) setCart([]);
+        await stateRepository.setArchivedAt(project.id, value);
+        if (typeof BroadcastChannel !== 'undefined') {
+          const channel = new BroadcastChannel('pos-project-lifecycle');
+          channel.postMessage({ adminId, projectId: project.id, action, archivedAt: value });
+          channel.close();
+        }
+      }
     }
   };
 
@@ -255,6 +285,7 @@ export default function App() {
     setScreen('pos', true);
   };
   const mutate = async (action, payload, success) => {
+    if (readOnly) return alert('보관된 행사입니다. 프로젝트 관리에서 보관을 해제해주세요.');
     if (!selectedProject?.id) return alert('프로젝트를 먼저 선택해주세요.');
     if (saving) return;
     setSaving(true);
@@ -299,6 +330,7 @@ export default function App() {
   const total = cart.reduce((sum, line) => sum + line.unitPrice * line.qty, 0);
 
   const addProduct = (product) => {
+    if (readOnly) return;
     if (availableStock(product) <= 0) return;
     setCart((prev) => {
       const line = prev.find((l) => l.type === 'product' && l.id === product.id);
@@ -306,6 +338,7 @@ export default function App() {
     });
   };
   const addBundle = (bundle) => {
+    if (readOnly) return;
     if (bundleAvailable(bundle) <= 0) return;
     setCart((prev) => {
       const line = prev.find((l) => l.type === 'bundle' && l.id === bundle.id);
@@ -376,6 +409,7 @@ export default function App() {
     }
   };
   const finalizeSale = async (method) => {
+    if (readOnly) return alert('보관된 행사에서는 판매할 수 없습니다.');
     if (!selectedProject?.id) return alert('프로젝트를 먼저 선택해주세요.');
     if (!cart.length || saving) return;
     setSaving(true);
@@ -461,6 +495,7 @@ export default function App() {
     downloadBlob(`\uFEFFid,localOrderId,createdAt,syncStatus,retryCount,lastSyncAt,payload\n${rows.join('\n')}`, 'text/csv;charset=utf-8;', `orders_backup_${new Date().toISOString().slice(0, 10)}.csv`);
   };
   const voidSale = async (sale) => {
+    if (readOnly) return alert('보관된 행사에서는 거래를 취소할 수 없습니다.');
     if (!confirm('이 거래를 취소하고 재고를 복구할까요?')) return;
     setSaving(true);
     setError('');
@@ -597,15 +632,16 @@ export default function App() {
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onRefresh={screen === 'projects' ? loadProjects : loadState} onLogout={logout} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
+    {readOnly && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. 판매·취소·수정을 하려면 프로젝트 관리에서 비밀번호로 보관을 해제해주세요.</div>}
     {loading || projectLoading || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
 
     {screen === 'projects' && <ProjectsPage projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} onManageProject={manageProject} />}
 
-    {screen === 'pos' && <SalesPage purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
+    {screen === 'pos' && <SalesPage readOnly={readOnly} purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
-    {screen === 'settings' && <ProductsPage key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} resetDefaults={resetDefaults} updateToLatestDefaults={updateToLatestDefaults} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
+    {screen === 'settings' && <ProductsPage readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} resetDefaults={resetDefaults} updateToLatestDefaults={updateToLatestDefaults} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
-    {screen === 'log' && <SettlementPage stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} creatorColors={creatorColors} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} voidSale={voidSale} />}
+    {screen === 'log' && <SettlementPage readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} creatorColors={creatorColors} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} voidSale={voidSale} />}
     </>}
 
   </div>;
