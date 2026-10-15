@@ -234,6 +234,16 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .settlement-card td, .settlement-card th { overflow-wrap: anywhere; }
 .settlement-card button { min-height: 36px; }
 .settlement-creator { color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
+.settlement-search { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 16px 0 12px; }
+.settlement-search label { display: flex; flex-direction: column; gap: 6px; flex: 1 1 160px; min-width: 0; color: #526078; font-size: 12px; }
+.settlement-search input, .settlement-search select { width: 100%; min-width: 0; min-height: 38px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 10px; font-size: 14px; }
+.settlement-result { margin-bottom: 12px; color: #64748b; font-size: 12px; }
+.settlement-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; border-top: 1px solid #e2e8f0; margin-top: 16px; padding-top: 12px; }
+.settlement-tools p { margin-right: auto; color: #64748b; font-size: 12px; }
+.settlement-card .settlement-tool { flex: 0 0 auto; width: auto; min-height: 36px; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; color: #526078; font-size: 12px; line-height: 1.5; }
+.settlement-tool:hover { background: #edf0f4; }
+.settlement-card .settlement-tool-danger { color: #dc2626; background: white; }
+.settlement-tool:disabled { opacity: .5; }
 .settlement-overview { position: sticky; top: 0; min-width: 0; border: 1px solid #e2e8f0; border-radius: 10px; background: white; padding: 20px; box-shadow: 0 4px 16px #17243b04; }
 .settlement-overview h2 { font-size: 16px; font-weight: 600; }
 .settlement-overview > p { color: #64748b; font-size: 12px; margin-top: 4px; margin-bottom: 16px; }
