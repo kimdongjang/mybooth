@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
 import { PageIntro } from '../components/PageLayout';
 import { Input, ProductImage } from '../components/PosUI';
+import { prepareProductImage, PRODUCT_IMAGE_HELP } from '../utils/productImage';
 import { uid, productNameFromFields } from '../utils/productDisplay';
 
 export default function ProductCreatePage({ projectId, onImageChange, readOnly, saving, products, persistProducts, onBack }) {
@@ -9,6 +10,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [imageError, setImageError] = useState('');
   const submitting = useRef(false);
@@ -22,16 +24,19 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [image]);
-  const chooseImage = (file) => {
+  const chooseImage = async (file) => {
     if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) return alert('JPG, PNG, WebP 이미지를 5MB 이하로 선택해주세요.');
-    setImage(file);
-    setImageError('');
+    setPreparing(true);
+    try {
+      setImage(await prepareProductImage(file));
+      setImageError('');
+    } catch (error) { alert(error.message); }
+    finally { setPreparing(false); }
   };
   const change = (key, value) => setDraft(current => ({ ...current, [key]: value }));
   const submit = async (event) => {
     event.preventDefault();
-    if (readOnly || saving || submitting.current) return;
+    if (readOnly || saving || preparing || submitting.current) return;
     const price = Number(draft.price);
     const stockQty = Number(draft.stockQty);
     if (!draft.goodsType.trim() || draft.price === '' || draft.stockQty === '' || !Number.isSafeInteger(price) || price < 0 || !Number.isSafeInteger(stockQty) || stockQty < 0) return alert('굿즈 종류와 0 이상의 정수 판매가·재고를 입력해주세요.');
@@ -73,17 +78,17 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
     }
   };
   return <main className="page-content settings-page">
-    <PageIntro title="새 상품 등록" description="이미지와 상품 정보, 판매가·초기 재고를 입력하고 저장하세요." actions={<button type="button" disabled={saving || busy} className="management-back" onClick={onBack}>← 상품 목록으로</button>} />
+    <PageIntro title="새 상품 등록" description="이미지와 상품 정보, 판매가·초기 재고를 입력하고 저장하세요." actions={<button type="button" disabled={saving || busy || preparing} className="management-back" onClick={onBack}>← 상품 목록으로</button>} />
     <form className="settings-content product-management" onSubmit={submit}>
-      <fieldset disabled={readOnly || saving || busy} className="min-w-0"><div className="management-products">
+      <fieldset disabled={readOnly || saving || busy || preparing} className="min-w-0"><div className="management-products">
         <article className="management-product">
           <div className="management-product-header"><h3>새 굿즈 ({draft.id})</h3></div>
           <div className="management-product-body">
             <div className="management-image">
               <ProductImage imageUrl={preview} name={draft.goodsType} />
-              <label className="management-upload"><span>{image ? '이미지 수정' : '이미지 등록'}</span><input aria-label="새 상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
+              <label className="management-upload"><span>{preparing ? '이미지 축소 중…' : image ? '이미지 수정' : '이미지 등록'}</span><input aria-label="새 상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
               {image && <button type="button" className="management-delete" onClick={() => { setImage(null); setImageError(''); }}>이미지 제거</button>}
-              <p>JPG · PNG · WebP / 최대 5MB</p>
+              <p>{PRODUCT_IMAGE_HELP}</p>
               <p>선택한 이미지는 상품 저장 시 등록됩니다.</p>
             </div>
             <div className="management-details">
