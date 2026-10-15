@@ -29,7 +29,7 @@ for (const legacy of [true, false]) {
           : specifier === './lib/auth.js' ? {
             assertPostgresConnectionString() {},
             requireAuth: req => ({ id: req.adminId }),
-            validateAdminPassword: async () => true,
+            validateAdminPassword: async (_id, password) => password === 'test-password',
           } : defaults;
         return new vm.SyntheticModule(Object.keys(exports), function () {
           for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
@@ -111,6 +111,25 @@ for (const legacy of [true, false]) {
         assert.equal(state.body.sales.length, 0);
         assert.equal((await invoke(null, project.id, 'admin-b')).status, 500);
       }
+      const target = first.body.project.id;
+      const manage = (action, payload, adminId = 'admin-a') => invoke(action, target, adminId, { payload });
+      assert.equal((await manage('renameProject', { name: '   ' })).status, 400);
+      assert.equal((await manage('renameProject', { name: 'x'.repeat(101) })).status, 400);
+      assert.equal((await manage('renameProject', { name: 'stolen' }, 'admin-b')).status, 404);
+      assert.equal((await manage('renameProject', { name: '  새 행사  ' })).status, 200);
+      assert.equal((await db.query('SELECT name FROM pos_projects WHERE id = $1', [target])).rows[0].name, '새 행사');
+      assert.equal((await invoke(null, target)).body.products.length, defaults.getDefaultProducts().length);
+      await db.query("INSERT INTO pos_sales (project_id, id, time, method, total, lines) VALUES ($1, 'delete-sale', NOW(), 'cash', 0, '[]')", [target]);
+      assert.equal((await manage('deleteProject', { confirmName: '새 행사', password: 'wrong' })).status, 403);
+      assert.equal((await manage('deleteProject', { confirmName: 'wrong', password: 'test-password' })).status, 400);
+      assert.equal((await manage('deleteProject', { confirmName: '새 행사', password: 'test-password' }, 'admin-b')).status, 404);
+      assert.equal((await invoke(null, target)).body.sales.length, 1);
+      assert.equal((await manage('deleteProject', { confirmName: '새 행사', password: 'test-password' })).status, 200);
+      for (const table of ['pos_projects', 'pos_products', 'pos_bundles', 'pos_sales']) {
+        assert.equal((await db.query(`SELECT * FROM ${table} WHERE ${table === 'pos_projects' ? 'id' : 'project_id'} = $1`, [target])).rows.length, 0);
+      }
+      assert.equal((await invoke(null, second.body.project.id)).body.products.length, defaults.getDefaultProducts().length);
+      assert.equal((await manage('deleteProject', { confirmName: '새 행사', password: 'test-password' })).status, 404);
       if (legacy) {
         const projects = await invoke(null, undefined, 'admin');
         assert.equal(projects.body.projects.length, 1);

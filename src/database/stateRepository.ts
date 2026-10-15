@@ -10,6 +10,9 @@ export interface PosStateCache {
 const stateKey = (projectId: string) => `project:${projectId}:latest`;
 
 export const stateRepository = {
+  async remove(projectId: string): Promise<void> {
+    await db.posState.delete(stateKey(projectId));
+  },
   async save(projectId: string, state: PosStateCache): Promise<void> {
     await db.posState.put({
       key: stateKey(projectId),

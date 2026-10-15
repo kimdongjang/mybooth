@@ -275,6 +275,23 @@ export default async function handler(req, res) {
     const { action, payload = {} } = req.body || {};
     if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
     if (!projectId) return res.status(400).json({ error: 'projectId가 필요합니다.' });
+    if (action === 'renameProject' || action === 'deleteProject') {
+      await initDb();
+      const project = (await sql`SELECT name FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id}`).rows[0];
+      if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.' });
+      if (action === 'renameProject') {
+        const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+        if (!name || name.length > 100) return res.status(400).json({ error: '프로젝트 이름은 1~100자로 입력해주세요.' });
+        await sql`UPDATE pos_projects SET name = ${name}, updated_at = NOW() WHERE id = ${projectId} AND admin_id = ${admin.id}`;
+      } else {
+        if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+        if (payload.confirmName !== project.name) return res.status(400).json({ error: '프로젝트 이름을 정확히 입력해주세요.' });
+        // One statement: FK cascades delete products, bundles and sales atomically.
+        const deleted = await sql`DELETE FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id} AND name = ${payload.confirmName} RETURNING id`;
+        if (!deleted.rows.length) return res.status(409).json({ error: '프로젝트가 변경되었습니다. 목록을 새로고침해주세요.' });
+      }
+      return res.status(200).json(await listProjects(admin.id));
+    }
     if (detachedProjectIds.has(projectId)) {
       await assertProject(admin.id, projectId);
       const revision = await dataRevision(projectId);

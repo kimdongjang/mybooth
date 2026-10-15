@@ -210,6 +210,27 @@ export default function App() {
     }
   };
 
+  const manageProject = async (project, action, payload) => {
+    if (!navigator.onLine) throw new Error('온라인에서 프로젝트를 관리해주세요.');
+    if (action === 'deleteProject' && await orderRepository.countWaiting(project.id)) {
+      throw new Error('이 기기에 미동기화 주문이 있습니다. 해당 프로젝트에서 동기화를 완료한 후 삭제해주세요.');
+    }
+    const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: project.id, action, payload }) });
+    if (activeToken.current !== token) return;
+    setProjects(data.projects);
+    if (action === 'deleteProject') {
+      if (selectedProject?.id === project.id) {
+        setSelectedProject(null);
+        sessionStorage.removeItem(SELECTED_PROJECT_KEY);
+        setProducts([]); setBundles([]); setSales([]); setCart([]);
+        setScreen('projects');
+      }
+      await stateRepository.remove(project.id);
+    } else {
+      setSelectedProject(current => current?.id === project.id ? data.projects.find(item => item.id === project.id) : current);
+    }
+  };
+
   const selectProject = (project) => {
     if (project.id === selectedProject?.id) { setScreen('pos'); return; }
     setError('');
@@ -578,7 +599,7 @@ export default function App() {
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
     {loading || projectLoading || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
 
-    {screen === 'projects' && <ProjectsPage projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} />}
+    {screen === 'projects' && <ProjectsPage projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} onManageProject={manageProject} />}
 
     {screen === 'pos' && <SalesPage purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
