@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@custom-variant compact {
+  @media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) { @slot; }
+}
 
 @font-face {
   font-family: 'Pretendard';
@@ -306,15 +309,94 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .auth-header { min-height: 64px; padding: 16px; }
 }
 
-/* Give large type room without reducing the 14pt minimum. */
-@media (max-width: 389px) {
-  .product-grid { grid-template-columns: minmax(0, 1fr); }
-  .page-heading { flex-wrap: wrap; }
-}
-@media (max-height: 600px) and (max-width: 1199px) and (hover: none) and (pointer: coarse) {
-  .app-shell { overflow-y: auto; }
-  .pos-layout { flex: none; overflow: visible; }
-  .catalog { flex: none; height: 60dvh; overflow-y: auto; }
-  .order-panel { position: static; max-height: none; }
-  .order-lines.is-expanded { max-height: 40dvh; flex: none; }
+/* Restore the pre-14pt mobile scale without changing desktop typography. */
+@media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
+  :root {
+    --font-small: 12px; --font-body: 14px; --font-emphasis: 16px;
+    --font-subtitle: 20px; --font-title: 24px; --font-total: 28px;
+    --text-xs: 12px; --text-sm: 14px; --text-base: 16px;
+    --text-lg: 18px; --text-xl: 20px; --text-2xl: 24px; --text-3xl: 30px;
+    --text-xs--line-height: calc(1 / .75); --text-sm--line-height: calc(1.25 / .875);
+    --text-base--line-height: 1.5; --text-lg--line-height: calc(1.75 / 1.125);
+    --text-xl--line-height: 1.4; --text-2xl--line-height: calc(2 / 1.5);
+    --text-3xl--line-height: 1.2;
+  }
+  body { font-size: 16px; }
+  small { font-size: smaller; }
+  .header-brand { grid-column: auto; }
+  .header-controls { grid-column: 2; grid-row: 1; justify-content: normal; }
+  .sync-status { max-width: 144px; }
+  .menu-toggle { margin-left: 0; }
+  .order-summary { flex-wrap: nowrap; }
+  .management-fields, .management-fields-three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .page-heading h1 { font-size: 24px; }
+  .page-heading p { font-size: 14px; }
+  .page-heading-actions { font-size: 12px; }
+  .brand-title { font-size: 18px; }
+  .page-heading h1 { font-size: 20px; }
+  .page-heading p { font-size: 13px; }
+  .brand-title { font-size: 16px; }
+  .header-brand h1 { font-size: 18px; }
+  .header-brand p { font-size: 12px; }
+  .booth-navigation :is(button, a) { font-size: 14px; }
+  .nav-utilities :is(button, a) { font-size: 12px; }
+  .sync-status { font-size: 12px; }
+  .catalog-heading h2 { font-size: 24px; }
+  .catalog-heading p { font-size: 14px; }
+  .purchase-tabs button { font-size: 14px; }
+  .filter-label { font-size: 12px; }
+  .filter-options button { font-size: 13px; }
+  .catalog-empty { font-size: 14px; }
+  .product-name { font-size: 14px; }
+  .product-price { font-size: 16px; }
+  .product-stock, .product-creator { font-size: 12px; }
+  .order-summary h2 { font-size: 16px; }
+  .order-total { font-size: 30px; }
+  .order-lines > div > div:first-child { font-size: 14px; }
+  .order-actions button { font-size: 14px; }
+  .order-actions p { font-size: 12px; }
+  .header-brand h1 { font-size: 16px; }
+  .header-brand p { font-size: 11px; }
+  .sync-status { font-size: 11px; }
+  .booth-navigation :is(button, a) { font-size: 14px; }
+  .nav-utilities :is(button, a) { font-size: 13px; }
+  .catalog-heading h2 { font-size: 20px; }
+  .catalog-heading p { font-size: 13px; }
+  .order-summary h2 { font-size: 14px; }
+  .order-total { font-size: 28px; }
+  .order-detail-toggle { font-size: 12px; }
+  .order-actions p { font-size: 12px; }
+  .order-actions > div > button { font-size: 14px; }
+  .order-actions > button { font-size: 12px; }
+  input, select { font-size: 16px; }
+  .management-back { font-size: 13px; }
+  .management-table { font-size: 13px; }
+  .management-table th { font-size: 12px; }
+  .management-detail-link { font-size: 12px; }
+  .management-pagination { font-size: 12px; }
+  .management-heading h2 { font-size: 24px; }
+  .management-heading p, .management-defaults p { font-size: 13px; }
+  .management-add { font-size: 14px; }
+  .management-summary { font-size: 12px; }
+  .management-product-header h3 { font-size: 15px; }
+  .management-delete { font-size: 12px; }
+  .management-image p { font-size: 11px; }
+  .management-upload { font-size: 12px; }
+  .management-upload input { font-size: 11px; }
+  .management-details legend { font-size: 12px; }
+  .management-details legend span { font-size: 11px; }
+  .management-field > span { font-size: 12px; }
+  .management-field input { font-size: 14px; }
+  .management-empty h3 { font-size: 15px; }
+  .management-empty p { font-size: 13px; }
+  .management-defaults h3 { font-size: 14px; }
+  .management-default-actions button { font-size: 12px; }
+  .management-table { font-size: 12px; }
+  .management-table th { font-size: 11px; }
+  .management-table time { font-size: 11px; }
+  .management-heading h2 { font-size: 20px; }
+  .management-field input { font-size: 16px; }
+  .management-note { font-size: 12px; }
+  .bundle-management-body h4 { font-size: 13px; }
+  .bundle-components li { font-size: 13px; }
 }
