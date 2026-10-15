@@ -3,6 +3,7 @@ import { upload } from '@vercel/blob/client';
 import { managementQuantities, managementBundleStock } from '../utils/managementQuantities';
 import { won, creatorNameOf, productNameFromFields, productNameWithoutCreator } from '../utils/productDisplay';
 import { Input, Panel, Quantity, StockAdjustment, ProductImage } from '../components/PosUI';
+import { prepareProductImage, PRODUCT_IMAGE_HELP } from '../utils/productImage';
 import ProductCreatePage from './ProductCreatePage';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 const AUTH_TOKEN_KEY = 'pos_admin_token';
@@ -71,13 +72,13 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
   useEffect(() => { if (selectedProduct) backButton.current?.focus(); }, [selectedProduct?.id]);
   const uploadImage = async (product, file) => {
     if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) return alert('JPG, PNG, WebP 이미지를 5MB 이하로 선택해주세요.');
     if (!navigator.onLine) return alert('이미지 등록은 인터넷 연결이 필요합니다.');
     setUploadingId(product.id);
     try {
-      const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type];
-      const blob = await upload(`products/${encodeURIComponent(projectId)}/${encodeURIComponent(product.id)}/${crypto.randomUUID()}.${extension}`, file, {
-        access: 'public', handleUploadUrl: '/api/product-images', contentType: file.type,
+      const thumbnail = await prepareProductImage(file);
+      const extension = thumbnail.type === 'image/webp' ? 'webp' : 'png';
+      const blob = await upload(`products/${encodeURIComponent(projectId)}/${encodeURIComponent(product.id)}/${crypto.randomUUID()}.${extension}`, thumbnail, {
+        access: 'public', handleUploadUrl: '/api/product-images', contentType: thumbnail.type,
         clientPayload: JSON.stringify({ projectId, productId: product.id }),
         headers: { Authorization: `Bearer ${sessionStorage.getItem(AUTH_TOKEN_KEY)}` },
       });
@@ -128,7 +129,7 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
             <ProductImage imageUrl={p.imageUrl} name={p.name} />
             <label className="management-upload"><span>{uploadingId === p.id ? '업로드 중…' : p.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label={`${p.name} 이미지 등록 또는 수정`} type="file" accept="image/jpeg,image/png,image/webp" disabled={saving || uploadingId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; uploadImage(p, file); }} /></label>
             {p.imageUrl && <button type="button" disabled={saving || uploadingId !== null} className="management-delete" onClick={() => onImageChange(p.id, null)}>이미지 제거</button>}
-            <p>JPG · PNG · WebP / 최대 5MB</p>
+            <p>{PRODUCT_IMAGE_HELP}</p>
           </div>
           <div className="management-details">
             <fieldset><legend>기본 정보</legend><div className="management-fields">
