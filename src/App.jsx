@@ -45,7 +45,7 @@ export default function App() {
   const [readyScope, setReadyScope] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [routePage, setScreen] = usePageRoute();
-  const screen = selectedProject || routePage === 'restore' ? routePage : 'projects';
+  const screen = selectedProject || ['restore', 'projectNew'].includes(routePage) ? routePage : 'projects';
   const [orderExpanded, setOrderExpanded] = useState(false);
 
 
@@ -58,7 +58,7 @@ export default function App() {
     }
     if (loading || projectLoading) return;
     if (['login', 'signup'].includes(routePage)) { setScreen(selectedProject ? 'pos' : 'projects', true); return; }
-    if (!selectedProject && !['projects', 'restore'].includes(routePage)) setScreen('projects', true);
+    if (!selectedProject && !['projects', 'projectNew', 'restore'].includes(routePage)) setScreen('projects', true);
     else if (!Object.values(pagePaths).some((path) => window.location.hash === `#${path}`)) setScreen(screen, true);
     document.title = `${pageTitles[screen]} · 마이 부스`;
     document.querySelector('.page-heading h1')?.focus();
@@ -617,12 +617,12 @@ export default function App() {
 
   if (!token) return routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />;
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
-    <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onRefresh={screen === 'projects' ? loadProjects : loadState} onLogout={logout} />
+    <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onLogout={logout} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
     {readOnly && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
     {loading || projectLoading || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
 
-    {screen === 'projects' && <ProjectsPage projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} navigate={setScreen} />}
+    {['projects', 'projectNew'].includes(screen) && <ProjectsPage creating={screen === 'projectNew'} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} navigate={setScreen} />}
 
     {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
 

@@ -1,6 +1,6 @@
-export const PRODUCT_IMAGE_MAX_EDGE = 512;
+export const PRODUCT_IMAGE_MAX_EDGE = 256;
 export const PRODUCT_IMAGE_INPUT_LIMIT = 5 * 1024 * 1024;
-export const PRODUCT_IMAGE_HELP = 'JPG · PNG · WebP / 원본 최대 5MB · 긴 변 512px로 자동 축소';
+export const PRODUCT_IMAGE_HELP = 'JPG · PNG · WebP / 원본 최대 5MB · 긴 변 256px로 자동 축소';
 
 // Keep the whole product visible, including transparency, without enlarging small inputs.
 export async function prepareProductImage(file) {

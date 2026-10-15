@@ -27,7 +27,7 @@ export function PageTabs({ id, label, tabs, selected, onSelect }) {
   </div>;
 }
 
-export function AppHeader({ page, navigate, project, adminId, saving, sync, onRefresh, onLogout }) {
+export function AppHeader({ page, navigate, project, adminId, saving, sync, onLogout }) {
   const [open, setOpen] = useState(false);
   const toggle = useRef(null);
   useEffect(() => { setOpen(false); }, [page, project?.id]);
@@ -42,14 +42,14 @@ export function AppHeader({ page, navigate, project, adminId, saving, sync, onRe
   const go = (key) => { setOpen(false); navigate(key); };
   return <header className="app-header border-b border-line bg-white text-ink">
     <div className="header-brand flex min-w-0 items-center gap-2.5"><span className="h-2 w-2 shrink-0 rounded-full bg-register" /><div className="min-w-0"><a href="#/sales" className="display-font brand-title font-bold" onClick={(event) => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); go('pos'); }}>마이 부스</a><p className="truncate text-xs text-slate-500" title={project?.name || adminId}>{project?.name || `${adminId}님의 프로젝트`}</p></div>{saving && <span className="shrink-0 text-xs text-register">저장 중...</span>}</div>
-    <div className="header-controls">{project && <SyncStatus sync={sync} />}<button ref={toggle} type="button" className={`menu-toggle ${open ? 'is-open' : ''}`} aria-label={open ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={open} aria-controls="booth-navigation" onClick={() => setOpen(!open)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>
+    <div className="header-controls">{project && <div className="mobile-sync"><SyncStatus sync={sync} /></div>}<button ref={toggle} type="button" className={`menu-toggle ${open ? 'is-open' : ''}`} aria-label={open ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={open} aria-controls="booth-navigation" onClick={() => setOpen(!open)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>
     <nav id="booth-navigation" aria-label="부스 메뉴" className={`booth-navigation ${open ? 'is-open' : ''}`}>
-      <div className="nav-screens">{[['pos', '상품 판매'], ['settings', '상품 관리'], ['log', '정산'], ['project', '행사 관리'], ['projects', '행사 선택']].map(([key, label]) => !project && key !== 'projects' ? <button key={key} disabled><Icon name={key} />{label}</button> : <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || (key === 'settings' && ['bundleNew', 'productNew'].includes(page)) || (key === 'project' && (projectPages.includes(page) || page === 'restore')) ? 'page' : undefined} onClick={(event) => {
+      {project && <div className="navigation-sync"><SyncStatus sync={sync} /></div>}<div className="nav-screens">{[['pos', '상품 판매'], ['settings', '상품 관리'], ['log', '정산'], ['project', '행사 관리'], ['projects', '행사 선택']].map(([key, label]) => !project && key !== 'projects' ? <button key={key} disabled><Icon name={key} />{label}</button> : <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || (key === 'projects' && page === 'projectNew') || (key === 'settings' && ['bundleNew', 'productNew'].includes(page)) || (key === 'project' && (projectPages.includes(page) || page === 'restore')) ? 'page' : undefined} onClick={(event) => {
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
         go(key);
-      }} className={page === key || (key === 'settings' && ['bundleNew', 'productNew'].includes(page)) || (key === 'project' && (projectPages.includes(page) || page === 'restore')) ? 'is-active' : ''}><Icon name={key} />{label}</a>)}</div>
-      <div className="nav-utilities"><button onClick={() => { setOpen(false); onRefresh(); }}><Icon name="refresh" />새로고침</button><button onClick={() => { setOpen(false); onLogout(); }}><Icon name="logout" />로그아웃</button></div>
+      }} className={page === key || (key === 'projects' && page === 'projectNew') || (key === 'settings' && ['bundleNew', 'productNew'].includes(page)) || (key === 'project' && (projectPages.includes(page) || page === 'restore')) ? 'is-active' : ''}><Icon name={key} />{label}</a>)}</div>
+      <div className="nav-utilities"><button onClick={() => { setOpen(false); onLogout(); }}><Icon name="logout" />로그아웃</button></div>
     </nav>
   </header>;
 }
