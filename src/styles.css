@@ -229,6 +229,22 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .filter-options button:hover { background: #e2e8f0; }
 .filter-options button[aria-pressed="true"] { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
 .catalog-empty { padding: 40px 16px; text-align: center; color: #64748b; font-size: 14px; }
+.settlement-layout { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 20px; align-items: start; }
+.settlement-card { min-width: 0; border: 1px solid #e2e8f0; border-radius: 8px; background: white; padding: 16px; }
+.settlement-card td, .settlement-card th { overflow-wrap: anywhere; }
+.settlement-card button { min-height: 36px; }
+.settlement-creator { color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
+.settlement-overview { position: sticky; top: 0; min-width: 0; border: 1px solid #e2e8f0; border-radius: 10px; background: white; padding: 20px; box-shadow: 0 4px 16px #17243b04; }
+.settlement-overview h2 { font-size: 16px; font-weight: 600; }
+.settlement-overview > p { color: #64748b; font-size: 12px; margin-top: 4px; margin-bottom: 16px; }
+.settlement-overview > div { border: 0; border-top: 1px solid #e2e8f0; border-radius: 0; padding: 14px 0; }
+.settlement-overview > div:first-of-type > div:last-child { color: #2563eb; font-size: 30px; }
+.settlement-overview .mono { overflow-wrap: anywhere; }
+@media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
+  .settlement-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .settlement-overview { position: static; }
+  .settlement-card { padding: 12px; }
+}
 [role="tabpanel"]:focus-visible { outline: 2px solid #93c5fd; outline-offset: 4px; }
 .product-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .product-image { max-width: 180px; }
@@ -255,7 +271,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .booth-navigation { grid-row: 2; grid-column: 1 / -1; justify-content: space-between; }
 }
 @media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
-  .project-grid, .settlement-stats { grid-template-columns: minmax(0, 1fr); }
+  .project-grid { grid-template-columns: minmax(0, 1fr); }
   .app-header { grid-template-columns: minmax(0, 1fr) auto; min-height: 64px; padding: 10px 16px; gap: 8px; }
   .header-brand { grid-column: 1 / -1; gap: 6px; }
   .header-brand h1 { font-size: 16px; }
