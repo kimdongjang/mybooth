@@ -5,6 +5,7 @@ import { won, creatorNameOf, productNameFromFields, productNameWithoutCreator } 
 import { Input, Panel, Quantity, StockAdjustment, ProductImage } from '../components/PosUI';
 import { prepareProductImage, PRODUCT_IMAGE_HELP } from '../utils/productImage';
 import ProductCreatePage from './ProductCreatePage';
+import BulkProductImages from './BulkProductImages';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 const AUTH_TOKEN_KEY = 'pos_admin_token';
 
@@ -59,6 +60,7 @@ function BundleDetail({ readOnly, bundle, products, sales, bundles, persistBundl
 }
 
 function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChange, products, bundles, sales, persistProducts, persistBundles }) {
+  const [bulkBusy, setBulkBusy] = useState(false);
   const quantities = managementQuantities(sales, bundles);
   const [uploadingId, setUploadingId] = useState(null);
   const [page, setPage] = useState(1);
@@ -101,11 +103,12 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
 
   const field = (product, title, value, patch, type = 'text') => <label className="management-field"><span>{title}</span><Input type={type} value={value} onChange={(v) => updateProduct(product.id, patch(v))} /></label>;
 
-  return <section className="product-management">
+  return <section className="product-management"><fieldset disabled={bulkBusy} className="min-w-0">
     <header className="management-heading">
       <div><h2>{selectedProduct ? '상품 상세' : '상품 목록'}</h2></div>
       {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <button type="button" disabled={readOnly || saving} className="management-add" onClick={onAdd}>+ 상품 추가</button>}
     </header>
+    {!selectedProduct && <BulkProductImages projectId={projectId} products={products} persistProducts={persistProducts} onImageChange={onImageChange} disabled={readOnly || saving || bulkBusy} onBusy={setBulkBusy} />}
     <div className="management-summary"><span>등록 상품 <b>{products.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '상품 정보를 수정할 수 있습니다'}</span></div>
     <p className="management-note">등록 수량은 기존 초기 재고와 추가 입고의 합계입니다. 판매 수량은 현재 판매 내역의 단품·세트 구성품을 합산합니다. 취소된 판매는 제외하며, 구성 정보가 없는 과거 세트 판매는 현재 구성 기준입니다.</p>
     {!selectedProduct && <>
@@ -151,5 +154,5 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
       </article>)}
     </div></fieldset>}
 
-  </section>;
+  </fieldset></section>;
 }
