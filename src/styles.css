@@ -342,7 +342,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .management-pagination { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 16px; font-size: 12px; color: #64748b; }
 .management-pagination button { padding: 8px 12px; min-height: 36px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; color: #334155; }
 .management-pagination button:disabled { opacity: .4; }
-.management-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.management-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 16px; margin-bottom: 20px; }
 .management-heading h2 { font-size: 24px; font-weight: 700; letter-spacing: -.03em; }
 .management-heading p { margin-top: 6px; font-size: 13px; line-height: 1.6; color: #64748b; }
 .management-add { min-height: 40px; padding: 10px 16px; border-radius: 8px; background: #2563eb; color: white; font-size: 14px; font-weight: 600; }
@@ -528,3 +528,6 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .mobile-sync { display: block; }
   .navigation-sync { display: none; }
 }
+
+.management-heading > div { min-width: 0; }
+.management-heading > button { flex-shrink: 0; }

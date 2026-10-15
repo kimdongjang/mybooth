@@ -38,7 +38,7 @@ export default function ProjectRestorePage({ project, navigate, onManageProject,
   return <main className="page-content event-management-page"><div className={`event-workspace ${!project ? 'event-workspace-standalone' : ''}`}>
     {project && <ProjectNavigation page="restore" project={project} navigate={navigate} />}
     <div className="event-main">
-      <PageIntro title="백업 복원" description="백업 자료로 새 행사를 만듭니다. 현재 행사를 포함한 기존 자료는 유지됩니다." />
+      <PageIntro title="백업 복원" />
       {createdProject ? <section className="event-panel event-restore-success" role="status"><span className="event-status" data-archived="true">보관 상태로 복원 완료</span><h2>{createdProject.name}</h2><p>복원된 자료를 확인한 후 행사 관리에서 비밀번호로 보관을 해제하면 판매를 시작할 수 있습니다.</p><button className="event-button event-button-primary" onClick={() => onSelectProject(createdProject)}>복원한 행사 열기 →</button><EventLink page="projects" navigate={navigate} className="event-text-link">행사 목록으로</EventLink></section> : <form onSubmit={submit}><fieldset disabled={busy || reading} className="event-form-fields">
         <section className="event-panel"><span className="event-step">1 · 백업 파일 선택</span><h2>복원할 자료 확인</h2><p>프로젝트 백업에서 다운로드한 JSON을 선택하세요. 최대 3MiB이며 이미지 파일과 미동기화 주문은 포함하지 않습니다.</p>
           <label className="event-upload">프로젝트 백업 파일<input aria-label="프로젝트 백업 파일" type="file" accept=".json,application/json" onChange={readBackup} /><span className="event-muted">{filename || '프로젝트 백업 v1 · JSON · 최대 3MiB'}</span></label>

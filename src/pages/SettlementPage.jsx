@@ -10,7 +10,7 @@ export default function SettlementPage({ readOnly, stats, sales, visibleSales, l
   const filteredSales = filterSales(visibleSales, search, saleLineProductEntries, saleLineCreators);
   return <main className="page-content settlement-page">
       <div className="settlement-layout"><section className="catalog min-w-0">
-      <PageIntro title="정산" description="결제수단별 매출과 제작자별 판매 금액을 확인하세요."><PageTabs id="settlement" label="정산 보기" tabs={[["summary", "매출 요약"], ["history", "판매 내역"]]} selected={tab} onSelect={setTab} /></PageIntro>
+      <PageIntro title="정산"><PageTabs id="settlement" label="정산 보기" tabs={[["summary", "매출 요약"], ["history", "판매 내역"]]} selected={tab} onSelect={setTab} /></PageIntro>
       <div id={`settlement-panel-${tab}`} role="tabpanel" aria-labelledby={`settlement-tab-${tab}`} tabIndex={0}>
           {tab === 'summary' && <div className="catalog-filters" role="group" aria-label="정산 제작자 필터"><span className="filter-label">제작자</span><div className="filter-options"><button type="button" aria-pressed={logCreatorFilter === 'all'} onClick={() => setLogCreatorFilter('all')}>전체</button>{creatorSalesSummary.map(({ creator }) => <button key={creator} type="button" aria-pressed={logCreatorFilter === creator} onClick={() => setLogCreatorFilter(creator)}>{creator}</button>)}</div></div>}
       <div className="grid min-w-0 gap-4">

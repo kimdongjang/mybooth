@@ -16,13 +16,6 @@ export default function ProjectManagementPage({ page, project, summary, navigate
   const item = projectSections.find(section => section.page === page);
   const action = { projectName: 'renameProject', projectArchive: archived ? 'unarchiveProject' : 'archiveProject', projectDuplicate: 'duplicateProject', projectBackup: 'backupProject', projectDelete: 'deleteProject' }[page];
   const actionLabel = { renameProject: '이름 변경', archiveProject: '행사 종료·보관', unarchiveProject: '보관 해제하고 판매 재개', duplicateProject: '새 행사로 복제', backupProject: '프로젝트 백업 다운로드', deleteProject: '행사 영구 삭제' }[action];
-  const descriptions = {
-    projectName: '다른 행사와 구분하기 쉬운 이름을 입력하세요.',
-    projectArchive: archived ? '기록을 확인한 뒤 판매와 수정을 다시 시작할 수 있습니다.' : '판매를 마친 행사를 읽기 전용으로 보관합니다.',
-    projectDuplicate: '원본 행사는 유지하고 새 행사를 만듭니다.',
-    projectBackup: '서버에 저장된 행사 자료를 JSON 파일로 보관하세요.',
-    projectDelete: '삭제한 자료는 되돌릴 수 없습니다. 먼저 백업을 다운로드하세요.',
-  };
   const submit = async event => {
     event.preventDefault();
     if (busy || !password) return;
@@ -38,7 +31,7 @@ export default function ProjectManagementPage({ page, project, summary, navigate
   return <main className="page-content event-management-page"><div className="event-workspace">
     <ProjectNavigation page={page} project={project} navigate={navigate} />
     <div className="event-main">
-      <PageIntro title={page === 'project' ? '행사 관리' : item.title} description={page === 'project' ? '현재 행사에 필요한 관리 작업을 선택하세요.' : descriptions[page]} />
+      <PageIntro title={page === 'project' ? '행사 관리' : item.title} />
       {notice && <div role="status" className="event-feedback"><p>{notice}</p>{createdProject && <button type="button" className="event-button" onClick={() => onSelectProject(createdProject)}>복제한 행사 열기 →</button>}</div>}
       {page === 'project' ? <>
         <section className="event-panel event-overview"><div><span className="event-status" data-archived={archived}>{archived ? '보관 중' : '진행 중'}</span><h2>{project.name}</h2><p>이 화면의 작업은 위 행사에만 적용됩니다.</p></div><dl className="event-metrics"><div><dt>상품</dt><dd>{summary.products}개</dd></div><div><dt>세트</dt><dd>{summary.bundles}개</dd></div><div><dt>거래</dt><dd>{summary.sales}건</dd></div><div><dt>총 판매액</dt><dd>{won(summary.total)}원</dd></div></dl></section>

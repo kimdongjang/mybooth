@@ -78,7 +78,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
     }
   };
   return <main className="page-content settings-page">
-    <PageIntro title="새 상품 등록" description="이미지와 상품 정보, 판매가·초기 재고를 입력하고 저장하세요." actions={<button type="button" disabled={saving || busy || preparing} className="management-back" onClick={onBack}>← 상품 목록으로</button>} />
+    <PageIntro title="새 상품 등록" actions={<button type="button" disabled={saving || busy || preparing} className="management-back" onClick={onBack}>← 상품 목록으로</button>} />
     <form className="settings-content product-management" onSubmit={submit}>
       <fieldset disabled={readOnly || saving || busy || preparing} className="min-w-0"><div className="management-products">
         <article className="management-product">
