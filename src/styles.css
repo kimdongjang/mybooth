@@ -229,7 +229,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .filter-options button:hover { background: #e2e8f0; }
 .filter-options button[aria-pressed="true"] { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
 .catalog-empty { padding: 40px 16px; text-align: center; color: #64748b; font-size: 14px; }
-.settlement-layout { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 20px; align-items: start; }
+.settlement-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
 .settlement-card { min-width: 0; border: 1px solid #e2e8f0; border-radius: 8px; background: white; padding: 16px; }
 .settlement-card td, .settlement-card th { overflow-wrap: anywhere; }
 .settlement-card button { min-height: 36px; }
@@ -244,15 +244,15 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .settlement-tool:hover { background: #edf0f4; }
 .settlement-card .settlement-tool-danger { color: #dc2626; background: white; }
 .settlement-tool:disabled { opacity: .5; }
-.settlement-overview { position: sticky; top: 0; min-width: 0; border: 1px solid #e2e8f0; border-radius: 10px; background: white; padding: 20px; box-shadow: 0 4px 16px #17243b04; }
-.settlement-overview h2 { font-size: 16px; font-weight: 600; }
-.settlement-overview > p { color: #64748b; font-size: 12px; margin-top: 4px; margin-bottom: 16px; }
+.settlement-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 16px; margin-bottom: 16px; min-width: 0; border: 1px solid #e2e8f0; border-radius: 10px; background: white; padding: 20px; box-shadow: 0 4px 16px #17243b04; }
+.settlement-overview h2 { grid-column: 1 / -1; font-size: 16px; font-weight: 600; }
+.settlement-overview > p { grid-column: 1 / -1; color: #64748b; font-size: 12px; margin-top: 4px; margin-bottom: 16px; }
 .settlement-overview > div { border: 0; border-top: 1px solid #e2e8f0; border-radius: 0; padding: 14px 0; }
 .settlement-overview > div:first-of-type > div:last-child { color: #2563eb; font-size: 30px; }
 .settlement-overview .mono { overflow-wrap: anywhere; }
 @media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
   .settlement-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .settlement-overview { position: static; }
+  .settlement-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px; }
   .settlement-card { padding: 12px; }
 }
 [role="tabpanel"]:focus-visible { outline: 2px solid #93c5fd; outline-offset: 4px; }
