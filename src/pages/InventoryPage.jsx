@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { PageIntro } from '../components/PageLayout';
+import SearchFilters from '../components/SearchFilters';
+import ProductValueInput from '../components/ProductValueInput';
+import { Input, Quantity, ProductImage } from '../components/PosUI';
+import { filterInventory } from '../utils/inventorySearch';
 import { won } from '../utils/productDisplay';
 
 const empty = () => ({ id: crypto.randomUUID(), version: -1, name: '', goodsType: '', vtuberName: '', creatorName: '', price: 0, stock: 0 });
@@ -10,6 +14,10 @@ export default function InventoryPage({ adminId, api }) {
   const [view, setView] = useState('list');
   const [draft, setDraft] = useState(null);
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState({ stock: 'all', product: '', creator: '' });
+  const filteredItems = filterInventory(items, search);
+  const changeSearch = next => { setSearch(next); setPage(1); };
+  const changeDraft = (key, value) => setDraft(current => ({ ...current, [key]: ['price', 'stock'].includes(key) ? (value === '' ? '' : Number(value)) : value }));
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
@@ -18,7 +26,7 @@ export default function InventoryPage({ adminId, api }) {
   const pending = useRef(null);
   const [uncertain, setUncertain] = useState(false);
   const backButton = useRef(null);
-  const pageCount = Math.max(1, Math.ceil(items.length / 10));
+  const pageCount = Math.max(1, Math.ceil(filteredItems.length / 10));
   const currentPage = Math.min(page, pageCount);
   useEffect(() => {
     let active = true;
@@ -68,23 +76,40 @@ export default function InventoryPage({ adminId, api }) {
           : <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => { setView('list'); setDraft(null); setError(''); setMessage(''); }}>← 목록으로</button>}
       </header>
       {view === 'list' ? <>
-        <div className="management-summary"><span>등록 상품 <b>{items.length}개</b></span></div>
+        <SearchFilters label="재고 검색" value={search} onChange={changeSearch} onReset={() => changeSearch({ stock: 'all', product: '', creator: '' })} fields={[
+          { key: 'stock', label: '재고 상태', options: [['all','전체'],['available','창고 재고 있음'],['empty','창고 재고 없음']] },
+          { key: 'product', label: '상품', placeholder: '상품명·캐릭터·굿즈 종류·코드' },
+          { key: 'creator', label: '제작자', placeholder: '제작자명' },
+        ]} />
+        <p className="settlement-result" role="status">검색 결과 {filteredItems.length}개 / 전체 {items.length}개</p>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
           <caption className="sr-only">상품 이름, 판매가, 창고 재고, 전체 남은 재고</caption>
           <thead><tr>{['상품 이름', '판매가', '창고 재고', '전체 재고'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-          <tbody>{items.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
+          <tbody>{filteredItems.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
             <td><button type="button" className="management-name-link" aria-label={`${item.name} 재고 상세보기`} onClick={() => open(item)}>{item.name}</button><small className="inventory-creator">{item.creatorName || '제작자 미지정'}</small></td>
             <td className="mono management-row-price">{won(item.price)}원</td><td className="mono">{won(item.stock)}개</td><td className="mono">{won(Number(item.stock) + allocatedStock(item))}개</td>
           </tr>)}</tbody>
-        </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}</div>
+        </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}{ready && items.length > 0 && !filteredItems.length && <p className="catalog-empty">검색 조건에 맞는 재고가 없습니다.</p>}</div>
         <nav className="management-pagination" aria-label="재고 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
-      </> : draft && <article className="inventory-card">
-        <form onSubmit={save}>
-          <fieldset disabled={busy || uncertain || !ready} className="inventory-fields">
-            {[["name","상품 이름"],["goodsType","굿즈 종류"],["vtuberName","캐릭터"],["creatorName","제작자"],["price","판매가 (원)"],["stock","창고 재고 (개)"]].map(([key,label]) => <label key={key}>{label}<input required={['name','price','stock'].includes(key)} maxLength={200} type={['price','stock'].includes(key) ? 'number' : 'text'} min="0" max="2147483647" step="1" value={draft[key]} onChange={e => setDraft({ ...draft, [key]: ['price','stock'].includes(key) ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value })} /></label>)}
-          </fieldset><div className="inventory-actions"><button className="management-add" disabled={busy || uncertain || !ready}>{busy ? '저장 중…' : view === 'new' ? '상품 등록' : '수정'}</button></div>
-        </form>
-        {view === 'detail' && <div className="inventory-stock-summary"><p>행사 잔여 재고: <strong>{won(allocatedStock(draft))}개</strong></p><p>전체 남은 재고: <strong>{won(Number(draft.stock || 0) + allocatedStock(draft))}개</strong></p><p className="management-note">창고 재고는 행사에 배정되지 않은 수량입니다. 행사 잔여 재고는 읽기 전용입니다.</p></div>}
+      </> : draft && <article className="management-product">
+        <div className="management-product-header"><h3>{draft.name || '새 상품'}</h3></div>
+        <div className="management-product-body">
+          <div className="management-image"><ProductImage imageUrl={draft.imageUrl} name={draft.name} /></div>
+          <form onSubmit={save} className="management-details">
+            <fieldset disabled={busy || uncertain || !ready}><legend>기본 정보</legend><div className="management-fields">
+              <label className="management-field product-name-field"><span>상품 이름</span><Input required maxLength={200} value={draft.name} onChange={value => changeDraft('name', value)} /></label>
+              {[['vtuberName','캐릭터'], ['goodsType','굿즈 종류'], ['creatorName','제작자']].map(([key,label]) => <ProductValueInput key={key} field={key} label={label} products={items} value={draft[key]} onChange={value => changeDraft(key, value)} required={key === 'goodsType'} disabled={busy || uncertain || !ready} />)}
+              <label className="management-field"><span>판매가 (원)</span><Input required type="number" min="0" max="2147483647" step="1" value={draft.price} onChange={value => changeDraft('price', value)} /></label>
+            </div></fieldset>
+            <fieldset disabled={busy || uncertain || !ready}><legend>재고</legend><div className="product-stock-grid">
+              <label className="management-field"><span>창고 재고</span><Input aria-label="창고 재고" required type="number" min="0" max="2147483647" step="1" value={draft.stock} onChange={value => changeDraft('stock', value)} /></label>
+              <Quantity label="행사 잔여 재고" value={allocatedStock(draft)} />
+              <Quantity label="전체 남은 재고" value={Number(draft.stock || 0) + allocatedStock(draft)} />
+            </div></fieldset>
+            <p className="management-note">창고 재고는 행사에 배정되지 않은 수량입니다. 행사 잔여 재고는 읽기 전용입니다.</p>
+            <div className="product-edit-actions"><button type="submit" className="management-add" disabled={busy || uncertain || !ready}>{busy ? '저장 중…' : view === 'new' ? '상품 등록' : '수정'}</button></div>
+          </form>
+        </div>
       </article>}
     </section>
   </main>;
