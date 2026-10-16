@@ -658,14 +658,20 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 
 .nav-utilities:empty{display:none}.nav-utilities .release-project{color:#526078}.nav-utilities .release-project:disabled{opacity:.45;cursor:wait}
 
-/* The selected event and release action share one context group. */
-.booth-navigation .nav-screens{background:transparent;gap:12px;padding:0}
-.nav-event-group{display:flex;align-items:center;gap:4px;padding:4px;border:1px solid #dce3ed;background:#f4f7fc;border-radius:10px;min-width:0}
-.nav-event-group>a{gap:8px;min-width:0}.nav-event-name{font-weight:700;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.booth-navigation .nav-event-group .release-project{border-left:1px solid #dce3ed;border-radius:0;font-size:12px;white-space:nowrap;color:#64748b}
-@media (max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){
- .booth-navigation .nav-screens{gap:4px}.nav-event-group{display:contents}.nav-event-name{max-width:none;white-space:normal;overflow-wrap:anywhere}
- .booth-navigation .nav-event-group .release-project{order:1;border-left:0;border-top:1px solid #e2e8f0;margin-top:8px;padding-top:12px;border-radius:0}
+/* Event context stays visible; account navigation and sync have separate roles. */
+.app-header{grid-template-columns:auto minmax(0,1fr) auto;gap:12px 24px}
+.header-brand{grid-column:1;grid-row:1}.header-controls{grid-column:3;grid-row:1}
+.header-event{position:relative;grid-column:2;grid-row:1;min-width:0;justify-self:start;max-width:100%}
+.event-picker{display:flex;align-items:center;gap:10px;max-width:100%;min-height:48px;padding:8px 12px;border:1px solid #dce3ed;border-radius:10px;background:#f4f7fc;color:#334155;text-decoration:none;font-size:14px;text-align:left}
+.event-picker>svg{flex-shrink:0;width:20px;height:20px}.event-picker-copy{display:flex;flex-direction:column;min-width:0;gap:2px}.event-picker-label{font-size:11px;color:#64748b}.event-picker-name{font-size:15px;font-weight:700;overflow-wrap:anywhere}
+.event-picker-panel{position:absolute;top:calc(100% + 8px);left:0;z-index:40;width:320px;max-width:calc(100vw - 32px);padding:8px;border:1px solid #dce3ed;border-radius:10px;background:white;box-shadow:0 8px 24px #17243b20}
+.event-picker-panel :is(a,button){display:flex;align-items:center;width:100%;min-height:44px;padding:10px 12px;font-size:14px;color:#334155;text-decoration:none;border-radius:6px;text-align:left}.event-picker-panel :is(a,button):hover{background:#eff6ff}.event-picker-panel button:disabled{opacity:.45;cursor:wait}.event-picker-panel p{padding:10px 12px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.6}
+.booth-navigation{grid-column:3;grid-row:1}.booth-navigation .nav-screens{background:transparent;gap:8px;padding:0}
+.header-sync{grid-column:1 / -1;grid-row:2;display:flex;justify-content:flex-end;border-top:1px solid #edf1f5;padding:4px 0}.header-sync .sync-status{font-size:12px;min-height:30px;padding:4px 8px}.header-sync .sync-copy{flex-direction:row;align-items:center;gap:8px}
+@media(max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){
+ .app-header{grid-template-columns:minmax(0,1fr) auto;gap:8px; padding-top:4px}
+ .header-brand{grid-column:1;grid-row:1}.header-controls{grid-column:2;grid-row:1}.header-event{grid-column:1 / -1;grid-row:2;width:100%}.event-picker{width:100%;justify-content:space-between;min-height:44px}.event-picker-copy{flex:1}.event-picker-name{font-size:14px}.event-picker-label{font-size:11px}.event-picker-panel{width:100%;max-width:100%}
+ .header-sync{grid-row:3;padding:2px 0}.header-sync .sync-status{font-size:11px;max-width:none;min-height:44px}.booth-navigation{grid-column:1 / -1;grid-row:auto}.booth-navigation .nav-screens{gap:4px}
 }
 
 .inventory-management-table th:first-child{width:40%}.inventory-management-table th:not(:first-child){width:20%}
