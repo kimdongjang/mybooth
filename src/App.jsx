@@ -1,3 +1,4 @@
+import InventoryPage from './pages/InventoryPage';
 import GettingStarted from './components/GettingStarted';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
@@ -28,7 +29,7 @@ async function requestJson(url, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || '요청 처리에 실패했습니다.');
+  if (!res.ok) throw Object.assign(new Error(data.error || '요청 처리에 실패했습니다.'), { status: res.status });
   return data;
 }
 
@@ -46,7 +47,7 @@ export default function App() {
   const [readyScope, setReadyScope] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [routePage, setScreen] = usePageRoute();
-  const screen = selectedProject || ['restore', 'projectNew'].includes(routePage) ? routePage : 'projects';
+  const screen = selectedProject || ['restore', 'projectNew', 'inventory', 'account'].includes(routePage) ? routePage : 'projects';
   const [orderExpanded, setOrderExpanded] = useState(false);
 
 
@@ -59,7 +60,7 @@ export default function App() {
     }
     if (loading || projectLoading) return;
     if (['login', 'signup'].includes(routePage)) { setScreen(selectedProject ? 'pos' : 'projects', true); return; }
-    if (!selectedProject && !['projects', 'projectNew', 'restore'].includes(routePage)) setScreen('projects', true);
+    if (!selectedProject && !['projects', 'projectNew', 'restore', 'inventory', 'account'].includes(routePage)) setScreen('projects', true);
     else if (!Object.values(pagePaths).some((path) => window.location.hash === `#${path}`)) setScreen(screen, true);
     document.title = `${pageTitles[screen]} · 마이 부스`;
     document.querySelector('.page-heading h1')?.focus();
@@ -307,6 +308,19 @@ export default function App() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const inventoryApi = async (action, payload = {}) => {
+    if (!navigator.onLine) throw new Error('재고 관리는 인터넷 연결이 필요합니다.');
+    if (action === 'transferInventory' && await orderRepository.countWaiting(payload.projectId)) throw new Error('이 행사의 미동기화 주문을 먼저 동기화해주세요.');
+    const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ action, payload }) });
+    if (action === 'transferInventory' && payload.projectId === selectedProject?.id) {
+      setCart([]);
+      const queueVersion = await stateRepository.queueVersion(selectedProject.id);
+      const state = await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}`);
+      if (activeScope.current === scope) await applyState(state, false, queueVersion);
+    }
+    return data;
   };
 
   const persistProducts = (next) => mutate('replaceProducts', { products: next });
@@ -623,10 +637,13 @@ export default function App() {
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
     <GettingStarted key={token} scope={`${screen}:${selectedProject?.id || ""}`} />
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onLogout={logout} />
+    {!['inventory', 'account'].includes(screen) && <nav className="event-subnav" aria-label="행사 메뉴">{[['projects','행사 선택'], ['pos','상품 판매'], ['settings','상품 관리'], ['log','정산'], ['project','행사 관리']].map(([key,label]) => <button key={key} type="button" data-guide={key === 'settings' && screen === 'pos' ? 'manage' : undefined} disabled={!selectedProject && key !== 'projects'} aria-current={screen === key ? 'page' : undefined} onClick={() => setScreen(key)}>{label}</button>)}</nav>}
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
-    {readOnly && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
+    {readOnly && !['inventory', 'account'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
     {loading || projectLoading || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
 
+    {screen === 'inventory' && <InventoryPage key={adminId} adminId={adminId} projects={projects} api={inventoryApi} />}
+    {screen === 'account' && <main className="page-content"><h1>내 계정 정보</h1><section className="inventory-card"><p>아이디: <strong>{adminId}</strong></p><p>상품과 창고 재고는 이 계정에 저장되며, 행사별 판매·정산은 각각 보관됩니다.</p><button type="button" className="management-back" onClick={logout}>로그아웃</button></section></main>}
     {['projects', 'projectNew'].includes(screen) && <ProjectsPage creating={screen === 'projectNew'} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} navigate={setScreen} />}
 
     {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
@@ -635,7 +652,7 @@ export default function App() {
 
     {screen === 'pos' && <SalesPage project={selectedProject} readOnly={readOnly} purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
-    {['settings', 'bundleNew', 'productNew'].includes(screen) && <ProductsPage creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={(page, tab = 'bundles') => { setSettingsTab(tab); setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
+    {['settings', 'bundleNew', 'productNew'].includes(screen) && <ProductsPage inventoryApi={inventoryApi} adminId={adminId} creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={(page, tab = 'bundles') => { setSettingsTab(tab); setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
     {screen === 'log' && <SettlementPage key={selectedProject.id} readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} saleLineProductEntries={saleLineProductEntries} voidSale={voidSale} />}
     </>}

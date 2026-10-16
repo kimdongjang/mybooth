@@ -73,7 +73,7 @@ export default function AuthPage({ onAuthenticate, mode }) {
       <div className="auth-benefits">
         <div><span className="auth-benefit-icon"><Icon name="log" /></span><div><h3>같이 팔고, 작가별로 확인하세요.</h3><p>함께 운영하는 부스도 제작자별 판매금액을 한눈에.</p></div></div>
         <div><span className="auth-benefit-icon"><Icon name="settings" /></span><div><h3>첫 행사도 차근차근.</h3><p>이미지로 상품을 구분하고, 세트 판매와 남은 재고까지.</p></div></div>
-        <div><span className="auth-benefit-icon"><Icon name="project" /></span><div><h3>다음 행사에도, MyBooth.</h3><p>행사마다 상품과 판매 기록을 나누어 관리하세요.</p></div></div>
+        <div><span className="auth-benefit-icon"><Icon name="project" /></span><div><h3>다음 행사에도, MyBooth.</h3><p>내 상품은 여러 행사에 가져오고 판매 기록은 행사별로 관리하세요.</p></div></div>
       </div>
     </section>
     <AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} />
