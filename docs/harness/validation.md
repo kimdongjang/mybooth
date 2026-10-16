@@ -1,3 +1,20 @@
+## PR #49 main 충돌 해결 검증 (2026-10-16)
+
+- npm run build 및 npm test 23개 통과. 기존 API/PGlite/IndexedDB 및 업로드 인증 실패/상품 보존/재시도 회귀 확인. 운영 DB 사용 없음.
+- 충돌한 architecture/validation 기록은 양쪽 보존. CSS는 main 로고·헤더 여백과 PR 결과 강조를 유지하고 제거된 상세 수정 버튼 전용 규칙은 제외. 캐시 v54와 둥근 로고 앱 셸 경로를 확인했다.
+- git diff --check 및 충돌 표식 검사 통과. 실제 브라우저/Blob 통합·배포 CACHE-01은 미실행. 다른 작업 브랜치의 미커밋 변경은 별도 작업 폴더로 격리하여 포함하지 않았다.
+
+## 이미지 401 문구 정정 검증 (2026-10-16)
+
+- npm run build, git diff --check 통과. image-upload-client 회귀 테스트 1개 통과: 401에서 ‘인증에 실패했습니다’ 및 재로그인 안내, 실패 후 업로드 차단을 확인했다.
+- 전체 npm test는 이번 문구 수정에서 재실행하지 않았다(직전 업로드 변경 23개 통과와 구분). 실제 브라우저/Blob 업로드 및 배포 CACHE-01 미실행. 서비스 워커 v52. 인증 방식·쿠키·오프라인 권한 변경 없음.
+
+## 이미지 업로드 오류·결과 표시 검증 (2026-10-16)
+
+- npm test 23개 통과. 토큰 요청 인증 헤더/이벤트/프로젝트 경로와 발급 성공 후 client put, 저장소 미설정·401·JSON 이외 응답에서 업로드 0회를 확인했다. 서버 미설정503/인증401, 기존 소유권·보관·경로·크기·MIME 제한 회귀 통과. 기존 일괄 추가/연결 실패 URL 재사용 테스트를 공통 업로드 함수에 맞춰 갱신했다. 운영 DB 사용 없음.
+- npm run build 및 git diff --check 통과. 일괄 결과 강조/재시도 버튼 같은 영역 배치, 두 안내 문구와 상세 수정 버튼 제거를 소스 diff로 확인했다.
+- 미실행: UI-01/BULK-IMAGE-01/02의 실제 모바일·데스크톱 시각/조작, IMAGE-01/02/03 실제 Blob 업로드, 배포 CACHE-01. 운영 서버 설정·실제 실패 응답을 확인하지 않아 기존 토큰 발급 실패의 구체 원인은 미확정이다. 별도 Preview에서 공개 Blob 연결 및 서버 전용 BLOB_READ_WRITE_TOKEN 설정 후 저장/재시도를 확인해야 한다.
+
 ## 헤더 여백 제거 검증 (2026-10-16)
 
 - npm run build 및 git diff --check 통과. 소스 diff에서 app-header/auth-header 기본 및 모바일·넓은 터치 margin/padding 0 확인. 기존 최소 높이·메뉴 간격·클릭 영역 유지. 캐시 v53.
@@ -14,6 +31,7 @@
 - 기본 이미지 도구로 파란 원형 로고에서 글꼴만 변경하도록 요청. 공통 프롬프트는 파란 원/흰 My/파란 Booth/투명 배경과 MyBooth 철자 유지. rounded는 둥근 획 끝·친근한 중굵기, geometric은 원형 카운터·직선 획 끝·기하학적 형태, condensed는 좁고 매우 굵은 수직 획을 지정했다. 특정 상용 폰트를 사용한 결과는 아니다.
 - public/images/mybooth-rounded-logo.png, mybooth-geometric-logo.png, mybooth-condensed-logo.png를 별도 자산으로 추가. 원본 및 텍스트 헤더 유지. 세 결과 시각 확인; System.Drawing으로 각각1930×815/1930×815/1933×814, 모서리 alpha=0 확인.
 - npm run build 및 git diff --check 통과. npm test/브라우저 UI 검증 미실행(선택용 정적 이미지 추가). 런타임/API/DB/큐 변경 없음.
+
 
 
 ## 파란 원형 로고 자산 (2026-10-16)

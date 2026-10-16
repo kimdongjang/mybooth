@@ -534,7 +534,8 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .management-heading > div { min-width: 0; }
 .management-heading > button { flex-shrink: 0; }
 .bulk-product-images { margin-bottom: 20px; overflow-wrap: anywhere; }
-.bulk-product-images .management-back { margin: 8px 8px 0 0; }
+.bulk-product-result { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 12px; padding: 16px; border: 1px solid #93c5fd; border-radius: 10px; background: #eff6ff; color: #1e3a8a; font-size: 16px; line-height: 1.6; }
+.bulk-product-result .management-add { flex-shrink: 0; }
 
 .brand-title { display: inline-flex; align-items: center; max-width: 100%; vertical-align: middle; }
 .brand-logo { display: block; width: 144px; height: auto; max-width: 100%; }

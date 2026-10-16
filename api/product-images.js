@@ -4,6 +4,12 @@ import { requireAuth } from './lib/auth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.body?.type === 'blob.generate-client-token') {
+    if (!requireAuth(req, res)) return;
+    if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
+      return res.status(503).json({ code: 'BLOB_NOT_CONFIGURED', error: '이미지 저장소가 설정되지 않았습니다.' });
+    }
+  }
   try {
     const result = await handleUpload({
       request: req,
