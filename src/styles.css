@@ -584,3 +584,11 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .management-actions .management-add { flex: 1; padding: 10px; font-size: 12px; }
   .bundle-create-body .management-fields { grid-template-columns: minmax(0, 1fr); }
 }
+
+.product-value-input { position: relative; }
+.product-value-input > label { font-size: 12px; color: #64748b; }
+.product-value-options { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; max-height: 220px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 8px 20px #0f172a14; }
+.product-value-options button { display: block; width: 100%; min-height: 40px; padding: 8px 10px; text-align: left; overflow-wrap: anywhere; font-size: 14px; border-radius: 4px; }
+.product-value-options button:hover, .product-value-options [aria-selected="true"] button { background: #eff6ff; color: #1d4ed8; }
+.product-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.product-edit-actions [role="status"] { font-size: 13px; color: #475569; }

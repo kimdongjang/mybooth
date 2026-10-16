@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { uploadProductImage } from '../utils/uploadProductImage';
 import { managementQuantities, managementBundleStock } from '../utils/managementQuantities';
 import { won, creatorNameOf, productNameFromFields, productNameWithoutCreator } from '../utils/productDisplay';
-import { Input, Panel, Quantity, StockAdjustment, ProductImage } from '../components/PosUI';
+import { Panel, Quantity, StockAdjustment, ProductImage } from '../components/PosUI';
 import { prepareProductImage } from '../utils/productImage';
 import ProductCreatePage from './ProductCreatePage';
 import BulkProductImages from './BulkProductImages';
 import BundleCreatePage from './BundleCreatePage';
 import ActionIcon from '../components/ActionIcon';
+import ProductEditForm from '../components/ProductEditForm';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 
 export default function ProductsPage({ readOnly, projectId, settingsTab, setSettingsTab, saving, mutate, products, bundles, sales, persistProducts, persistBundles, creatingBundle, creatingProduct, navigate, bundleName, setBundleName, bundleRows, setBundleRows, bundlePrice, setBundlePrice, addBundleToSettings, backupOrdersJson, backupOrdersCsv }) {
@@ -97,8 +98,6 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
     persistBundles(bundles.map((b) => ({ ...b, items: b.items.filter((it) => it.productId !== productId) })).filter((b) => b.items.length));
   };
 
-  const field = (product, title, value, patch, type = 'text') => <label className="management-field"><span>{title}</span><Input type={type} value={value} onChange={(v) => updateProduct(product.id, patch(v))} /></label>;
-
   return <section className="product-management"><fieldset disabled={bulkBusy} className="min-w-0">
     <header className="management-heading">
       <div><h2>{selectedProduct ? '상품 상세' : '상품 목록'}</h2></div>
@@ -121,7 +120,7 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
     </>}
     {selectedProduct && <fieldset disabled={readOnly} className="min-w-0"><div className="management-products">
       {[selectedProduct].map((p) => <article className="management-product" key={p.id}>
-        <div className="management-product-header"><h3>{productNameWithoutCreator(p)} ({p.productCode || p.id})</h3><button type="button" className="management-delete" aria-label={`${p.name} 상품 삭제`} onClick={() => deleteProduct(p.id)}>삭제</button></div>
+        <div className="management-product-header"><h3>{productNameWithoutCreator(p)}</h3><button type="button" className="management-delete" aria-label={`${p.name} 상품 삭제`} onClick={() => deleteProduct(p.id)}>삭제</button></div>
         <div className="management-product-body">
           <div className="management-image">
             <ProductImage imageUrl={p.imageUrl} name={p.name} />
@@ -129,14 +128,8 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
             {p.imageUrl && <button type="button" disabled={saving || uploadingId !== null} className="management-delete" onClick={() => onImageChange(p.id, null)}>이미지 제거</button>}
           </div>
           <div className="management-details">
-            <fieldset><legend>기본 정보</legend><div className="management-fields">
-              {field(p, '상품 코드', p.productCode || p.id, (v) => ({ productCode: v }))}
-              {field(p, '캐릭터', p.vtuberName || '', (v) => ({ vtuberName: v }))}
-              {field(p, '굿즈 종류', p.goodsType || '', (v) => ({ goodsType: v }))}
-              {field(p, '제작자', p.creatorName || '', (v) => ({ creatorName: v }))}
-            </div></fieldset>
-            <fieldset><legend>가격 · 재고</legend><div className="management-fields management-fields-three">
-              {field(p, '판매가 (원)', p.price, (v) => ({ price: Number(v) || 0 }), 'number')}
+            <ProductEditForm key={p.id} product={p} products={products} persistProducts={persistProducts} disabled={readOnly || saving || uploadingId !== null} />
+            <fieldset><legend>재고</legend><div className="management-fields management-fields-three">
               <Quantity label="등록 수량" value={p.initialStockQty ?? 0} />
               <Quantity label="판매 수량" value={quantities.products.get(p.id) || 0} />
               <Quantity label="남은 재고" value={p.stockQty ?? p.stock ?? 0} />
