@@ -1,8 +1,9 @@
+import ActionIcon from '../components/ActionIcon';
 import { useRef, useState } from 'react';
 import { uploadProductImage } from '../utils/uploadProductImage';
 import { prepareProductImage } from '../utils/productImage';
 
-export default function BulkProductImages({ projectId, products, persistProducts, onImageChange, disabled, onBusy }) {
+export default function BulkProductImages({ projectId, products, persistProducts, onImageChange, disabled, onBusy, extraAction }) {
   const picker = useRef(null);
   const running = useRef(false);
   const latest = useRef({ products, persistProducts, onImageChange });
@@ -62,7 +63,7 @@ export default function BulkProductImages({ projectId, products, persistProducts
   };
   return <div className="bulk-product-images">
     <input ref={picker} hidden type="file" multiple accept="image/jpeg,image/png,image/webp" aria-label="상품 이미지 여러 장 선택" onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ''; if (files.length) process(files); }} />
-    <button type="button" className="management-add" disabled={disabled || pending.length > 0} onClick={() => picker.current?.click()}>이미지로 일괄 추가</button>
+    <div className="management-actions">{extraAction}<button type="button" className="management-add management-add-secondary" disabled={disabled || pending.length > 0} onClick={() => picker.current?.click()}><ActionIcon image />이미지로 일괄 추가</button></div>
     {message && <div className="bulk-product-result" role="status">
       <strong>{message}</strong>
       {pending.length > 0 && <button type="button" className="management-add" disabled={disabled} onClick={() => process(null)}>실패한 이미지 다시 저장</button>}
