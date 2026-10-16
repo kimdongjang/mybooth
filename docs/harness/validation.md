@@ -1,3 +1,10 @@
+## 첫 줄 통일·빈 둘째 줄 제거 검증 (2026-10-16)
+
+- npm run build 및 git diff --check 통과(기존500kB 청크 경고). UI/스타일/캐시만 변경하여 npm test 재실행 없음. 운영 DB 사용 없음.
+- 실제 AppHeader/SyncStatus/스타일 fixture+격리 Edge: 320/768/1440px 마우스·375/479/980px 터치에서 로고→행사→동기화→햄버거/전역 메뉴의 첫 줄 좌표·좌우 순서, 긴 행사명/시각 표시 상태의 가로 넘침 없음 확인.375/1440px 스크린샷 시각 확인.
+- 행사 화면2행/header-secondary1개, inventory/account/projects/projectNew 각각1행/header-secondary0개와 헤더 높이=첫 줄 높이 확인. 판매 복귀 시 둘째 줄 복원, 햄버거→재고 이동 후1줄, 수동 동기화1회, 해제 후 미선택 링크/1줄도 확인했다. fixture 제거.
+- 미실행: 전체 App 실제 로그인/주문·오프라인 통합, 실기기/배포 CACHE-01. 접근성 해제 이름과 기존 data-guide/행사 메뉴 조건/기록 없는 시각 숨김은 유지한다.
+
 ## 로고 오른쪽 행사 그룹·미기록 문구 숨김 검증 (2026-10-16)
 
 - npm run build 통과(기존500kB 청크 경고), git diff --check 통과. UI 배치/표시만 변경해 npm test 재실행 없음. 운영 DB 사용 없음.

@@ -47,9 +47,9 @@ export function AppHeader({ page, navigate, project, saving, sync, onReleaseProj
       <a className="event-context-link" href={`#${pagePaths[project ? 'pos' : 'projects']}`} onClick={follow(project ? 'pos' : 'projects')}>
         <Icon name="project" /><span className="event-context-name" title={project?.name}>{project?.name || '행사 선택'}</span>
       </a>
-      {project && <button type="button" className="release-project" aria-label="행사 선택 해제" disabled={releaseDisabled} onClick={() => { setOpen(false); onReleaseProject(); }}><Icon name="logout" />선택 해제</button>}
+      {project && <button type="button" className="release-project" aria-label="행사 선택 해제" disabled={releaseDisabled} onClick={() => { setOpen(false); onReleaseProject(); }}><Icon name="logout" /><span className="release-label">선택 해제</span></button>}
     </div>);
-  return <header className="app-header border-b border-line bg-white text-ink">
+  return <header className={`app-header ${showEventNav ? 'has-event-nav' : ''} border-b border-line bg-white text-ink`}>
     <div className="header-brand"><a href="#/sales" className="display-font brand-title font-bold" onClick={follow('pos')}><img className="brand-logo" src="/images/mybooth-rounded-logo.png" alt="MyBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
     <div className="header-event-desktop">{eventContext}</div>
     {project && <div className="header-sync"><SyncStatus sync={sync} /></div>}
@@ -57,8 +57,8 @@ export function AppHeader({ page, navigate, project, saving, sync, onReleaseProj
     <nav id="booth-navigation" aria-label="부스 메뉴" className={`booth-navigation ${open ? 'is-open' : ''}`}>
       <div className="nav-screens">{[['inventory', '재고 관리'], ['account', '내 계정']].map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key ? 'page' : undefined} className={page === key ? 'is-active' : ''} onClick={follow(key)}><Icon name={key === 'inventory' ? 'settings' : 'account'} />{label}</a>)}</div>
     </nav>
-    <div className="header-secondary">
-      {showEventNav && <nav className="event-subnav" aria-label="행사 메뉴">{[['pos', '상품 판매'], ['settings', '상품 관리'], ['log', '정산'], ['project', '행사 관리']].map(([key, label]) => <button key={key} type="button" data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={page === key ? 'page' : undefined} onClick={() => go(key)}>{label}</button>)}</nav>}
-    </div>
+    {showEventNav && <div className="header-secondary">
+      <nav className="event-subnav" aria-label="행사 메뉴">{[['pos', '상품 판매'], ['settings', '상품 관리'], ['log', '정산'], ['project', '행사 관리']].map(([key, label]) => <button key={key} type="button" data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={page === key ? 'page' : undefined} onClick={() => go(key)}>{label}</button>)}</nav>
+    </div>}
   </header>;
 }
