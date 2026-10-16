@@ -270,7 +270,7 @@ async function inventoryAction(adminId, action, payload) {
     const price = submittedPrice ?? old?.product?.price ?? 0;
     if (input.genre != null && (typeof input.genre !== 'string' || input.genre.length > 200)) throw Object.assign(new Error('장르는 200자 이내로 입력해주세요.'), { status: 400 });
     const genre = (input.genre ?? old?.product?.genre ?? '').trim();
-    const product = { genre, imageUrl: old?.product?.imageUrl || null, name: input.name.trim(), price, goodsType: String(input.goodsType || input.name).slice(0,200), creatorName: String(input.creatorName || '').slice(0,200), vtuberName: String(input.vtuberName || '').slice(0,200) };
+    const product = { genre, createdAt: old ? old.product.createdAt || null : new Date().toISOString(), imageUrl: old?.product?.imageUrl || null, name: input.name.trim(), price, goodsType: String(input.goodsType || input.name).slice(0,200), creatorName: String(input.creatorName || '').slice(0,200), vtuberName: String(input.vtuberName || '').slice(0,200) };
     // Initialize old totals/numbers before applying a stock delta.
     await inventoryState(adminId);
     if (old) {

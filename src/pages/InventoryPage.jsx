@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { PageIntro } from '../components/PageLayout';
-import SearchFilters from '../components/SearchFilters';
 import ProductValueInput from '../components/ProductValueInput';
 import { Input, Quantity, ProductImage } from '../components/PosUI';
 import { filterInventory } from '../utils/inventorySearch';
 import { won } from '../utils/productDisplay';
 
+const emptySearch = () => ({ stock: 'all', product: '', creatorExact: '', goodsType: '', genre: '', event: '' });
+const dateLabel = value => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\s/g, '') : '—';
 const empty = () => ({ id: crypto.randomUUID(), version: -1, name: '', goodsType: '', vtuberName: '', creatorName: '', genre: '', stock: 0 });
 const allocatedStock = item => (item.allocations || []).reduce((sum, row) => sum + Number(row.stock), 0);
 
@@ -15,7 +16,11 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
   const [draft, setDraft] = useState(null);
   const [stockChangeType, setStockChangeType] = useState('receipt');
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState({ stock: 'all', product: '', creator: '' });
+  const [search, setSearch] = useState(emptySearch);
+  const [query, setQuery] = useState('');
+  const optionsFor = key => [...new Set(items.map(item => item[key] || '미지정'))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const events = [...new Map(items.flatMap(item => (item.allocations || []).map(row => [String(row.project_id), row.event_name]))).entries()].sort((a, b) => a[1].localeCompare(b[1], 'ko'));
+  const filterCount = ['stock', 'event', 'creatorExact', 'goodsType', 'genre'].filter(key => search[key] && search[key] !== 'all').length;
   const filteredItems = filterInventory(items, search);
   const changeSearch = next => { setSearch(next); setPage(1); };
   const changeDraft = (key, value) => setDraft(current => ({ ...current, [key]: key === 'stock' ? (value === '' ? '' : Number(value)) : value }));
@@ -93,21 +98,36 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
           : <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
       </header>
       {view === 'list' ? <>
-        <SearchFilters label="재고 검색" value={search} onChange={changeSearch} onReset={() => changeSearch({ stock: 'all', product: '', creator: '' })} fields={[
-          { key: 'stock', label: '재고 상태', options: [['all','전체'],['available','남은재고 있음'],['empty','남은재고 없음']] },
-          { key: 'product', label: '상품', placeholder: '상품명·캐릭터·장르·굿즈 종류·번호' },
-          { key: 'creator', label: '제작자', placeholder: '제작자명' },
-        ]} />
+        <form className="inventory-search" role="search" aria-label="재고 검색" onSubmit={event => { event.preventDefault(); changeSearch({ ...search, product: query }); }}>
+          <div className="inventory-search-bar">
+            <label className="inventory-query"><span className="sr-only">상품명·캐릭터·장르·굿즈 종류 통합 검색</span><input type="search" placeholder="상품명·캐릭터·장르·굿즈 종류" value={query} onChange={event => setQuery(event.target.value)} /></label>
+            <button className="inventory-search-button" type="submit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>검색</button>
+          </div>
+          <details className="inventory-filters"><summary>상세 조건 추가{filterCount > 0 && <span className="inventory-filter-count">{filterCount}</span>}</summary>
+            <div className="inventory-filter-grid">
+              {[
+                ['stock', '재고 상태', [['available', '남은재고 있음'], ['empty', '남은재고 없음']]],
+                ['event', '등록된 행사', events],
+                ['creatorExact', '제작자', optionsFor('creatorName').map(value => [value, value])],
+                ['goodsType', '굿즈 종류', optionsFor('goodsType').map(value => [value, value])],
+                ['genre', '장르', optionsFor('genre').map(value => [value, value])],
+              ].map(([key, label, options]) => <label key={key}><span>{label}</span><select value={search[key]} onChange={event => changeSearch({ ...search, [key]: event.target.value })}><option value={key === 'stock' ? 'all' : ''}>전체</option>{options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>)}
+            </div>
+          </details>
+          {(search.product || filterCount > 0 || query) && <button type="button" className="inventory-search-reset" onClick={() => { setQuery(''); changeSearch(emptySearch()); }}>검색 조건 초기화</button>}
+        </form>
         <p className="settlement-result" role="status">검색 결과 {filteredItems.length}개 / 전체 {items.length}개</p>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
-          <caption className="sr-only">이름, 제작자, 굿즈 종류, 캐릭터, 장르, 총재고와 남은재고</caption>
-          <thead><tr>{['이름', '제작자', '굿즈 종류', '캐릭터', '장르', '총재고 / 남은재고'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <caption className="sr-only">상품명과 제작자, 캐릭터와 장르, 남은재고와 총재고, 등록일</caption>
+          <thead><tr>{['상품명 / 제작자', '캐릭터 / 장르', '재고', '등록일'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
           <tbody>{filteredItems.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
-            <td><a className="management-name-link" href={`#/inventory/${encodeURIComponent(item.id)}`} aria-label={`${item.name} 재고 상세보기`} onClick={event => open(event,item)}>{item.name}</a><small className="inventory-creator">{item.productNumber}</small></td>
-            <td>{item.creatorName || '미지정'}</td><td>{item.goodsType || '—'}</td><td>{item.vtuberName || '—'}</td><td>{item.genre || '—'}</td>
-            <td className="mono">{won(item.totalReceived)} / {won(item.remainingStock)}개{item.totalEstimated && <small className="inventory-creator">기존 자료 기준</small>}</td>
+            <td><a className="management-name-link inventory-cell-main" href={`#/inventory/${encodeURIComponent(item.id)}`} aria-label={`${item.name} 재고 상세보기`} title={item.name} onClick={event => open(event,item)}>{item.name}</a><small className="inventory-cell-sub" title={item.creatorName || '미지정'}>{item.creatorName || '미지정'}</small></td>
+            <td><span className="inventory-cell-main" title={item.vtuberName || ''}>{item.vtuberName || '—'}</span><small className="inventory-cell-sub" title={item.genre || ''}>{item.genre || '—'}</small></td>
+            <td className="mono"><span className="inventory-cell-main" aria-label={`남은재고 ${won(item.remainingStock)}개`}>{won(item.remainingStock)}개</span><small className="inventory-cell-sub" title={item.totalEstimated ? '총재고: 기존 자료 기준' : '총재고'}>총 {won(item.totalReceived)}{item.totalEstimated ? '*' : ''}</small></td>
+            <td>{dateLabel(item.createdAt)}</td>
           </tr>)}</tbody>
         </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}{ready && items.length > 0 && !filteredItems.length && <p className="catalog-empty">검색 조건에 맞는 재고가 없습니다.</p>}</div>
+        {filteredItems.some(item => item.totalEstimated) && <p className="inventory-estimate-note">* 총재고는 기존 자료 기준입니다.</p>}
         <nav className="management-pagination" aria-label="재고 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
       </> : draft && <article className="management-product">
         <div className="management-product-header"><h3>{draft.name || '새 상품'}</h3><span className="mono inventory-creator">{draft.productNumber || '저장 시 상품 번호 발급'}</span></div>

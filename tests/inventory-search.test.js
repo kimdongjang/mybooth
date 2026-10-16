@@ -9,6 +9,18 @@ const items = [
 ];
 const ids = search => filterInventory(items, search).map(item => item.id);
 
+test('advanced inventory filters combine exact metadata and linked event even at zero stock', () => {
+  const rows = [
+    { id: 'a', creatorName: '작가', goodsType: '키링', genre: '게임', remainingStock: 0, allocations: [{ project_id: 'event-a', stock: 0 }] },
+    { id: 'b', creatorName: '작가 B', goodsType: '키링', genre: '게임', remainingStock: 4, allocations: [{ project_id: 'event-b' }] },
+    { id: 'c', remainingStock: 2 },
+  ];
+  assert.deepEqual(filterInventory(rows, { creatorExact: '작가', goodsType: '키링', genre: '게임', event: 'event-a', stock: 'empty' }).map(row => row.id), ['a']);
+  assert.equal(filterInventory(rows, { event: 'event-a', stock: 'available' }).length, 0);
+  assert.deepEqual(filterInventory(rows, { creatorExact: '미지정', genre: '미지정' }).map(row => row.id), ['c']);
+  assert.equal(filterInventory(rows, { genre: '게' }).length, 0);
+});
+
 test('inventory search combines creator, product metadata and legacy warehouse fallback when no total remaining is supplied', () => {
   assert.deepEqual(ids({ product: ' 봄 ', creator: '작가', stock: 'available' }), ['p1']);
   assert.deepEqual(ids({ product: '봄', creator: ' B ', stock: 'empty' }), ['p2']);
