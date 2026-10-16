@@ -258,6 +258,39 @@ async function inventoryAction(adminId, action, payload) {
   // also take their existing project lock. Serialization failures return 409.
   await sql`SELECT id FROM pos_admins WHERE id = ${adminId} FOR UPDATE`;
   await sql`SELECT id FROM pos_projects WHERE admin_id=${adminId} ORDER BY id FOR UPDATE`;
+  if (action === 'createEventProduct') {
+    const { projectId, product: input = {} } = payload;
+    if (typeof projectId !== 'string' || !projectId) throw Object.assign(new Error('행사를 선택해주세요.'), { status: 400 });
+    const project = (await sql`SELECT id, archived_at FROM pos_projects WHERE id=${projectId} AND admin_id=${adminId}`).rows[0];
+    if (!project) throw Object.assign(new Error('행사 접근 권한이 없습니다.'), { status: 404 });
+    if (project.archived_at) throw Object.assign(new Error('보관된 행사에는 상품을 등록할 수 없습니다.'), { status: 409 });
+    const revision = await dataRevision(projectId);
+    if (revision && payload.dataRevision !== revision) throw Object.assign(new Error('행사 데이터가 분리되었습니다. 새로고침 후 다시 진행해주세요.'), { status: 409 });
+    if (typeof input.id !== 'string' || !input.id || input.id.length > 200) throw Object.assign(new Error('잘못된 등록 요청 ID입니다.'), { status: 400 });
+    for (const key of ['name', 'goodsType', 'vtuberName', 'creatorName', 'genre']) {
+      if (typeof input[key] !== 'string' || input[key].length > 200 || (['name', 'goodsType'].includes(key) && !input[key].trim())) throw Object.assign(new Error('상품 이름과 굿즈 종류는 필수이며 각 항목은 200자 이내로 입력해주세요.'), { status: 400 });
+    }
+    const stock = inventoryInteger(input.stockQty);
+    const price = inventoryInteger(input.price);
+    const product = { id: input.id, name: input.name.trim(), goodsType: input.goodsType.trim(), vtuberName: input.vtuberName.trim(), creatorName: input.creatorName.trim(), genre: input.genre.trim(), stockQty: stock, price };
+    const request = { action, projectId, product };
+    const requestId = `create-event-product:${input.id}`;
+    const receipt = (await sql`SELECT request FROM pos_inventory_transfers WHERE admin_id=${adminId} AND id=${requestId}`).rows[0];
+    if (receipt) {
+      const previous = receipt.request;
+      if (previous.action !== action || previous.projectId !== projectId || Object.keys(product).some(key => previous.product?.[key] !== product[key])) throw Object.assign(new Error('이미 처리된 등록 요청과 내용이 다릅니다.'), { status: 409 });
+      return readState(adminId, projectId);
+    }
+    if ((await sql`SELECT id FROM pos_inventory WHERE admin_id=${adminId} AND id=${input.id}`).rows.length || (await sql`SELECT id FROM pos_products WHERE project_id=${projectId} AND id=${input.id}`).rows.length) throw Object.assign(new Error('이미 사용 중인 상품 ID입니다.'), { status: 409 });
+    await inventoryAction(adminId, 'saveInventory', { product: { ...product, price: 0, stock, version: -1 } });
+    const original = (await sql`SELECT product FROM pos_inventory WHERE admin_id=${adminId} AND id=${input.id}`).rows[0].product;
+    await insertProduct(projectId, { ...product, createdAt: original.createdAt, initialStockQty: stock });
+    await sql`INSERT INTO pos_inventory_links (project_id,product_id,admin_id,inventory_id) VALUES (${projectId},${input.id},${adminId},${input.id})`;
+    await sql`UPDATE pos_inventory SET stock=0 WHERE admin_id=${adminId} AND id=${input.id}`;
+    await sql`INSERT INTO pos_inventory_transfers (admin_id,id,request) VALUES (${adminId},${requestId},${JSON.stringify(request)}::jsonb)`;
+    await sql`UPDATE pos_projects SET updated_at=NOW() WHERE id=${projectId}`;
+    return readState(adminId, projectId);
+  }
   if (action === 'saveInventory') {
     const input = payload.product || {};
     if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 200) throw Object.assign(new Error('상품 이름을 입력해주세요. (최대 200자)'), { status: 400 });
@@ -563,7 +596,7 @@ async function handler(req, res) {
     if (req.method === 'GET') return res.status(200).json(projectId ? await readState(admin.id, projectId) : await listProjects(admin.id));
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     const { action, payload = {} } = req.body || {};
-    if (['listInventory', 'saveInventory', 'transferInventory'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
+    if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
     if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
     if (action === 'restoreProject') {
       if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });

@@ -39,6 +39,68 @@ async function fixture() {
   return { db, invoke };
 }
 
+test('event registration atomically creates inventory, event price and allocation; replay never restores sold stock', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const event = (await invoke('createProject', null, { name: '등록 행사' })).body.project.id;
+    const other = (await invoke('createProject', null, { name: '다른 행사' })).body.project.id;
+    const product = { id: 'registration-1', name: ' 새 키링 ', goodsType: '아크릴', vtuberName: '캐릭터', creatorName: '작가', genre: '게임', price: 1000, stockQty: 10 };
+    const payload = { projectId: event, product };
+    const registered = await invoke('createEventProduct', null, payload);
+    assert.equal(registered.status, 200, JSON.stringify(registered.body));
+    assert.equal(registered.body.products.length, 1);
+    assert.equal(registered.body.products[0].price, 1000);
+    assert.equal(registered.body.products[0].stockQty, 10);
+    const original = (await invoke('listInventory')).body.inventory[0];
+    assert.equal(original.name, '새 키링');
+    assert.equal(original.genre, '게임');
+    assert.equal(original.creatorName, '작가');
+    assert.equal(original.vtuberName, '캐릭터');
+    assert.equal(original.goodsType, '아크릴');
+    assert.equal(original.price, 0);
+    assert.equal(original.stock, 0);
+    assert.equal(original.totalReceived, 10);
+    assert.equal(original.remainingStock, 10);
+    assert.equal(original.allocations[0].project_id, event);
+    assert.equal((await invoke('createEventProduct', null, payload)).status, 200);
+    assert.equal((await invoke('createEventProduct', null, { ...payload, product: { ...product, price: 2000 } })).status, 409);
+    assert.equal((await invoke('createEventProduct', null, { ...payload, projectId: other })).status, 409);
+    assert.equal((await invoke('createEventProduct', null, payload, 'b')).status, 404);
+    assert.equal((await invoke(null, other)).body.products.length, 0);
+    const sale = { localOrderId: 'registered-sale', method: 'cash', total: 2000, cart: [{ type: 'product', id: product.id, name: '새 키링', unitPrice: 1000, qty: 2 }] };
+    assert.equal((await invoke('finalizeSale', event, sale)).status, 200);
+    assert.equal((await invoke('createEventProduct', null, payload)).body.products[0].stockQty, 8);
+    assert.equal((await invoke('listInventory')).body.inventory[0].remainingStock, 8);
+    assert.equal(Number((await db.query('SELECT COUNT(*) AS n FROM pos_inventory_adjustments')).rows[0].n), 1);
+    assert.equal(Number((await db.query('SELECT COUNT(*) AS n FROM pos_inventory_links')).rows[0].n), 1);
+    const free = await invoke('createEventProduct', null, { projectId: other, product: { ...product, id: 'free-zero', price: 0, stockQty: 0 } });
+    assert.equal(free.status, 200);
+    assert.equal(free.body.products[0].price, 0);
+    assert.equal((await invoke('listInventory')).body.inventory.find(item => item.id === 'free-zero').allocations.length, 1);
+  } finally { await db.close(); }
+});
+
+test('event registration validates ownership, archive, integer bounds and rolls back failures after inventory creation', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const event = (await invoke('createProject', null, { name: '검증 행사' })).body.project.id;
+    const product = { id: 'validation-product', name: '상품', goodsType: '키링', vtuberName: '', creatorName: '', genre: '', price: 1000, stockQty: 3 };
+    for (const patch of [{ price: -1 }, { price: 1.5 }, { price: 2147483648 }, { stockQty: -1 }, { stockQty: 0.5 }, { stockQty: 2147483648 }, { name: '' }, { goodsType: '' }, { genre: 'x'.repeat(201) }]) {
+      assert.equal((await invoke('createEventProduct', null, { projectId: event, product: { ...product, ...patch } })).status, 400);
+    }
+    assert.equal((await invoke('createEventProduct', null, { projectId: event, product }, 'b')).status, 404);
+    await db.query('UPDATE pos_projects SET archived_at=NOW() WHERE id=$1', [event]);
+    assert.equal((await invoke('createEventProduct', null, { projectId: event, product })).status, 409);
+    await db.query('UPDATE pos_projects SET archived_at=NULL WHERE id=$1', [event]);
+    await db.exec("CREATE FUNCTION fail_registration_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected registration failure'; END $$; CREATE TRIGGER fail_registration_link BEFORE INSERT ON pos_inventory_links FOR EACH ROW EXECUTE FUNCTION fail_registration_link()");
+    assert.equal((await invoke('createEventProduct', null, { projectId: event, product })).status, 500);
+    for (const table of ['pos_inventory', 'pos_products', 'pos_inventory_links', 'pos_inventory_transfers', 'pos_inventory_adjustments']) assert.equal(Number((await db.query(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n), 0, table);
+    await db.exec('DROP TRIGGER fail_registration_link ON pos_inventory_links');
+    assert.equal((await invoke('createEventProduct', null, { projectId: event, product })).status, 200);
+    assert.match((await invoke('listInventory')).body.inventory[0].productNumber, /^[A-Z]{3}_0001$/);
+  } finally { await db.close(); }
+});
+
 test('warehouse allocation, sales, void, return, idempotency and account isolation preserve physical stock', async () => {
   const { db, invoke } = await fixture();
   try {
