@@ -10,7 +10,7 @@ export default function SettlementPage({ readOnly, stats, sales, visibleSales, l
   const filteredSales = filterSales(visibleSales, search, saleLineProductEntries, saleLineCreators);
   return <main className="page-content settlement-page">
       <div className="settlement-layout"><section className="catalog min-w-0">
-      <PageIntro title="정산" />
+      <PageIntro hideTitle title="정산" />
       <aside className="settlement-overview" aria-label="전체 매출 요약"><h2>전체 매출 요약</h2><p>현재 행사 전체 판매 기준</p><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></aside>
       <PageTabs id="settlement" label="정산 보기" tabs={[["summary", "매출 요약"], ["history", "판매 내역"]]} selected={tab} onSelect={setTab} />
       <div id={`settlement-panel-${tab}`} role="tabpanel" aria-labelledby={`settlement-tab-${tab}`} tabIndex={0}>

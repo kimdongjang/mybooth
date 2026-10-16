@@ -31,7 +31,7 @@ export default function ProjectManagementPage({ page, project, summary, navigate
   return <main className="page-content event-management-page"><div className="event-workspace">
     <ProjectNavigation page={page} project={project} navigate={navigate} />
     <div className="event-main">
-      <PageIntro title={page === 'project' ? '행사 관리' : item.title} />
+      <PageIntro hideTitle={page === 'project'} title={page === 'project' ? '행사 관리' : item.title} />
       {notice && <div role="status" className="event-feedback"><p>{notice}</p>{createdProject && <button type="button" className="event-button" onClick={() => onSelectProject(createdProject)}>복제한 행사 열기 →</button>}</div>}
       {page === 'project' ? <>
         <section className="event-panel event-overview"><div><span className="event-status" data-archived={archived}>{archived ? '보관 중' : '진행 중'}</span><h2>{project.name}</h2><p>이 화면의 작업은 위 행사에만 적용됩니다.</p></div><dl className="event-metrics"><div><dt>상품</dt><dd>{summary.products}개</dd></div><div><dt>세트</dt><dd>{summary.bundles}개</dd></div><div><dt>거래</dt><dd>{summary.sales}건</dd></div><div><dt>총 판매액</dt><dd>{won(summary.total)}원</dd></div></dl></section>
