@@ -415,9 +415,6 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 }
 .management-quantity { display: block; padding: 8px 10px; border-radius: 6px; background: #f1f5f9; font-weight: 600; }
 .management-note { color: #64748b; font-size: 12px; line-height: 1.7; margin: 10px 0; }
-.stock-adjustment { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: end; border-top: 1px solid #e2e8f0; padding-top: 16px; }
-.stock-adjustment select { padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; }
-.stock-adjustment .management-note { flex-basis: 100%; margin: 0; }
 .bundle-management-body { padding: 20px; min-width: 0; }
 .bundle-management-body h4 { font-size: 13px; font-weight: 600; margin-top: 20px; }
 .bundle-components { list-style: none; padding: 0; margin-top: 8px; }
@@ -605,3 +602,13 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .guide-actions button { min-height: 40px; padding: 7px 10px; border-radius: 8px; font-size: 13px; color: #53647a; }
 .guide-actions button:last-child { background: #2563eb; color: white; }
 .guide-actions button:focus-visible, .guide-launcher:focus-visible { outline: 3px solid #93bafa; outline-offset: 3px; }
+
+.product-name-field { grid-column: 1 / -1; }
+.product-stock-form { display: grid; gap: 16px; border-top: 1px solid #e2e8f0; padding-top: 18px; }
+.product-stock-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.product-stock-grid .management-quantity { min-height: 40px; font-size: 14px; }
+.product-stock-grid .management-field > span { white-space: nowrap; }
+@media (max-width: 480px) {
+  .product-stock-grid { gap: 8px; }
+  .product-stock-grid .management-field input, .product-stock-grid .management-quantity { padding: 8px 6px; font-size: 16px; }
+}
