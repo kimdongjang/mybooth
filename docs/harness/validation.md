@@ -1,3 +1,10 @@
+## C안 상단 2줄 검증 (2026-10-16)
+
+- npm run build 통과(기존500kB 청크 경고), npm test 35개 통과. git diff --check 통과. 운영 DB 사용 없음.
+- 실제 AppHeader/스타일의 임시 React fixture, 격리 headless Edge/Playwright: 320/768/1440px 마우스·375/980px 터치에서 CSS grid2행, 첫 줄 로고/행사 그룹, 둘째 줄 행사 메뉴/동기화 좌표, 문서 가로 넘침 없음 확인. 모바일/넓은 터치106px, 데스크톱114px. 긴 행사명 한 줄 생략,375/1440px 스크린샷 시각 확인.
+- 행사 관리 메뉴 클릭/현재 표시, 모바일 햄버거 Escape 닫기/포커스 복귀, 재고 이동 시 행사 메뉴 숨김/행사명 클릭 판매 복귀, 수동 동기화 콜백1회, 오류·대기123456건/오프라인/전송 중에도2행·동일 높이, 해제 비활성화/해제 콜백1회/미선택 링크 통과. 기존 App의 별도 행사 메뉴 렌더링 제거와 data-guide 유지 diff 확인. fixture 제거.
+- UI-01/02 헤더 범위 확인. 미실행: 전체 App 실제 로그인/IndexedDB 주문·해제/오프라인 통합, 실기기 및 배포 CACHE-01. 기존 releaseProject/SyncStatus 처리 변경 없음.
+
 ## 행사 드롭다운 헤더 검증 (2026-10-16)
 
 - npm run build 통과(기존500kB 청크 경고), npm test 35개 통과. git diff --check 통과. 운영 DB 사용 없음.
