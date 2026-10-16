@@ -1,8 +1,9 @@
+import ActionIcon from '../components/ActionIcon';
 import { useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
-import { prepareProductImage, PRODUCT_IMAGE_HELP } from '../utils/productImage';
+import { prepareProductImage } from '../utils/productImage';
 
-export default function BulkProductImages({ projectId, products, persistProducts, onImageChange, disabled, onBusy }) {
+export default function BulkProductImages({ projectId, products, persistProducts, onImageChange, disabled, onBusy, extraAction }) {
   const picker = useRef(null);
   const running = useRef(false);
   const latest = useRef({ products, persistProducts, onImageChange });
@@ -67,8 +68,7 @@ export default function BulkProductImages({ projectId, products, persistProducts
   };
   return <div className="bulk-product-images">
     <input ref={picker} hidden type="file" multiple accept="image/jpeg,image/png,image/webp" aria-label="상품 이미지 여러 장 선택" onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ''; if (files.length) process(files); }} />
-    <button type="button" className="management-add" disabled={disabled || pending.length > 0} onClick={() => picker.current?.click()}>이미지로 일괄 추가</button>
-    <p className="management-note">이미지를 선택하면 파일명으로 상품이 바로 등록됩니다. 판매가·초기 재고는 0이며 나중에 수정할 수 있습니다. {PRODUCT_IMAGE_HELP}</p>
+    <div className="management-actions">{extraAction}<button type="button" className="management-add management-add-secondary" disabled={disabled || pending.length > 0} onClick={() => picker.current?.click()}><ActionIcon image />이미지로 일괄 추가</button></div>
     {message && <p role="status" className="management-note">{message}</p>}
     {errors.length > 0 && <ul className="management-note" role="alert">{errors.map((error, index) => <li key={index}>{error}</li>)}</ul>}
     {pending.length > 0 && <><button type="button" className="management-back" disabled={disabled} onClick={() => process(null)}>실패한 이미지 다시 저장</button><button type="button" className="management-back" disabled={disabled} onClick={() => { setPending([]); setErrors([]); setMessage('등록된 상품은 유지됩니다. 상품 상세에서 이미지를 수정할 수 있습니다.'); }}>나중에 상세에서 수정</button></>}

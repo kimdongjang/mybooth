@@ -9,6 +9,7 @@ async function harness({ save = true, failAttach = false } = {}) {
   let stateIndex, refIndex, fail = failAttach;
   const context = vm.createContext({ crypto: { randomUUID: () => `uuid-${refs.length}-${Math.random()}` }, navigator: { onLine: true }, sessionStorage: { getItem: () => 'test-token' } });
   const modules = {
+    '../components/ActionIcon': { default: () => null },
     react: { useRef: value => { const i = refIndex++; return refs[i] ||= { current: value }; }, useState: value => { const i = stateIndex++; if (!(i in state)) state[i] = value; return [state[i], next => { state[i] = next; }]; } },
     'react/jsx-runtime': { Fragment: 'fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '@vercel/blob/client': { upload: async (path, image, options) => { uploaded.push({ path, image, options }); return { url: `https://test.public.blob.vercel-storage.com/${path}` }; } },
