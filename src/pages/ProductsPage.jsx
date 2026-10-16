@@ -10,6 +10,8 @@ import BundleCreatePage from './BundleCreatePage';
 import ActionIcon from '../components/ActionIcon';
 import ProductEditForm from '../components/ProductEditForm';
 import ProductStockForm from '../components/ProductStockForm';
+import ProductImageControls from '../components/ProductImageControls';
+import { productInitialStock } from '../utils/productEditing';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 
 export default function ProductsPage({ readOnly, projectId, settingsTab, setSettingsTab, saving, mutate, products, bundles, sales, persistProducts, persistBundles, creatingBundle, creatingProduct, navigate, bundleName, setBundleName, bundleRows, setBundleRows, bundlePrice, setBundlePrice, addBundleToSettings, backupOrdersJson, backupOrdersCsv }) {
@@ -112,7 +114,7 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
         <tbody role="rowgroup">{sortedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => <tr key={p.id} role="row">
           <td role="cell" data-label="상품 이름"><button type="button" className="management-name-link" aria-label={`${productNameWithoutCreator(p)} 상세보기`} onClick={() => setSelectedId(p.id)}>{productNameWithoutCreator(p)}</button><small className="management-mobile-meta">{creatorNameOf(p)}</small></td>
           <td role="cell" data-label="제작자">{creatorNameOf(p)}</td><td role="cell" data-label="판매가" className="mono management-row-price">{won(p.price)}원</td>
-          <td role="cell" data-label="초기재고" className="mono">{won(p.initialStockQty ?? 0)}개</td><td role="cell" data-label="판매수량" className="mono">{won(quantities.products.get(p.id) || 0)}개</td><td role="cell" data-label="남은 재고" className="mono">{won(p.stockQty ?? p.stock ?? 0)}개</td>
+          <td role="cell" data-label="초기재고" className="mono">{won(productInitialStock(p, quantities.products.get(p.id) || 0))}개</td><td role="cell" data-label="판매수량" className="mono">{won(quantities.products.get(p.id) || 0)}개</td><td role="cell" data-label="남은 재고" className="mono">{won(p.stockQty ?? p.stock ?? 0)}개</td>
           <td role="cell" data-label="등록일">{p.createdAt && !Number.isNaN(new Date(p.createdAt).getTime()) ? <time dateTime={p.createdAt}>{new Date(p.createdAt).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\s/g, '')}</time> : '—'}</td>
         </tr>)}</tbody>
       </table>{!products.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}</div>
@@ -124,8 +126,7 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
         <div className="management-product-body">
           <div className="management-image">
             <ProductImage imageUrl={p.imageUrl} name={p.name} />
-            <label className="management-upload"><span>{uploadingId === p.id ? '업로드 중…' : p.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label={`${p.name} 이미지 등록 또는 수정`} type="file" accept="image/jpeg,image/png,image/webp" disabled={saving || uploadingId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; uploadImage(p, file); }} /></label>
-            {p.imageUrl && <button type="button" disabled={saving || uploadingId !== null} className="management-delete" onClick={() => onImageChange(p.id, null)}>이미지 제거</button>}
+            <ProductImageControls hasImage={Boolean(p.imageUrl)} busy={uploadingId === p.id} disabled={readOnly || saving || uploadingId !== null} onSelect={file => uploadImage(p, file)} onRemove={() => onImageChange(p.id, null)} label={`${p.name} 이미지`} />
           </div>
           <div className="management-details">
             <ProductEditForm key={p.id} product={p} products={products} persistProducts={persistProducts} disabled={readOnly || saving || uploadingId !== null} />

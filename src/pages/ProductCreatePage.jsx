@@ -3,6 +3,7 @@ import { uploadProductImage } from '../utils/uploadProductImage';
 import { PageIntro } from '../components/PageLayout';
 import { Input, ProductImage } from '../components/PosUI';
 import ProductValueInput from '../components/ProductValueInput';
+import ProductImageControls from '../components/ProductImageControls';
 import { prepareProductImage } from '../utils/productImage';
 import { uid, productNameFromFields } from '../utils/productDisplay';
 
@@ -82,8 +83,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
           <div className="management-product-body">
             <div className="management-image">
               <ProductImage imageUrl={preview} name={draft.goodsType} />
-              <label className="management-upload"><span>{preparing ? '이미지 축소 중…' : image ? '이미지 수정' : '이미지 등록'}</span><input aria-label="새 상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
-              {image && <button type="button" className="management-delete" onClick={() => { setImage(null); setImageError(''); }}>이미지 제거</button>}
+              <ProductImageControls hasImage={Boolean(image)} busy={preparing} disabled={readOnly || saving || busy || preparing} onSelect={chooseImage} onRemove={() => { setImage(null); setImageError(''); }} label="새 상품 이미지" />
               <p>선택한 이미지는 상품 저장 시 등록됩니다.</p>
             </div>
             <div className="management-details">

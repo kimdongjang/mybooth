@@ -1,15 +1,15 @@
 import { useRef, useState } from 'react';
 import { Input, Quantity } from './PosUI';
-import { productStockDraft, productStockPatch } from '../utils/productEditing';
+import { productInitialStock, productStockDraft, productStockPatch } from '../utils/productEditing';
 
 export default function ProductStockForm({ product, soldQty, onSave, disabled }) {
   const [baseline, setBaseline] = useState(() => productStockDraft(product));
-  const [draft, setDraft] = useState(() => productStockDraft(product));
+  const [draft, setDraft] = useState(() => ({ ...productStockDraft(product), initialStockQty: String(productInitialStock(product, soldQty)) }));
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const submitting = useRef(false);
   const initial = Number(draft.initialStockQty);
-  const changed = initial !== Number(baseline.initialStockQty);
+  const changed = initial !== productInitialStock(product, soldQty);
   const valid = String(draft.initialStockQty).trim() && Number.isSafeInteger(initial) && initial >= soldQty;
   const remaining = changed ? (valid ? initial - soldQty : null) : Number(product.stockQty ?? product.stock ?? 0);
   const submit = async event => {
