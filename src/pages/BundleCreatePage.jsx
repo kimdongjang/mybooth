@@ -34,12 +34,12 @@ export default function BundleCreatePage({ readOnly, saving, products, bundleNam
                 <label className="management-field"><span>판매가 (원)</span><Input required min="0" step="1" type="number" value={bundlePrice} onChange={setBundlePrice} placeholder="0" /></label>
               </div></fieldset>
               <fieldset><legend>구성할 상품 선택</legend>
-                <label className="management-field"><span>상품 검색</span><Input type="search" value={search} onChange={setSearch} placeholder="상품명, 캐릭터, 제작자, 상품 코드" /></label>
+                <label className="management-field"><span>상품 검색</span><Input type="search" value={search} onChange={setSearch} placeholder="상품명, 캐릭터, 제작자" /></label>
                 <div className="bundle-picker" aria-label="구성 가능한 상품">
                   {matches.map(product => <label key={product.id} className={`bundle-choice ${selected.some(row => row.productId === product.id) ? 'is-selected' : ''}`}>
                     <input type="checkbox" checked={selected.some(row => row.productId === product.id)} onChange={() => toggle(product.id)} />
                     <ProductImage imageUrl={product.imageUrl} name={product.name} />
-                    <span className="bundle-product-copy"><strong>{productNameWithoutCreator(product)}</strong><small>{creatorNameOf(product)} · {product.productCode || product.id}</small><small>{won(product.price)}원 · 재고 {won(product.stockQty ?? product.stock ?? 0)}개</small></span>
+                    <span className="bundle-product-copy"><strong>{productNameWithoutCreator(product)}</strong><small>{creatorNameOf(product)}</small><small>{won(product.price)}원 · 재고 {won(product.stockQty ?? product.stock ?? 0)}개</small></span>
                   </label>)}
                   {!matches.length && <p className="bundle-empty">{products.length ? '검색 결과가 없습니다.' : '상품을 먼저 등록해주세요.'}</p>}
                 </div>

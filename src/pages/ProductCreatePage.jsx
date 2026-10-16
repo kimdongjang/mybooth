@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { uploadProductImage } from '../utils/uploadProductImage';
 import { PageIntro } from '../components/PageLayout';
 import { Input, ProductImage } from '../components/PosUI';
+import ProductValueInput from '../components/ProductValueInput';
 import { prepareProductImage } from '../utils/productImage';
 import { uid, productNameFromFields } from '../utils/productDisplay';
 
@@ -77,7 +78,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
     <form className="settings-content product-management" onSubmit={submit}>
       <fieldset disabled={readOnly || saving || busy || preparing} className="min-w-0"><div className="management-products">
         <article className="management-product">
-          <div className="management-product-header"><h3>새 굿즈 ({draft.id})</h3></div>
+          <div className="management-product-header"><h3>새 굿즈</h3></div>
           <div className="management-product-body">
             <div className="management-image">
               <ProductImage imageUrl={preview} name={draft.goodsType} />
@@ -87,9 +88,9 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
             </div>
             <div className="management-details">
             <fieldset disabled={registered}><legend>기본 정보</legend><div className="management-fields">
-              <label className="management-field"><span>캐릭터</span><Input value={draft.vtuberName} onChange={value => change('vtuberName', value)} /></label>
-              <label className="management-field"><span>굿즈 종류</span><Input required value={draft.goodsType} onChange={value => change('goodsType', value)} /></label>
-              <label className="management-field"><span>제작자</span><Input value={draft.creatorName} onChange={value => change('creatorName', value)} /></label>
+              <ProductValueInput label="캐릭터" field="vtuberName" products={products} value={draft.vtuberName} onChange={value => change('vtuberName', value)} disabled={registered || readOnly || saving || busy || preparing} />
+              <ProductValueInput label="굿즈 종류" field="goodsType" products={products} value={draft.goodsType} onChange={value => change('goodsType', value)} required disabled={registered || readOnly || saving || busy || preparing} />
+              <ProductValueInput label="제작자" field="creatorName" products={products} value={draft.creatorName} onChange={value => change('creatorName', value)} disabled={registered || readOnly || saving || busy || preparing} />
             </div></fieldset>
             <fieldset disabled={registered}><legend>가격 · 재고</legend><div className="management-fields management-fields-three">
               <label className="management-field"><span>판매가 (원)</span><Input required type="number" min="0" step="1" value={draft.price} onChange={value => change('price', value)} /></label>
