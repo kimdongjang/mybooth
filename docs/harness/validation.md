@@ -1,3 +1,9 @@
+## PR #49 main 충돌 해결 검증 (2026-10-16)
+
+- npm run build 및 npm test 23개 통과. 기존 API/PGlite/IndexedDB 및 업로드 인증 실패/상품 보존/재시도 회귀 확인. 운영 DB 사용 없음.
+- 충돌한 architecture/validation 기록은 양쪽 보존. CSS는 main 로고·헤더 여백과 PR 결과 강조를 유지하고 제거된 상세 수정 버튼 전용 규칙은 제외. 캐시 v54와 둥근 로고 앱 셸 경로를 확인했다.
+- git diff --check 및 충돌 표식 검사 통과. 실제 브라우저/Blob 통합·배포 CACHE-01은 미실행. 다른 작업 브랜치의 미커밋 변경은 별도 작업 폴더로 격리하여 포함하지 않았다.
+
 ## 이미지 401 문구 정정 검증 (2026-10-16)
 
 - npm run build, git diff --check 통과. image-upload-client 회귀 테스트 1개 통과: 401에서 ‘인증에 실패했습니다’ 및 재로그인 안내, 실패 후 업로드 차단을 확인했다.
@@ -9,11 +15,30 @@
 - npm run build 및 git diff --check 통과. 일괄 결과 강조/재시도 버튼 같은 영역 배치, 두 안내 문구와 상세 수정 버튼 제거를 소스 diff로 확인했다.
 - 미실행: UI-01/BULK-IMAGE-01/02의 실제 모바일·데스크톱 시각/조작, IMAGE-01/02/03 실제 Blob 업로드, 배포 CACHE-01. 운영 서버 설정·실제 실패 응답을 확인하지 않아 기존 토큰 발급 실패의 구체 원인은 미확정이다. 별도 Preview에서 공개 Blob 연결 및 서버 전용 BLOB_READ_WRITE_TOKEN 설정 후 저장/재시도를 확인해야 한다.
 
+## 헤더 여백 제거 검증 (2026-10-16)
+
+- npm run build 및 git diff --check 통과. 소스 diff에서 app-header/auth-header 기본 및 모바일·넓은 터치 margin/padding 0 확인. 기존 최소 높이·메뉴 간격·클릭 영역 유지. 캐시 v53.
+- UI-01 실제 브라우저 모바일/데스크톱 헤더 표시·넘침·메뉴 조작 및 배포 CACHE-01 미실행. npm test 미실행(CSS/캐시 변경). API/DB/큐 변경 없음.
+
+## 둥근 글꼴 헤더 적용 검증 (2026-10-16)
+
+- 첫 번째 시안을 앱/로그인/가입 공통 헤더에 반영. 소스 diff에서 이미지 경로/고유 크기/대체 텍스트/반응형 너비 및 기존 링크·클릭 처리 유지 확인. 서비스 워커 v52 앱 셸 PNG 경로 확인.
+- npm run build 및 git diff --check 통과. 빌드 결과에 선택 PNG 포함 확인. API/DB/큐 변경 없음, npm test 미실행.
+- UI-01 실제 브라우저 320/768/1440px 및 넓은 터치 헤더 표시/넘침/링크 조작, 실기기와 배포 CACHE-01 미실행.
+
 ## 로고 글꼴 시안 3종 (2026-10-16)
 
 - 기본 이미지 도구로 파란 원형 로고에서 글꼴만 변경하도록 요청. 공통 프롬프트는 파란 원/흰 My/파란 Booth/투명 배경과 MyBooth 철자 유지. rounded는 둥근 획 끝·친근한 중굵기, geometric은 원형 카운터·직선 획 끝·기하학적 형태, condensed는 좁고 매우 굵은 수직 획을 지정했다. 특정 상용 폰트를 사용한 결과는 아니다.
 - public/images/mybooth-rounded-logo.png, mybooth-geometric-logo.png, mybooth-condensed-logo.png를 별도 자산으로 추가. 원본 및 텍스트 헤더 유지. 세 결과 시각 확인; System.Drawing으로 각각1930×815/1930×815/1933×814, 모서리 alpha=0 확인.
 - npm run build 및 git diff --check 통과. npm test/브라우저 UI 검증 미실행(선택용 정적 이미지 추가). 런타임/API/DB/큐 변경 없음.
+
+
+
+## 파란 원형 로고 자산 (2026-10-16)
+
+- 기본 이미지 도구로 기존 진회색 원형 PNG를 편집하여 public/images/mybooth-blue-circle-logo.png 추가. 프롬프트: 원 지름 약12% 축소, My 함께 축소·흰색 유지, Booth 크기 유지, 진회색을 royal blue #2563EB로 변경, 투명 배경 유지. 생성 결과의 비율/색상은 시각 확인이며 정확한 픽셀 일치 검증은 아님.
+- 결과 시각 확인 및 System.Drawing으로 1930×815, 모서리 alpha=0 확인. npm run build, git diff --check 통과. 빌드 정적 자산 포함 확인.
+- 현재 텍스트 헤더는 유지하며 새 PNG는 선택 가능한 자산으로만 추가. 런타임/API/DB/IndexedDB 변경 없음. npm test 및 브라우저 UI 검증 미실행(이미지 자산만 추가).
 
 ## 텍스트 로고 복원 검증 (2026-10-15)
 
