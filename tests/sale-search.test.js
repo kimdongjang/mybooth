@@ -20,3 +20,14 @@ test('sales search combines payment, product and creator and searches bundle con
   assert.deepEqual(search({}, []), []);
   assert.deepEqual(sales.map((sale) => sale.id), ['cash', 'set', 'mixed']);
 });
+
+test('inventory history matches exact product IDs despite name changes and overlapping legacy IDs', () => {
+  const source = [
+    { id: 'exact', lines: [{ type: 'product', id: 'p1', name: '과거 이름' }] },
+    { id: 'prefix', lines: [{ type: 'product', id: 'p10', name: '과거 이름' }] },
+    { id: 'bundle', lines: [{ type: 'bundle', id: 'set', entries: [{ productId: 'p1', name: '다른 이름' }] }] },
+    { id: 'bundle-id-only', lines: [{ type: 'bundle', id: 'p1', entries: [{ productId: 'p2' }] }] },
+  ];
+  assert.deepEqual(search({ productId: 'p1' }, source), ['exact', 'bundle']);
+  assert.deepEqual(search({ productId: 'p2' }, source), ['bundle-id-only']);
+});

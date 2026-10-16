@@ -35,6 +35,10 @@ class SyncService {
 
   configure(options: Pick<SyncServiceOptions, 'getAuthToken' | 'projectId'>): void {
     if (options.getAuthToken) this.getAuthToken = options.getAuthToken;
+    if (this.projectId !== (options.projectId || null)) {
+      this.snapshot = { ...this.snapshot, lastSyncedAt: null };
+      this.emit();
+    }
     this.projectId = options.projectId || null;
     void this.refreshPendingCount();
   }
@@ -103,7 +107,9 @@ class SyncService {
 
           const syncedAt = new Date().toISOString();
           await this.repository.updateStatus(order.id, 'SYNCED', { lastSyncAt: syncedAt });
-          this.snapshot = { ...this.snapshot, lastSyncedAt: syncedAt };
+          if (this.projectId === projectId && this.getAuthToken() === token) {
+            this.snapshot = { ...this.snapshot, lastSyncedAt: syncedAt };
+          }
         } catch (error) {
           this.snapshot = { ...this.snapshot, lastError: error instanceof Error ? error.message : '동기화에 실패했습니다.' };
           await this.repository.updateStatus(order.id, 'FAILED', { retryCount: (order.retryCount || 0) + 1 });

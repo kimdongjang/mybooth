@@ -71,6 +71,8 @@ test('sync recovers SYNCING in insertion order, stops dependencies on failure, a
     } },
   } });
   const { syncService } = await load('../src/sync/syncService.ts');
+  let snapshot;
+  const unsubscribe = syncService.subscribe(value => { snapshot = value; });
   let token = 'a-token';
   const calls = [];
   try {
@@ -104,6 +106,7 @@ test('sync recovers SYNCING in insertion order, stops dependencies on failure, a
     syncService.configure({ projectId: 'b', getAuthToken: () => token });
     release();
     await running;
+    assert.equal(snapshot.lastSyncedAt, null, 'old project response must not set the current project sync time');
     assert.deepEqual(calls, ['finalizeSale']);
     assert.equal(await orders.countWaiting('a'), 1);
     syncService.configure({ projectId: 'a', getAuthToken: () => 'a-token' });
@@ -111,7 +114,11 @@ test('sync recovers SYNCING in insertion order, stops dependencies on failure, a
     await syncService.sync();
     assert.deepEqual(calls, ['finalizeSale', 'voidSale']);
     assert.equal(await orders.countWaiting('a'), 0);
+    assert.ok(Number.isFinite(Date.parse(snapshot.lastSyncedAt)), 'successful order upload records its actual timestamp');
+    syncService.configure({ projectId: 'b', getAuthToken: () => 'b-token' });
+    assert.equal(snapshot.lastSyncedAt, null, 'project change clears the previous project sync time');
   } finally {
+    unsubscribe();
     globalThis.fetch = originalFetch;
     if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
     else delete globalThis.navigator;

@@ -136,7 +136,193 @@ async function initDb() {
       UPDATE pos_bundles SET project_id = target_id WHERE project_id IS NULL;
       UPDATE pos_sales SET project_id = target_id WHERE project_id IS NULL;
     END $$`;
+  await initInventory();
   initialized = true;
+}
+
+// Warehouse quantities are independent of event stock. Allocation is a transfer,
+// so offline event sales never compete for an unreserved shared quantity.
+async function initInventory() {
+  await sql`CREATE TABLE IF NOT EXISTS pos_inventory (
+    admin_id TEXT NOT NULL REFERENCES pos_admins(id) ON DELETE CASCADE,
+    id TEXT NOT NULL, product JSONB NOT NULL, stock INTEGER NOT NULL CHECK (stock >= 0),
+    version INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(admin_id, id))`;
+  await sql`ALTER TABLE pos_inventory ADD COLUMN IF NOT EXISTS product_number TEXT, ADD COLUMN IF NOT EXISTS total_received BIGINT CHECK (total_received >= 0), ADD COLUMN IF NOT EXISTS total_estimated BOOLEAN NOT NULL DEFAULT FALSE`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS pos_inventory_product_number_unique ON pos_inventory(product_number)`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_inventory_numbers (
+    admin_id TEXT PRIMARY KEY REFERENCES pos_admins(id) ON DELETE CASCADE,
+    prefix TEXT NOT NULL UNIQUE CHECK (prefix ~ '^[A-Z]{3}$'), last_number INTEGER NOT NULL DEFAULT 0 CHECK (last_number BETWEEN 0 AND 9999))`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_inventory_adjustments (
+    admin_id TEXT NOT NULL, inventory_id TEXT NOT NULL, id TEXT PRIMARY KEY,
+    delta INTEGER NOT NULL, reason TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY(admin_id,inventory_id) REFERENCES pos_inventory(admin_id,id) ON DELETE CASCADE)`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_inventory_links (
+    project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
+    product_id TEXT NOT NULL, admin_id TEXT NOT NULL, inventory_id TEXT NOT NULL,
+    PRIMARY KEY(project_id, product_id), UNIQUE(project_id, inventory_id),
+    FOREIGN KEY(admin_id, inventory_id) REFERENCES pos_inventory(admin_id, id))`;
+  await sql`CREATE INDEX IF NOT EXISTS pos_inventory_links_owner_idx ON pos_inventory_links(admin_id,inventory_id)`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_inventory_transfers (
+    admin_id TEXT NOT NULL REFERENCES pos_admins(id) ON DELETE CASCADE,
+    id TEXT NOT NULL, request JSONB NOT NULL, PRIMARY KEY(admin_id, id))`;
+}
+
+async function nextInventoryNumber(adminId) {
+  let counter = (await sql`SELECT prefix FROM pos_inventory_numbers WHERE admin_id=${adminId}`).rows[0];
+  for (let attempt = 0; !counter && attempt < 100; attempt++) {
+    const random = uid().replaceAll('-', '').slice(0, 6);
+    const prefix = [0,2,4].map(i => String.fromCharCode(65 + parseInt(random.slice(i,i+2),16) % 26)).join('');
+    counter = (await sql`INSERT INTO pos_inventory_numbers (admin_id,prefix) VALUES (${adminId},${prefix}) ON CONFLICT DO NOTHING RETURNING prefix`).rows[0];
+  }
+  if (!counter) throw Object.assign(new Error('상품 번호 접두사를 발급하지 못했습니다. 다시 시도해주세요.'), { status: 409 });
+  const row = (await sql`UPDATE pos_inventory_numbers SET last_number=last_number+1 WHERE admin_id=${adminId} AND last_number<9999 RETURNING prefix,last_number`).rows[0];
+  if (!row) throw Object.assign(new Error('계정 상품 번호 한도(9999개)에 도달했습니다.'), { status: 409 });
+  return `${row.prefix}_${String(row.last_number).padStart(4,'0')}`;
+}
+
+async function inventoryState(adminId) {
+  // Called only with the account and its project rows locked in the request transaction.
+  // Preserve existing event quantities and IDs. Never merge matching names or
+  // product codes from independent events, and never count them twice in storage.
+  await sql`INSERT INTO pos_inventory (admin_id,id,product,stock)
+    SELECT e.admin_id, 'legacy:' || length(p.project_id)::text || ':' || p.project_id || p.id,
+      jsonb_build_object('name',p.name,'price',p.price,'goodsType',COALESCE(p.goods_type,p.name),
+        'creatorName',COALESCE(p.creator_name,''),'vtuberName',COALESCE(p.vtuber_name,''),'imageUrl',p.image_url), 0
+    FROM pos_products p JOIN pos_projects e ON e.id=p.project_id
+    WHERE e.admin_id=${adminId} AND NOT EXISTS (SELECT 1 FROM pos_inventory_links l WHERE l.project_id=p.project_id AND l.product_id=p.id)
+    ON CONFLICT (admin_id,id) DO NOTHING`;
+  await sql`INSERT INTO pos_inventory_links (project_id,product_id,admin_id,inventory_id)
+    SELECT p.project_id,p.id,e.admin_id,'legacy:' || length(p.project_id)::text || ':' || p.project_id || p.id
+    FROM pos_products p JOIN pos_projects e ON e.id=p.project_id
+    WHERE e.admin_id=${adminId} AND NOT EXISTS (SELECT 1 FROM pos_inventory_links l WHERE l.project_id=p.project_id AND l.product_id=p.id)
+    ON CONFLICT DO NOTHING`;
+  const items = await sql`SELECT * FROM pos_inventory WHERE admin_id = ${adminId} ORDER BY id`;
+  const allocations = await sql`SELECT l.inventory_id, l.product_id, p.project_id,
+    e.name AS event_name, COALESCE(p.stock_qty,p.stock) AS stock, COALESCE(p.initial_stock_qty,p.stock_qty,p.stock) AS initial_stock
+    FROM pos_inventory_links l JOIN pos_products p ON p.project_id=l.project_id AND p.id=l.product_id
+    JOIN pos_projects e ON e.id=l.project_id AND e.admin_id=l.admin_id
+    WHERE l.admin_id = ${adminId} ORDER BY p.project_id, p.id`;
+  const sales = (await sql`SELECT s.project_id,s.lines FROM pos_sales s JOIN pos_projects e ON e.id=s.project_id WHERE e.admin_id=${adminId}`).rows;
+  const bundles = (await sql`SELECT b.project_id,b.id,b.items FROM pos_bundles b JOIN pos_projects e ON e.id=b.project_id WHERE e.admin_id=${adminId}`).rows;
+  const sold = new Map();
+  const addSold = (projectId, productId, qty, estimated = false) => {
+    if (!Number.isSafeInteger(qty) || qty <= 0) return;
+    const key = JSON.stringify([projectId,productId]);
+    const previous = sold.get(key) || { qty: 0, estimated: false };
+    sold.set(key, { qty: previous.qty + qty, estimated: previous.estimated || estimated });
+  };
+  const incompleteEvents = new Set();
+  for (const sale of sales) for (const line of sale.lines || []) {
+    if (line.type === 'product') addSold(sale.project_id,line.id,Number(line.qty));
+    if (line.type === 'bundle') {
+      const components = line.subItems || bundles.find(b => b.project_id === sale.project_id && b.id === line.id)?.items;
+      if (!components) incompleteEvents.add(sale.project_id);
+      for (const component of components || []) addSold(sale.project_id,component.productId,Number(component.qty)*Number(line.qty),!line.subItems);
+    }
+  }
+  const inventory = [];
+  for (const row of items.rows) {
+    const linked = allocations.rows.filter(a => a.inventory_id === row.id);
+    const remaining = Number(row.stock) + linked.reduce((sum,a) => sum + Number(a.stock),0);
+    const history = linked.map(a => ({ projectId: a.project_id, eventName: a.event_name, productId: a.product_id,
+      soldQty: sold.get(JSON.stringify([a.project_id,a.product_id]))?.qty || 0,
+      estimated: sold.get(JSON.stringify([a.project_id,a.product_id]))?.estimated || incompleteEvents.has(a.project_id) }));
+    let totalEstimated = row.total_estimated;
+    let totalReceived = row.total_received == null ? null : Number(row.total_received);
+    if (totalReceived == null) {
+      // Old records have no receipt ledger. Preserve the highest known opening
+      // quantity or remaining + recorded sales, without inventing lost history.
+      totalReceived = Math.max(remaining + history.reduce((sum,h) => sum+h.soldQty,0), Number(row.stock) + linked.reduce((sum,a) => sum+Number(a.initial_stock),0));
+      totalEstimated = true;
+      await sql`UPDATE pos_inventory SET total_received=${totalReceived},total_estimated=TRUE WHERE admin_id=${adminId} AND id=${row.id}`;
+    }
+    let productNumber = row.product_number;
+    if (!productNumber) {
+      productNumber = await nextInventoryNumber(adminId);
+      await sql`UPDATE pos_inventory SET product_number=${productNumber} WHERE admin_id=${adminId} AND id=${row.id}`;
+    }
+    inventory.push({ ...row.product, id: row.id, productNumber, genre: row.product.genre || '', stock: row.stock, version: row.version,
+      totalReceived, totalEstimated, remainingStock: remaining, history, allocations: linked });
+  }
+  return { inventory };
+}
+
+function inventoryInteger(value, minimum = 0) {
+  if (!Number.isInteger(value) || value < minimum || value > 2147483647) throw Object.assign(new Error('수량·가격은 허용 범위의 정수로 입력해주세요.'), { status: 400 });
+  return value;
+}
+
+async function inventoryAction(adminId, action, payload) {
+  await initDb();
+  // Serializes warehouse edits/transfers within one account; event mutations
+  // also take their existing project lock. Serialization failures return 409.
+  await sql`SELECT id FROM pos_admins WHERE id = ${adminId} FOR UPDATE`;
+  await sql`SELECT id FROM pos_projects WHERE admin_id=${adminId} ORDER BY id FOR UPDATE`;
+  if (action === 'saveInventory') {
+    const input = payload.product || {};
+    if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 200) throw Object.assign(new Error('상품 이름을 입력해주세요. (최대 200자)'), { status: 400 });
+    const submittedPrice = input.price == null ? null : inventoryInteger(input.price);
+    const stock = inventoryInteger(input.stock);
+    if (input.id != null && (typeof input.id !== 'string' || !input.id || input.id.length > 500)) throw Object.assign(new Error('잘못된 상품 ID입니다.'), { status: 400 });
+    const id = input.id || uid();
+    const old = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${id}`).rows[0];
+    if (input.id && (old ? old.version !== input.version : input.version !== -1)) throw Object.assign(new Error('재고가 변경되었습니다. 새로고침해주세요.'), { status: 409 });
+    const price = submittedPrice ?? old?.product?.price ?? 0;
+    if (input.genre != null && (typeof input.genre !== 'string' || input.genre.length > 200)) throw Object.assign(new Error('장르는 200자 이내로 입력해주세요.'), { status: 400 });
+    const genre = (input.genre ?? old?.product?.genre ?? '').trim();
+    const product = { genre, imageUrl: old?.product?.imageUrl || null, name: input.name.trim(), price, goodsType: String(input.goodsType || input.name).slice(0,200), creatorName: String(input.creatorName || '').slice(0,200), vtuberName: String(input.vtuberName || '').slice(0,200) };
+    // Initialize old totals/numbers before applying a stock delta.
+    await inventoryState(adminId);
+    if (old) {
+      const baseline = (await sql`SELECT total_received FROM pos_inventory WHERE admin_id=${adminId} AND id=${id}`).rows[0];
+      const delta = stock - Number(old.stock);
+      const reason = payload.stockChangeType || (delta > 0 ? 'receipt' : 'correction');
+      if (delta && (!['receipt','loss','disposal','correction'].includes(reason) || (reason === 'receipt' && delta < 0) || (['loss','disposal'].includes(reason) && delta > 0))) throw Object.assign(new Error('수량 변경 방향에 맞는 입고·분실·폐기·정정 사유를 선택해주세요.'), { status: 400 });
+      const total = Number(baseline.total_received) + (delta > 0 && reason === 'receipt' ? delta : 0);
+      const allocated = (await sql`SELECT COALESCE(SUM(COALESCE(p.stock_qty,p.stock)),0) AS qty FROM pos_products p JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id WHERE l.admin_id=${adminId} AND l.inventory_id=${id}`).rows[0];
+      if (stock + Number(allocated.qty) > total) throw Object.assign(new Error('남은재고가 누적 입고보다 많습니다. 추가 입고로 반영해주세요.'), { status: 400 });
+      await sql`UPDATE pos_inventory SET product=${JSON.stringify(product)}::jsonb, stock=${stock},total_received=${total},version=version+1 WHERE admin_id=${adminId} AND id=${id}`;
+      if (delta) await sql`INSERT INTO pos_inventory_adjustments (admin_id,inventory_id,id,delta,reason) VALUES (${adminId},${id},${uid()},${delta},${reason})`;
+    } else {
+      const productNumber = await nextInventoryNumber(adminId);
+      await sql`INSERT INTO pos_inventory (admin_id,id,product,stock,total_received,product_number) VALUES (${adminId},${id},${JSON.stringify(product)}::jsonb,${stock},${stock},${productNumber})`;
+      if (stock) await sql`INSERT INTO pos_inventory_adjustments (admin_id,inventory_id,id,delta,reason) VALUES (${adminId},${id},${uid()},${stock},'receipt')`;
+    }
+  } else if (action === 'transferInventory') {
+    const { projectId, inventoryId, direction, requestId } = payload;
+    const qty = inventoryInteger(payload.qty, 1);
+    if (typeof projectId !== 'string' || !projectId || typeof inventoryId !== 'string' || !inventoryId || !['allocate','return'].includes(direction) || typeof requestId !== 'string' || !requestId || requestId.length > 100) throw Object.assign(new Error('잘못된 재고 이동 요청입니다.'), { status: 400 });
+    const request = { projectId, inventoryId, direction, qty };
+    const receipt = (await sql`SELECT request FROM pos_inventory_transfers WHERE admin_id=${adminId} AND id=${requestId}`).rows[0];
+    if (receipt) {
+      if (Object.keys(request).some(key => receipt.request[key] !== request[key])) throw Object.assign(new Error('재고 이동 요청 ID가 중복되었습니다.'), { status: 409 });
+      return inventoryState(adminId);
+    }
+    const event = (await sql`SELECT id, archived_at FROM pos_projects WHERE id=${projectId} AND admin_id=${adminId} FOR UPDATE`).rows[0];
+    if (!event) throw Object.assign(new Error('행사 접근 권한이 없습니다.'), { status: 404 });
+    // Archived events may return unsold stock, but cannot receive new stock.
+    if (event.archived_at && direction === 'allocate') throw Object.assign(new Error('보관된 행사에는 배정할 수 없습니다.'), { status: 409 });
+    const item = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${inventoryId} FOR UPDATE`).rows[0];
+    if (!item) throw Object.assign(new Error('재고를 찾을 수 없습니다.'), { status: 404 });
+    let link = (await sql`SELECT product_id FROM pos_inventory_links WHERE project_id=${projectId} AND admin_id=${adminId} AND inventory_id=${inventoryId}`).rows[0];
+    if (!link) {
+      if (direction === 'return') throw Object.assign(new Error('배정된 상품이 없습니다.'), { status: 400 });
+      link = { product_id: uid() };
+      await insertProduct(projectId, { ...item.product, id: link.product_id, stockQty: 0, initialStockQty: 0 });
+      await sql`INSERT INTO pos_inventory_links VALUES (${projectId},${link.product_id},${adminId},${inventoryId})`;
+    }
+    const product = (await sql`SELECT * FROM pos_products WHERE project_id=${projectId} AND id=${link.product_id}`).rows[0];
+    if (!product) throw Object.assign(new Error('배정 상품이 삭제되었습니다. 관리자 확인이 필요합니다.'), { status: 409 });
+    const delta = direction === 'allocate' ? qty : -qty;
+    const stock = Number(product.stock_qty ?? product.stock) + delta;
+    const initial = Number(product.initial_stock_qty ?? product.stock_qty ?? product.stock) + delta;
+    inventoryInteger(stock); inventoryInteger(initial); inventoryInteger(item.stock - delta);
+    await sql`UPDATE pos_products SET stock=${stock},stock_qty=${stock},initial_stock_qty=${initial},is_active=TRUE,updated_at=NOW() WHERE project_id=${projectId} AND id=${link.product_id}`;
+    await sql`UPDATE pos_inventory SET stock=stock-${delta},version=version+1 WHERE admin_id=${adminId} AND id=${inventoryId}`;
+    await sql`INSERT INTO pos_inventory_transfers VALUES (${adminId},${requestId},${JSON.stringify(request)}::jsonb)`;
+    await sql`UPDATE pos_projects SET updated_at=NOW() WHERE id=${projectId}`;
+  } else if (action !== 'listInventory') throw Object.assign(new Error('알 수 없는 재고 작업입니다.'), { status: 400 });
+  return inventoryState(adminId);
 }
 
 async function assertProject(adminId, projectId) {
@@ -209,6 +395,11 @@ async function readState(adminId, projectId) {
 
 async function replaceProducts(adminId, projectId, products) {
   await assertProject(adminId, projectId);
+  const linked = (await sql`SELECT p.*, l.inventory_id FROM pos_products p JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id WHERE p.project_id=${projectId}`).rows.filter(p => p.inventory_id);
+  for (const old of linked) {
+    const next = products.find(p => p.id === old.id);
+    if (!next || Number(next.stockQty ?? next.stock) !== Number(old.stock_qty ?? old.stock) || Number(next.initialStockQty) !== Number(old.initial_stock_qty ?? old.stock_qty ?? old.stock)) throw Object.assign(new Error('공통 재고 상품은 재고 관리에서 배정·회수해주세요. 삭제 대신 회수 후 행사를 보관할 수 있습니다.'), { status: 409 });
+  }
   await sql`DELETE FROM pos_products WHERE project_id = ${projectId}`;
   for (const product of products) await insertProduct(projectId, product);
   await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
@@ -372,6 +563,7 @@ async function handler(req, res) {
     if (req.method === 'GET') return res.status(200).json(projectId ? await readState(admin.id, projectId) : await listProjects(admin.id));
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     const { action, payload = {} } = req.body || {};
+    if (['listInventory', 'saveInventory', 'transferInventory'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
     if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
     if (action === 'restoreProject') {
       if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
@@ -414,6 +606,8 @@ async function handler(req, res) {
       } else {
         if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
         if (payload.confirmName !== project.name) return res.status(400).json({ error: '프로젝트 이름을 정확히 입력해주세요.' });
+        const allocated = (await sql`SELECT p.*, l.inventory_id FROM pos_products p JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id WHERE p.project_id=${projectId}`).rows.filter(p => p.inventory_id && Number(p.stock_qty ?? p.stock) > 0);
+        if (allocated.length) return res.status(409).json({ error: '남은 재고를 재고 관리에서 회수한 뒤 행사를 삭제해주세요.' });
         // One statement: FK cascades delete products, bundles and sales atomically.
         const deleted = await sql`DELETE FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id} AND name = ${payload.confirmName} RETURNING id`;
         if (!deleted.rows.length) return res.status(409).json({ error: '프로젝트가 변경되었습니다. 목록을 새로고침해주세요.' });
@@ -429,6 +623,10 @@ async function handler(req, res) {
       const revision = await dataRevision(projectId);
       if (revision && req.body?.dataRevision !== revision) return res.status(409).json({ error: '행사 데이터가 분리되었습니다. 새로고침 후 다시 진행해주세요.' });
     }
+    if (action === 'resetDefaults') {
+      const linked = (await sql`SELECT p.*, l.inventory_id FROM pos_products p JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id WHERE p.project_id=${projectId}`).rows.filter(p => p.inventory_id);
+      if (linked.length) return res.status(409).json({ error: '공통 재고에 연결된 행사는 기본값으로 초기화할 수 없습니다.' });
+    }
     if (action === 'replaceProducts') await replaceProducts(admin.id, projectId, payload.products || []);
     else if (action === 'updateProductImage') await updateProductImage(admin.id, projectId, payload);
     else if (action === 'replaceBundles') await replaceBundles(admin.id, projectId, payload.bundles || []);
@@ -440,7 +638,7 @@ async function handler(req, res) {
     else return res.status(400).json({ error: '알 수 없는 작업입니다.' });
     return res.status(200).json(await readState(admin.id, projectId));
   } catch (error) {
-    return res.status(error.code === '40001' ? 409 : 500).json({ error: error.code === '40001' ? '프로젝트가 변경되었습니다. 새로고침 후 다시 시도해주세요.' : error.message || '서버 오류가 발생했습니다.' });
+    return res.status(error.code === '40001' ? 409 : (error.status || 500)).json({ error: error.code === '40001' ? '프로젝트가 변경되었습니다. 새로고침 후 다시 시도해주세요.' : error.message || '서버 오류가 발생했습니다.' });
   }
 }
 handler.initDb = initDb;

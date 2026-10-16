@@ -1,16 +1,19 @@
+import SearchFilters from '../components/SearchFilters';
 import { useState } from 'react';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 import { Stat } from '../components/PosUI';
 import { won } from '../utils/productDisplay';
 import { filterSales } from '../utils/saleSearch';
 
-export default function SettlementPage({ readOnly, stats, sales, visibleSales, logCreatorFilter, setLogCreatorFilter, creatorSalesSummary, selectedCreatorSummary, exportCsv, clearSalesWithPassword, saleLineCreators, saleLineProductEntries, voidSale }) {
-  const [tab, setTab] = useState('summary');
-  const [search, setSearch] = useState({ method: 'all', product: '', creator: '' });
-  const filteredSales = filterSales(visibleSales, search, saleLineProductEntries, saleLineCreators);
+export default function SettlementPage({ initialTab = 'summary', initialProductId = '', initialProductSearch = '', readOnly, stats, sales, visibleSales, logCreatorFilter, setLogCreatorFilter, creatorSalesSummary, selectedCreatorSummary, exportCsv, clearSalesWithPassword, saleLineCreators, saleLineProductEntries, voidSale }) {
+  const [tab, setTab] = useState(initialTab);
+  const [search, setSearch] = useState({ method: 'all', product: initialProductSearch, creator: '' });
+  const [historyProductId, setHistoryProductId] = useState(initialProductId);
+  const changeSearch = next => { if (next.product !== search.product) setHistoryProductId(''); setSearch(next); };
+  const filteredSales = filterSales(visibleSales, { ...search, product: historyProductId ? '' : search.product, productId: historyProductId }, saleLineProductEntries, saleLineCreators);
   return <main className="page-content settlement-page">
       <div className="settlement-layout"><section className="catalog min-w-0">
-      <PageIntro title="정산" />
+      <PageIntro hideTitle title="정산" />
       <aside className="settlement-overview" aria-label="전체 매출 요약"><h2>전체 매출 요약</h2><p>현재 행사 전체 판매 기준</p><Stat label="총 판매액" value={`${won(stats.total)}원`} /><Stat label="현금" value={`${won(stats.cash)}원`} /><Stat label="계좌이체" value={`${won(stats.transfer)}원`} /><Stat label="거래 건수" value={sales.length} /></aside>
       <PageTabs id="settlement" label="정산 보기" tabs={[["summary", "매출 요약"], ["history", "판매 내역"]]} selected={tab} onSelect={setTab} />
       <div id={`settlement-panel-${tab}`} role="tabpanel" aria-labelledby={`settlement-tab-${tab}`} tabIndex={0}>
@@ -22,12 +25,11 @@ export default function SettlementPage({ readOnly, stats, sales, visibleSales, l
         </section>}
         {tab === 'history' && <section className="settlement-card">
           <h2 className="text-sm font-bold">실제 판매 내역</h2>
-          <div className="settlement-search" role="search" aria-label="판매 내역 검색">
-            <label>결제수단<select value={search.method} onChange={(e) => setSearch({ ...search, method: e.target.value })}><option value="all">전체</option><option value="cash">현금</option><option value="transfer">계좌이체</option></select></label>
-            <label>상품<input type="search" placeholder="상품·세트명 또는 코드" value={search.product} onChange={(e) => setSearch({ ...search, product: e.target.value })} /></label>
-            <label>제작자<input type="search" placeholder="제작자명" value={search.creator} onChange={(e) => setSearch({ ...search, creator: e.target.value })} /></label>
-            <button type="button" className="settlement-tool" onClick={() => setSearch({ method: 'all', product: '', creator: '' })}>검색 초기화</button>
-          </div>
+          <SearchFilters label="판매 내역 검색" value={search} onChange={changeSearch} onReset={() => { setHistoryProductId(''); setSearch({ method: 'all', product: '', creator: '' }); }} fields={[
+            { key: 'method', label: '결제수단', options: [['all','전체'],['cash','현금'],['transfer','계좌이체']] },
+            { key: 'product', label: '상품', placeholder: '상품·세트명 또는 코드' },
+            { key: 'creator', label: '제작자', placeholder: '제작자명' },
+          ]} />
           <p className="settlement-result" role="status">검색 결과 {filteredSales.length}건 / 전체 {visibleSales.length}건</p>
           <div className="overflow-x-auto"><table className="min-w-[560px] w-full border-collapse bg-white text-[12.5px]"><thead><tr className="bg-[#f8fafc] text-left text-[#526078]"><th className="p-2">시간</th><th className="p-2">결제수단</th><th className="p-2">구성</th><th className="p-2">금액</th><th /></tr></thead><tbody>{filteredSales.map((s) => <tr key={s.id}><td className="mono border-b border-line p-2">{new Date(s.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</td><td className="border-b border-line p-2"><span className={`rounded px-2 py-0.5 text-[11px] text-white ${s.method === 'cash' ? 'bg-cash' : 'bg-transfer'}`}>{s.method === 'cash' ? '현금' : '계좌이체'}</span></td><td className="border-b border-line p-2"><div className="flex flex-col gap-1">{s.lines.map((l, index) => <div key={`${l.type}-${l.id}-${index}`} className="flex flex-wrap items-center gap-1.5"><span>{l.name} x{l.qty}</span>{saleLineCreators(l).map((creator) => <span key={creator} className="settlement-creator">{creator}</span>)}</div>)}</div></td><td className="mono border-b border-line p-2">{won(s.total)}원</td><td className="border-b border-line p-2"><button className="rounded border border-danger px-2 py-1 text-[10px] text-danger" disabled={readOnly} onClick={() => voidSale(s)}>취소</button></td></tr>)}</tbody></table></div><p className="catalog-empty" hidden={filteredSales.length > 0}>{visibleSales.length ? '검색 조건에 맞는 판매 내역이 없습니다.' : '아직 판매 내역이 없습니다.'}</p><div className="settlement-tools"><p>내보내기·초기화는 검색과 관계없이 전체 내역에 적용됩니다.</p><button type="button" className="settlement-tool" onClick={exportCsv}>전체 CSV 내보내기</button><button type="button" className="settlement-tool settlement-tool-danger" disabled={readOnly} onClick={clearSalesWithPassword}>전체 판매 내역 초기화</button></div>
         </section>}
