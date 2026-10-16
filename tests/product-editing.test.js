@@ -11,7 +11,7 @@ async function harness(filename = 'components/ProductEditForm.jsx') {
   const mocks = {
     react: { useState: initial => { const i = index++; if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial; return [states[i], next => { states[i] = typeof next === 'function' ? next(states[i]) : next; }]; }, useRef: initial => refs[refIndex++] ||= { current: initial }, useId: () => 'test-input' },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    './PosUI': { Input: 'Input' }, './ProductValueInput': { default: 'ProductValueInput' },
+    './PosUI': { Input: 'Input', Quantity: 'Quantity' }, './ProductValueInput': { default: 'ProductValueInput' },
   };
   const cache = new Map();
   async function load(name) {
@@ -26,7 +26,7 @@ async function harness(filename = 'components/ProductEditForm.jsx') {
   }
   const module = await load('entry');
   await module.evaluate();
-  const product = { id: 'a', productCode: 'hidden', goodsType: '키링', vtuberName: '원본', creatorName: '제작자', price: 100, stockQty: 7, imageUrl: 'original' };
+  const product = { name: '직접 입력한 상품', id: 'a', productCode: 'hidden', goodsType: '키링', vtuberName: '원본', creatorName: '제작자', price: 100, initialStockQty: 10, stockQty: 7, imageUrl: 'original' };
   const props = { product, products: [product, { id: 'b', price: 20 }], persistProducts: async next => { calls.push(next); return result === 'pending' ? await new Promise(resolve => { resolveSave = resolve; }) : result; }, disabled: false };
   const render = (override = {}) => { index = refIndex = 0; return module.namespace.default({ ...props, ...override }); };
   return { render, states, calls, props, setResult: value => { result = value; }, finish: value => resolveSave(value), utils: cache.get('../utils/productEditing')?.namespace };
@@ -54,12 +54,12 @@ test('product edits stay local until submit, preserve latest inventory/image and
   assert.equal(h.calls.length, 2);
   h.finish(true);
   await pending;
-  assert.equal(h.calls[1][0].name, '최종 캐릭터 키링 (제작자)');
+  assert.equal(h.calls[1][0].name, '직접 입력한 상품');
 });
 
 test('product edit validation allows free goods, rejects invalid price and cancel restores saved fields', async () => {
   const h = await harness();
-  const price = () => nodes(h.render()).find(node => node.type === 'Input');
+  const price = () => nodes(h.render()).find(node => node.type === 'Input' && node.props.type === 'number');
   for (const value of ['', '-1', '1.5']) {
     price().props.onChange(value);
     await h.render().props.onSubmit({ preventDefault() {} });
@@ -89,4 +89,48 @@ test('recent suggestions are unique, newest first, scoped to supplied products a
   input().props.onChange('직접 입력');
   assert.equal(value, '직접 입력');
   assert.equal(input().props['aria-expanded'], false);
+});
+
+test('custom product names are required, trimmed and saved without metadata recomposition', async () => {
+  const h = await harness();
+  const name = () => nodes(h.render()).find(node => node.type === 'Input' && !node.props.type);
+  name().props.onChange('  ');
+  await h.render().props.onSubmit({ preventDefault() {} });
+  assert.equal(h.calls.length, 0);
+  name().props.onChange('  여름 한정판 (리뉴얼)  ');
+  await h.render().props.onSubmit({ preventDefault() {} });
+  assert.equal(h.calls[0][0].name, '여름 한정판 (리뉴얼)');
+});
+
+test('simple inventory saves absolute counts only on submit, keeps sales read-only and detects stale edits', async () => {
+  const h = await harness('components/ProductStockForm.jsx');
+  const props = { soldQty: 3, onSave: h.props.persistProducts };
+  const render = () => h.render(props);
+  const input = label => nodes(render()).find(node => node.type === 'Input' && node.props['aria-label'] === label);
+  assert.equal(nodes(render()).find(node => node.type === 'Quantity').props.value, 3);
+  input('남은 재고').props.onChange('100');
+  assert.equal(h.calls.length, 0);
+  await render().props.onSubmit({ preventDefault() {} });
+  assert.equal(h.calls[0].stockQty, 100);
+  assert.equal(h.calls[0].stock, 100);
+  assert.equal('initialStockQty' in h.calls[0], false);
+  const fresh = await harness('components/ProductStockForm.jsx');
+  const next = () => fresh.render({ soldQty: 3, onSave: fresh.props.persistProducts });
+  const stock = () => nodes(next()).find(node => node.props?.['aria-label'] === '남은 재고');
+  stock().props.onChange('8');
+  fresh.props.product = { ...fresh.props.product, stockQty: 6 };
+  await next().props.onSubmit({ preventDefault() {} });
+  assert.equal(fresh.calls.length, 0);
+  nodes(next()).find(node => node.props?.children === '변경 취소').props.onClick();
+  assert.equal(stock().props.value, '6');
+  for (const value of ['', '-1', '1.5']) {
+    stock().props.onChange(value);
+    await next().props.onSubmit({ preventDefault() {} });
+  }
+  assert.equal(fresh.calls.length, 0);
+  stock().props.onChange('0');
+  fresh.setResult(false);
+  await next().props.onSubmit({ preventDefault() {} });
+  assert.equal(stock().props.value, '0');
+  assert.equal(fresh.calls[0].stockQty, 0);
 });

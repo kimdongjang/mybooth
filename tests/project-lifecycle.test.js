@@ -47,6 +47,24 @@ async function fixture() {
   return { db, id, invoke, statements };
 }
 
+test('custom product name survives catalog saves and stock edits while historical sales remain unchanged', async () => {
+  const { db, id, invoke } = await fixture();
+  try {
+    const before = (await invoke(null, id)).body;
+    const products = before.products.map(product => product.id === 'p1' ? { ...product, name: '한정 상품 (리뉴얼)', goodsType: '키링', vtuberName: '캐릭터', initialStockQty: 120, stockQty: 100, stock: 100 } : product);
+    const saved = await invoke('replaceProducts', id, { products });
+    assert.equal(saved.status, 200);
+    const updated = saved.body.products.find(product => product.id === 'p1');
+    assert.equal(updated.name, '한정 상품 (리뉴얼)');
+    assert.equal(updated.stockQty, 100);
+    assert.equal(updated.initialStockQty, 120);
+    assert.deepEqual(saved.body.sales, before.sales);
+    const again = await invoke('replaceProducts', id, { products: saved.body.products.map(product => product.id === 'p1' ? { ...product, stockQty: 99, stock: 99 } : product) });
+    assert.equal(again.status, 200);
+    assert.equal(again.body.products.find(product => product.id === 'p1').name, '한정 상품 (리뉴얼)');
+  } finally { await db.close(); }
+});
+
 test('password-protected archive/unarchive locks every mutation and preserves settlement', async () => {
   const { db, id, invoke, statements } = await fixture();
   try {

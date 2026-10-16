@@ -26,6 +26,7 @@ export default function ProductEditForm({ product, products, persistProducts, di
   };
   return <form onSubmit={submit} className="management-details">
     <fieldset disabled={disabled || busy}><legend>기본 정보</legend><div className="management-fields">
+      <label className="management-field product-name-field"><span>상품 이름</span><Input required value={draft.name} disabled={disabled || busy} onChange={value => change('name', value)} /></label>
       {[['vtuberName', '캐릭터'], ['goodsType', '굿즈 종류'], ['creatorName', '제작자']].map(([field, label]) => <ProductValueInput key={field} label={label} field={field} products={products} value={draft[field]} onChange={value => change(field, value)} required={field === 'goodsType'} disabled={disabled || busy} />)}
       <label className="management-field"><span>판매가 (원)</span><Input required min="0" step="1" type="number" value={draft.price} disabled={disabled || busy} onChange={value => change('price', value)} /></label>
     </div></fieldset>

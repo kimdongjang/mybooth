@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { uploadProductImage } from '../utils/uploadProductImage';
 import { managementQuantities, managementBundleStock } from '../utils/managementQuantities';
-import { won, creatorNameOf, productNameFromFields, productNameWithoutCreator } from '../utils/productDisplay';
-import { Panel, Quantity, StockAdjustment, ProductImage } from '../components/PosUI';
+import { won, creatorNameOf, productNameWithoutCreator } from '../utils/productDisplay';
+import { Panel, Quantity, ProductImage } from '../components/PosUI';
 import { prepareProductImage } from '../utils/productImage';
 import ProductCreatePage from './ProductCreatePage';
 import BulkProductImages from './BulkProductImages';
 import BundleCreatePage from './BundleCreatePage';
 import ActionIcon from '../components/ActionIcon';
 import ProductEditForm from '../components/ProductEditForm';
+import ProductStockForm from '../components/ProductStockForm';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 
 export default function ProductsPage({ readOnly, projectId, settingsTab, setSettingsTab, saving, mutate, products, bundles, sales, persistProducts, persistBundles, creatingBundle, creatingProduct, navigate, bundleName, setBundleName, bundleRows, setBundleRows, bundlePrice, setBundlePrice, addBundleToSettings, backupOrdersJson, backupOrdersCsv }) {
@@ -25,8 +26,8 @@ function BundleManagementTable({ readOnly, bundles, products, sales, persistBund
   const quantities = managementQuantities(sales, bundles);
   const productsById = new Map(products.map((product) => [product.id, product]));
   return <div className="management-table-wrap"><table className="management-table bundle-management-table" role="table">
-    <caption className="sr-only">세트 이름, 구성품, 판매가, 판매 수량, 판매 가능 수량, 관리 목록</caption>
-    <thead role="rowgroup"><tr role="row">{['세트 이름', '구성품', '판매가', '판매 수량', '판매 가능 수량', '관리'].map((label) => <th key={label} scope="col" role="columnheader">{label}</th>)}</tr></thead>
+    <caption className="sr-only">세트 이름, 구성품, 판매가, 판매수량, 판매 가능 수량, 관리 목록</caption>
+    <thead role="rowgroup"><tr role="row">{['세트 이름', '구성품', '판매가', '판매수량', '판매 가능 수량', '관리'].map((label) => <th key={label} scope="col" role="columnheader">{label}</th>)}</tr></thead>
     <tbody role="rowgroup">{bundles.map((bundle) => <tr key={bundle.id} role="row">
       <td role="cell" data-label="세트 이름"><button type="button" className="management-name-link" aria-label={`${bundle.name} 상세보기`} onClick={() => onSelect(bundle.id)}>{bundle.name}</button><small className="management-mobile-meta">{bundle.items.length}종 구성</small></td>
       <td role="cell" data-label="구성품" className="management-components-cell"><ul className="bundle-table-components">{bundle.items.map((item, index) => {
@@ -34,7 +35,7 @@ function BundleManagementTable({ readOnly, bundles, products, sales, persistBund
         return <li key={index}>{product ? productNameWithoutCreator(product) : '삭제된 상품'} · {item.qty}개<small>{product ? creatorNameOf(product) : '구성 확인 필요'}</small></li>;
       })}</ul></td>
       <td role="cell" data-label="판매가" className="mono management-row-price">{won(bundle.price)}원</td>
-      <td role="cell" data-label="판매 수량" className="mono">{won(quantities.bundles.get(bundle.id) || 0)}개</td>
+      <td role="cell" data-label="판매수량" className="mono">{won(quantities.bundles.get(bundle.id) || 0)}개</td>
       <td role="cell" data-label="판매 가능 수량" className="mono">{won(managementBundleStock(bundle, products))}개</td>
       <td role="cell" data-label="관리"><button type="button" disabled={readOnly} className="management-delete" aria-label={`${bundle.name} 세트 삭제`} onClick={() => confirm('세트를 삭제할까요?') && persistBundles(bundles.filter((item) => item.id !== bundle.id))}>삭제</button></td>
     </tr>)}</tbody>
@@ -50,7 +51,7 @@ function BundleDetail({ readOnly, bundle, products, sales, bundles, persistBundl
       <div className="management-product-header"><h3>{bundle.name}</h3><button type="button" disabled={readOnly} className="management-delete" onClick={() => { if (confirm('세트를 삭제할까요?')) persistBundles(bundles.filter((item) => item.id !== bundle.id)); }}>삭제</button></div>
       <div className="bundle-management-body"><div className="management-fields management-fields-three">
         <div className="management-field"><span>판매가</span><strong>{won(bundle.price)}원</strong></div>
-        <Quantity label="판매 수량" value={managementQuantities(sales, bundles).bundles.get(bundle.id) || 0} />
+        <Quantity label="판매수량" value={managementQuantities(sales, bundles).bundles.get(bundle.id) || 0} />
         <Quantity label="판매 가능 수량" value={managementBundleStock(bundle, products)} />
       </div><p className="management-note">판매 가능 수량은 구성품의 남은 재고 기준이며 다른 세트와 재고를 공유합니다.</p><h4>세트 구성</h4>
       <ul className="bundle-components">{bundle.items.map((item, index) => {
@@ -90,7 +91,7 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
     if (product.id !== id) return product;
     const next = { ...product, ...patch };
     const stockQty = Number(next.stockQty ?? next.stock ?? 0) || 0;
-    return { ...next, stockQty, stock: stockQty, name: productNameFromFields(next) };
+    return { ...next, stockQty, stock: stockQty };
   }));
   const deleteProduct = (productId) => {
     if (!confirm('이 굿즈를 삭제할까요? 세트 구성에서도 제거됩니다.')) return;
@@ -104,15 +105,14 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
       {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <BulkProductImages projectId={projectId} products={products} persistProducts={persistProducts} onImageChange={onImageChange} disabled={readOnly || saving || bulkBusy} onBusy={setBulkBusy} extraAction={<button type="button" disabled={readOnly || saving} className="management-add" onClick={onAdd}><ActionIcon />상품 추가</button>} />}
     </header>
     <div className="management-summary"><span>등록 상품 <b>{products.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : ''}</span></div>
-    <p className="management-note">등록 수량은 기존 초기 재고와 추가 입고의 합계입니다. 판매 수량은 현재 판매 내역의 단품·세트 구성품을 합산합니다. 취소된 판매는 제외하며, 구성 정보가 없는 과거 세트 판매는 현재 구성 기준입니다.</p>
     {!selectedProduct && <>
       <div className="management-table-wrap"><table className="management-table product-management-table" role="table">
-        <caption className="sr-only">상품 이름, 제작자, 판매가, 등록 수량, 판매 수량, 남은 재고, 등록일 목록</caption>
-        <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">상품 이름</th><th scope="col" role="columnheader">제작자</th><th scope="col" role="columnheader">판매가</th><th scope="col" role="columnheader">등록 수량</th><th scope="col" role="columnheader">판매 수량</th><th scope="col" role="columnheader">남은 재고</th><th scope="col" role="columnheader">등록일</th></tr></thead>
+        <caption className="sr-only">상품 이름, 제작자, 판매가, 초기재고, 판매수량, 남은 재고, 등록일 목록</caption>
+        <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">상품 이름</th><th scope="col" role="columnheader">제작자</th><th scope="col" role="columnheader">판매가</th><th scope="col" role="columnheader">초기재고</th><th scope="col" role="columnheader">판매수량</th><th scope="col" role="columnheader">남은 재고</th><th scope="col" role="columnheader">등록일</th></tr></thead>
         <tbody role="rowgroup">{sortedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => <tr key={p.id} role="row">
           <td role="cell" data-label="상품 이름"><button type="button" className="management-name-link" aria-label={`${productNameWithoutCreator(p)} 상세보기`} onClick={() => setSelectedId(p.id)}>{productNameWithoutCreator(p)}</button><small className="management-mobile-meta">{creatorNameOf(p)}</small></td>
           <td role="cell" data-label="제작자">{creatorNameOf(p)}</td><td role="cell" data-label="판매가" className="mono management-row-price">{won(p.price)}원</td>
-          <td role="cell" data-label="등록 수량" className="mono">{won(p.initialStockQty ?? 0)}개</td><td role="cell" data-label="판매 수량" className="mono">{won(quantities.products.get(p.id) || 0)}개</td><td role="cell" data-label="남은 재고" className="mono">{won(p.stockQty ?? p.stock ?? 0)}개</td>
+          <td role="cell" data-label="초기재고" className="mono">{won(p.initialStockQty ?? 0)}개</td><td role="cell" data-label="판매수량" className="mono">{won(quantities.products.get(p.id) || 0)}개</td><td role="cell" data-label="남은 재고" className="mono">{won(p.stockQty ?? p.stock ?? 0)}개</td>
           <td role="cell" data-label="등록일">{p.createdAt && !Number.isNaN(new Date(p.createdAt).getTime()) ? <time dateTime={p.createdAt}>{new Date(p.createdAt).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\s/g, '')}</time> : '—'}</td>
         </tr>)}</tbody>
       </table>{!products.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}</div>
@@ -129,12 +129,7 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
           </div>
           <div className="management-details">
             <ProductEditForm key={p.id} product={p} products={products} persistProducts={persistProducts} disabled={readOnly || saving || uploadingId !== null} />
-            <fieldset><legend>재고</legend><div className="management-fields management-fields-three">
-              <Quantity label="등록 수량" value={p.initialStockQty ?? 0} />
-              <Quantity label="판매 수량" value={quantities.products.get(p.id) || 0} />
-              <Quantity label="남은 재고" value={p.stockQty ?? p.stock ?? 0} />
-              <StockAdjustment key={p.id} product={p} onSave={(patch) => updateProduct(p.id, patch)} saving={saving} />
-            </div></fieldset>
+            <ProductStockForm key={p.id} product={p} soldQty={quantities.products.get(p.id) || 0} onSave={patch => updateProduct(p.id, patch)} disabled={readOnly || saving || uploadingId !== null} />
 
           </div>
         </div>
