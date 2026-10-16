@@ -4,10 +4,10 @@ import { PageIntro } from '../components/PageLayout';
 import { Input, ProductImage } from '../components/PosUI';
 import ProductValueInput from '../components/ProductValueInput';
 import { prepareProductImage } from '../utils/productImage';
-import { uid, productNameFromFields } from '../utils/productDisplay';
+import { uid } from '../utils/productDisplay';
 
 export default function ProductCreatePage({ projectId, onImageChange, readOnly, saving, products, persistProducts, onBack }) {
-  const [draft, setDraft] = useState(() => ({ id: uid(), goodsType: '새 굿즈', vtuberName: '', creatorName: '', price: '', stockQty: '' }));
+  const [draft, setDraft] = useState(() => ({ id: uid(), name: '새 굿즈', goodsType: '새 굿즈', vtuberName: '', creatorName: '', price: '', stockQty: '' }));
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -40,13 +40,12 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
     if (readOnly || saving || preparing || submitting.current) return;
     const price = Number(draft.price);
     const stockQty = Number(draft.stockQty);
-    if (!draft.goodsType.trim() || draft.price === '' || draft.stockQty === '' || !Number.isSafeInteger(price) || price < 0 || !Number.isSafeInteger(stockQty) || stockQty < 0) return alert('굿즈 종류와 0 이상의 정수 판매가·재고를 입력해주세요.');
+    if (!draft.name.trim() || !draft.goodsType.trim() || draft.price === '' || draft.stockQty === '' || !Number.isSafeInteger(price) || price < 0 || !Number.isSafeInteger(stockQty) || stockQty < 0) return alert('상품 이름, 굿즈 종류와 0 이상의 정수 판매가·재고를 입력해주세요.');
     const product = {
-      ...draft, productCode: draft.id, goodsType: draft.goodsType.trim(), vtuberName: draft.vtuberName.trim(), creatorName: draft.creatorName.trim(),
+      ...draft, name: draft.name.trim(), productCode: draft.id, goodsType: draft.goodsType.trim(), vtuberName: draft.vtuberName.trim(), creatorName: draft.creatorName.trim(),
       price, stockQty, stock: stockQty, initialStockQty: stockQty, size: '', isActive: true,
       setCreatorName: null, setGroupName: null, setPrice: null, setDescription: null, createdAt: new Date().toISOString(),
     };
-    product.name = productNameFromFields(product);
     submitting.current = true;
     setBusy(true);
     setImageError('');
@@ -81,13 +80,14 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
           <div className="management-product-header"><h3>새 굿즈</h3></div>
           <div className="management-product-body">
             <div className="management-image">
-              <ProductImage imageUrl={preview} name={draft.goodsType} />
+              <ProductImage imageUrl={preview} name={draft.name} />
               <label className="management-upload"><span>{preparing ? '이미지 축소 중…' : image ? '이미지 수정' : '이미지 등록'}</span><input aria-label="새 상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
               {image && <button type="button" className="management-delete" onClick={() => { setImage(null); setImageError(''); }}>이미지 제거</button>}
               <p>선택한 이미지는 상품 저장 시 등록됩니다.</p>
             </div>
             <div className="management-details">
             <fieldset disabled={registered}><legend>기본 정보</legend><div className="management-fields">
+              <label className="management-field product-name-field"><span>상품 이름</span><Input required value={draft.name} onChange={value => change('name', value)} /></label>
               <ProductValueInput label="캐릭터" field="vtuberName" products={products} value={draft.vtuberName} onChange={value => change('vtuberName', value)} disabled={registered || readOnly || saving || busy || preparing} />
               <ProductValueInput label="굿즈 종류" field="goodsType" products={products} value={draft.goodsType} onChange={value => change('goodsType', value)} required disabled={registered || readOnly || saving || busy || preparing} />
               <ProductValueInput label="제작자" field="creatorName" products={products} value={draft.creatorName} onChange={value => change('creatorName', value)} disabled={registered || readOnly || saving || busy || preparing} />
