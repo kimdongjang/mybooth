@@ -1,3 +1,9 @@
+## 로고 글꼴 시안 3종 (2026-10-16)
+
+- 기본 이미지 도구로 파란 원형 로고에서 글꼴만 변경하도록 요청. 공통 프롬프트는 파란 원/흰 My/파란 Booth/투명 배경과 MyBooth 철자 유지. rounded는 둥근 획 끝·친근한 중굵기, geometric은 원형 카운터·직선 획 끝·기하학적 형태, condensed는 좁고 매우 굵은 수직 획을 지정했다. 특정 상용 폰트를 사용한 결과는 아니다.
+- public/images/mybooth-rounded-logo.png, mybooth-geometric-logo.png, mybooth-condensed-logo.png를 별도 자산으로 추가. 원본 및 텍스트 헤더 유지. 세 결과 시각 확인; System.Drawing으로 각각1930×815/1930×815/1933×814, 모서리 alpha=0 확인.
+- npm run build 및 git diff --check 통과. npm test/브라우저 UI 검증 미실행(선택용 정적 이미지 추가). 런타임/API/DB/큐 변경 없음.
+
 ## 텍스트 로고 복원 검증 (2026-10-15)
 
 - npm run build 및 git diff --check 통과. 이미지 도입 이전 코드와 비교하여 앱/인증 헤더의 ‘마이 부스’ 텍스트, 앱 상태 점, 기존 링크·글꼴 복원 확인. 이미지 전용 CSS 및 앱 셸 로고 경로 제거, 캐시 v50 확인.
