@@ -13,6 +13,7 @@ function normalizeProduct(product = {}) {
   const stockQty = Number(product.stockQty ?? product.stock ?? 0) || 0;
   return {
     id: String(product.id || productCode),
+    name: displayName(product),
     productCode: String(productCode),
     goodsType: product.goodsType || product.name || '새 굿즈',
     vtuberName: product.vtuberName || '',
