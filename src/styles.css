@@ -643,3 +643,15 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .auth-benefits { margin-top: 24px; gap: 16px; }
   .auth-card { padding: 24px; border-radius: 20px; }
 }
+
+.auth-card-heading { margin-bottom: 26px; text-align: center; }
+.auth-card-heading .brand-title { justify-content: center; }
+.auth-card-heading .brand-logo { width: 156px; }
+.auth-password-help { margin-top: 16px; text-align: center; font-size: 13px; color: #526078; }
+.auth-password-help a { text-decoration: underline; text-underline-offset: 4px; }
+.auth-password-help p { margin-top: 12px; padding: 12px; border-radius: 8px; background: #f1f5f9; line-height: 1.6; }
+.auth-switch { margin-top: 24px; padding-top: 22px; border-top: 1px solid #e2e8f0; text-align: center; }
+.auth-switch p { margin-bottom: 12px; font-size: 13px; color: #64748b; }
+.auth-switch-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 46px; padding: 10px 16px; border: 1px solid #bfdbfe; border-radius: 8px; color: #1d4ed8; background: #eff6ff; font-size: 14px; font-weight: 700; }
+.auth-switch-button:hover { background: #dbeafe; }
+.auth-card a[aria-disabled="true"] { opacity: .6; cursor: default; }

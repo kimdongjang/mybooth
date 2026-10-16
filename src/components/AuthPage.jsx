@@ -20,6 +20,7 @@ function AuthForm({ mode, onAuthenticate }) {
   const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showPasswordHelp, setShowPasswordHelp] = useState(false);
   const submit = async (event) => {
     event.preventDefault();
     if (submitting) return;
@@ -38,18 +39,26 @@ function AuthForm({ mode, onAuthenticate }) {
     }
   };
   return <form onSubmit={submit} className="auth-card">
-    <div className="mb-5 text-center"><h1 className="text-xl font-bold">{signup ? '회원가입' : '로그인'}</h1><p className="auth-card-description">{signup ? '새로운 부스의 시작을 함께해요.' : '나의 부스에 오신 것을 환영해요.'}</p></div>
+    <div className="auth-card-heading">
+      <a href="#/login" className="brand-title" aria-label="MyBooth 로그인"><img className="brand-logo" src="/images/mybooth-rounded-logo.png" alt="MyBooth" width="1930" height="815" /></a>
+      <h1 className="sr-only">{signup ? '회원가입' : '로그인'}</h1>
+      <p className="auth-card-description">{signup ? '새로운 부스의 시작을 함께해요.' : '행사별 상품과 판매 내역을 한곳에서 관리하세요.'}</p>
+    </div>
     <fieldset disabled={submitting} className="min-w-0">
-      <div className="mb-4 grid grid-cols-2 rounded-lg border border-line bg-white p-1 text-sm font-bold">
-        <a href="#/login" aria-current={!signup ? 'page' : undefined} aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }} className={`rounded-md py-2 text-center ${!signup ? 'bg-register text-white' : 'text-[#526078]'}`}>로그인</a>
-        <a href="#/signup" aria-current={signup ? 'page' : undefined} aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }} className={`rounded-md py-2 text-center ${signup ? 'bg-register text-white' : 'text-[#526078]'}`}>회원가입</a>
-      </div>
       <label className="mb-3 block text-sm font-bold">아이디<input name={`${mode}-username`} autoComplete="username" required autoFocus value={id} onChange={(e) => setId(e.target.value)} className="mt-1 w-full rounded border border-line p-1.5 text-[13px]" /></label>
       {signup && <label className="mb-3 block text-sm font-bold">이메일<input type="email" name="signup-email" autoComplete="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded border border-line p-1.5 text-[13px]" /></label>}
       <PasswordField id={`${mode}-password`} label="패스워드" signup={signup} value={password} onChange={setPassword} />
       {signup && <PasswordField id="signup-password-confirmation" label="패스워드 확인" signup value={confirmation} onChange={setConfirmation} />}
       {error && <div role="alert" className="mb-3 rounded bg-danger px-3 py-2 text-xs text-white">{error}</div>}
       <button disabled={submitting} className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white disabled:opacity-60">{submitting ? '처리 중…' : signup ? '회원가입하고 시작' : '로그인'}</button>
+      {!signup && <div className="auth-password-help">
+        <a href="#password-help" aria-expanded={showPasswordHelp} aria-controls="password-help" onClick={(event) => { event.preventDefault(); if (!submitting) setShowPasswordHelp(!showPasswordHelp); }} aria-disabled={submitting}>패스워드를 잊으셨나요?</a>
+        <p id="password-help" hidden={!showPasswordHelp} role="status">현재 패스워드 재설정 기능은 제공하지 않습니다.</p>
+      </div>}
+      <div className="auth-switch">
+        <p>{signup ? '이미 회원이신가요?' : '회원가입이 아직이라면'}</p>
+        <a href={signup ? '#/login' : '#/signup'} className="auth-switch-button" aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }}>{signup ? '로그인 하기' : '회원가입 하기'}</a>
+      </div>
     </fieldset>
   </form>;
 }
