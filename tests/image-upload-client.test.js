@@ -26,7 +26,7 @@ test('image uploads authenticate token requests and never upload after token fai
   response = { ok: false, status: 503, json: async () => ({ code: 'BLOB_NOT_CONFIGURED' }) };
   await assert.rejects(upload, /이미지 저장소가 연결되지 않았습니다/);
   response = { ok: false, status: 401, json: async () => ({}) };
-  await assert.rejects(upload, /다시 로그인/);
+  await assert.rejects(upload, /인증에 실패했습니다\. 다시 로그인/);
   response = { ok: true, status: 200, json: async () => { throw new Error('HTML'); } };
   await assert.rejects(upload, /업로드 권한/);
   assert.equal(uploads, 0);
