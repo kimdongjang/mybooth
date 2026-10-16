@@ -637,10 +637,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .header-identity { gap: 12px; }
   .header-brand .header-event-name { font-size: 17px; }
   .auth-main { max-width: 560px; grid-template-columns: minmax(0, 1fr); gap: 28px; padding: 32px 20px 40px; }
-  .auth-intro h2 { margin: 16px 0 12px; font-size: 30px; }
-  .auth-lead { font-size: 16px; }
-  .auth-desktop-break { display: none; }
-  .auth-benefits { margin-top: 24px; gap: 16px; }
+  .auth-intro { display: none; }
   .auth-card { padding: 24px; border-radius: 20px; }
 }
 
