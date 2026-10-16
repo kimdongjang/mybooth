@@ -5,10 +5,12 @@ import { Stat } from '../components/PosUI';
 import { won } from '../utils/productDisplay';
 import { filterSales } from '../utils/saleSearch';
 
-export default function SettlementPage({ readOnly, stats, sales, visibleSales, logCreatorFilter, setLogCreatorFilter, creatorSalesSummary, selectedCreatorSummary, exportCsv, clearSalesWithPassword, saleLineCreators, saleLineProductEntries, voidSale }) {
-  const [tab, setTab] = useState('summary');
-  const [search, setSearch] = useState({ method: 'all', product: '', creator: '' });
-  const filteredSales = filterSales(visibleSales, search, saleLineProductEntries, saleLineCreators);
+export default function SettlementPage({ initialTab = 'summary', initialProductId = '', initialProductSearch = '', readOnly, stats, sales, visibleSales, logCreatorFilter, setLogCreatorFilter, creatorSalesSummary, selectedCreatorSummary, exportCsv, clearSalesWithPassword, saleLineCreators, saleLineProductEntries, voidSale }) {
+  const [tab, setTab] = useState(initialTab);
+  const [search, setSearch] = useState({ method: 'all', product: initialProductSearch, creator: '' });
+  const [historyProductId, setHistoryProductId] = useState(initialProductId);
+  const changeSearch = next => { if (next.product !== search.product) setHistoryProductId(''); setSearch(next); };
+  const filteredSales = filterSales(visibleSales, { ...search, product: historyProductId ? '' : search.product, productId: historyProductId }, saleLineProductEntries, saleLineCreators);
   return <main className="page-content settlement-page">
       <div className="settlement-layout"><section className="catalog min-w-0">
       <PageIntro hideTitle title="정산" />
@@ -23,7 +25,7 @@ export default function SettlementPage({ readOnly, stats, sales, visibleSales, l
         </section>}
         {tab === 'history' && <section className="settlement-card">
           <h2 className="text-sm font-bold">실제 판매 내역</h2>
-          <SearchFilters label="판매 내역 검색" value={search} onChange={setSearch} onReset={() => setSearch({ method: 'all', product: '', creator: '' })} fields={[
+          <SearchFilters label="판매 내역 검색" value={search} onChange={changeSearch} onReset={() => { setHistoryProductId(''); setSearch({ method: 'all', product: '', creator: '' }); }} fields={[
             { key: 'method', label: '결제수단', options: [['all','전체'],['cash','현금'],['transfer','계좌이체']] },
             { key: 'product', label: '상품', placeholder: '상품·세트명 또는 코드' },
             { key: 'creator', label: '제작자', placeholder: '제작자명' },

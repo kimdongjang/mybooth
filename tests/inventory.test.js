@@ -92,6 +92,8 @@ test('legacy adoption preserves event IDs, separate products with matching names
     const first = (await invoke('listInventory')).body;
     assert.equal(first.inventory.length, 2);
     assert.ok(first.inventory.every(item => item.stock === 0 && item.allocations.length === 1));
+    assert.ok(first.inventory.every(item => item.totalReceived === 5 && item.remainingStock === 5 && item.totalEstimated));
+    assert.equal(new Set(first.inventory.map(item => item.productNumber)).size, 2);
     assert.deepEqual((await invoke(null, a)).body, before);
     assert.deepEqual((await invoke('listInventory')).body, first);
     const item = first.inventory.find(item => item.allocations[0].project_id === a);
@@ -126,5 +128,67 @@ test('failed transfer rolls back the event, warehouse and receipt together; vers
     assert.equal((await invoke('saveInventory', null, { product: { ...latest, stock: 0, price: 0 } })).status, 200);
     assert.equal((await invoke('saveInventory', null, { product: { name: 'bad', stock: 1.5, price: 0 } })).status, 400);
     assert.equal((await invoke('saveInventory', null, { product: { name: 'bad', stock: 1, price: -1 } })).status, 400);
+  } finally { await db.close(); }
+});
+
+test('account numbering, cumulative receipts, genre and event sales summaries survive moves, losses, voids and snapshots', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const event = (await invoke('createProject', null, { name: '판매 행사' })).body.project.id;
+    const created = await invoke('saveInventory', null, { product: { name: '장르 상품', genre: '동방', stock: 10 } });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    let item = created.body.inventory[0];
+    assert.match(item.productNumber, /^[A-Z]{3}_0001$/);
+    const number = item.productNumber;
+    assert.equal(item.genre, '동방');
+    assert.equal(item.totalReceived, 10);
+    assert.equal(item.totalEstimated, false);
+    const next = (await invoke('saveInventory', null, { product: { name: '다음 상품', stock: 0 } })).body.inventory.find(p => p.id !== item.id);
+    assert.equal(next.productNumber, number.slice(0,4) + '0002');
+    const other = (await invoke('saveInventory', null, { product: { name: '다른 계정', stock: 1 } }, 'b')).body.inventory[0];
+    assert.notEqual(other.productNumber.slice(0,3), number.slice(0,3));
+    const move = { inventoryId: item.id, projectId: event, qty: 6, direction: 'allocate', requestId: 'history-move' };
+    await invoke('transferInventory', null, move);
+    const product = (await invoke(null, event)).body.products[0];
+    const sale = { localOrderId: 'historical', method: 'cash', total: 0, cart: [{ type: 'product', id: product.id, name: product.name, unitPrice: 0, qty: 2 }] };
+    await invoke('finalizeSale', event, sale);
+    const readItem = async () => (await invoke('listInventory')).body.inventory.find(p => p.id === item.id);
+    item = await readItem();
+    assert.equal(item.remainingStock, 8);
+    assert.equal(item.totalReceived, 10);
+    assert.equal(item.history[0].soldQty, 2);
+    assert.equal(item.history[0].productId, product.id);
+    assert.equal(item.history[0].projectId, event);
+    let saved = await invoke('saveInventory', null, { product: { ...item, stock: 3, productNumber: 'FORGED' }, stockChangeType: 'loss' });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    item = await readItem();
+    assert.equal(item.totalReceived, 10);
+    assert.equal(item.remainingStock, 7);
+    assert.equal(item.productNumber, number);
+    saved = await invoke('saveInventory', null, { product: { ...item, stock: 5 }, stockChangeType: 'receipt' });
+    assert.equal(saved.status, 200);
+    item = await readItem();
+    assert.equal(item.totalReceived, 12);
+    assert.equal(item.remainingStock, 9);
+    await invoke('voidSale', event, { id: sale.localOrderId });
+    item = await readItem();
+    assert.equal(item.totalReceived, 12);
+    assert.equal(item.remainingStock, 11);
+    assert.equal(item.history[0].soldQty, 0);
+    await db.query('INSERT INTO pos_bundles VALUES ($1, $2, $3, 0, $4)', [event, 'set', '세트', JSON.stringify([{ productId: product.id, qty: 2 }])]);
+    assert.equal((await invoke('finalizeSale', event, { localOrderId: 'bundle-history', method: 'cash', total: 0, cart: [{ type: 'bundle', id: 'set', name: '세트', qty: 1, unitPrice: 0, subItems: [{ productId: product.id, qty: 2 }] }] })).status, 200);
+    await db.query('DELETE FROM pos_bundles WHERE project_id=$1', [event]);
+    item = await readItem();
+    assert.equal(item.history[0].soldQty, 2);
+    assert.equal(item.history[0].estimated, false);
+    assert.equal(item.totalReceived, 12);
+    assert.equal(item.remainingStock, 9);
+    assert.equal((await db.query('SELECT * FROM pos_inventory_adjustments WHERE admin_id=$1 AND inventory_id=$2', ['a', item.id])).rows.length, 3);
+    assert.equal((await invoke('saveInventory', null, { product: { ...item, stock: 4 }, stockChangeType: 'disposal' })).status, 200);
+    const latest = await readItem();
+    assert.equal((await invoke('saveInventory', null, { product: { ...latest, stock: 3 }, stockChangeType: 'receipt' })).status, 400);
+    await db.query('UPDATE pos_inventory_numbers SET last_number=9999 WHERE admin_id=$1', ['a']);
+    assert.equal((await invoke('saveInventory', null, { product: { name: '번호 초과', stock: 0 } })).status, 409);
+    assert.equal((await readItem()).productNumber, number);
   } finally { await db.close(); }
 });

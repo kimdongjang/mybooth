@@ -680,3 +680,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .inventory-creator{display:block;margin-top:4px;font-size:12px;color:#64748b;font-weight:400}
 .inventory-stock-summary{margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:14px}
 @media (max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){.inventory-management-table :is(th,td){padding:10px 6px;font-size:12px}.inventory-creator{font-size:11px}}
+
+.inventory-page .inventory-management-table{min-width:740px}.inventory-page .management-table-wrap{overflow-x:auto}
+.inventory-page .inventory-management-table th:first-child{width:24%}.inventory-page .inventory-management-table th:not(:first-child){width:15.2%}
+.inventory-history{padding:20px;border-top:1px solid #e2e8f0}.inventory-history h4{font-size:15px;font-weight:700;margin-bottom:8px}

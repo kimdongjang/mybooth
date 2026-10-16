@@ -9,7 +9,7 @@ const items = [
 ];
 const ids = search => filterInventory(items, search).map(item => item.id);
 
-test('inventory search combines creator, product metadata and warehouse status independently of event stock', () => {
+test('inventory search combines creator, product metadata and legacy warehouse fallback when no total remaining is supplied', () => {
   assert.deepEqual(ids({ product: ' 봄 ', creator: '작가', stock: 'available' }), ['p1']);
   assert.deepEqual(ids({ product: '봄', creator: ' B ', stock: 'empty' }), ['p2']);
   assert.deepEqual(ids({ product: ' alice ' }), ['p1']);
@@ -26,4 +26,8 @@ test('blank searches restore all inventory and missing creator can be searched w
   assert.deepEqual(ids({ creator: '미지정' }), ['p3']);
   assert.deepEqual(filterInventory([], { product: '봄' }), []);
   assert.deepEqual(items, before);
+  const linked = [{ name: '굿즈', productNumber: 'UEW_0001', genre: '동방', stock: 0, remainingStock: 3 }];
+  assert.equal(filterInventory(linked, { product: 'uew_0001', stock: 'available' }).length, 1);
+  assert.equal(filterInventory(linked, { product: '동방' }).length, 1);
+  assert.equal(filterInventory(linked, { stock: 'empty' }).length, 0);
 });
