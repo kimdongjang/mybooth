@@ -1,3 +1,9 @@
+## Google Analytics 검증 (2026-10-16)
+
+- npm run build 통과(기존 500kB 청크 경고). 원본/빌드 HTML 각각 외부 async 태그 1개, 측정 ID 일치 및 Node VM에서 js/config 초기화 큐 2개 확인 통과. git diff --check 통과.
+- 기본 태그/캐시만 변경하여 npm test 미실행. 실제 브라우저 외부 태그 로드·GA 실시간 수집·해시 화면별 측정 및 배포 CACHE-01, OFF-01/02 미실행. 배포 후 GA 실시간 보고서 방문 표시와 Google 요청 차단 시 앱 사용·오프라인 재로드를 확인한다. 운영 DB 사용 없음.
+- npm ci에서 기존 의존성 high 취약점 3건 보고. 이번 변경에서 패키지/잠금파일 변경 없음.
+
 ## 모바일 인증 소개 숨김 검증 (2026-10-16)
 
 - npm run build 및 git diff --check 통과(기존 500kB 청크 경고). CSS diff에서 compact 미디어 조건에만 auth-intro display:none 적용, 데스크톱 소개 및 카드 폼 유지 확인.
