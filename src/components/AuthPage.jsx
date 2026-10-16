@@ -57,5 +57,5 @@ function AuthForm({ mode, onAuthenticate }) {
 
 export default function AuthPage({ onAuthenticate, mode }) {
   // Remounting clears credentials, errors and password visibility on every switch.
-  return <div className="auth-shell min-h-full flex flex-col bg-paper text-ink"><header className="auth-header border-b border-line bg-white"><a href="#/login" className="display-font brand-title font-bold">마이 부스</a></header><main className="flex flex-1 items-center justify-center px-4 py-10"><AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} /></main></div>;
+  return <div className="auth-shell min-h-full flex flex-col bg-paper text-ink"><header className="auth-header border-b border-line bg-white"><a href="#/login" className="display-font brand-title font-bold"><img className="brand-logo" src="/images/mybooth-rounded-logo.png" alt="MyBooth" width="1930" height="815" /></a></header><main className="flex flex-1 items-center justify-center px-4 py-10"><AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} /></main></div>;
 }
