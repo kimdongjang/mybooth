@@ -656,7 +656,7 @@ export default function App() {
     {readOnly && !['inventory', 'account'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
     {loading || projectLoading || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
 
-    {screen === 'inventory' && <InventoryPage key={adminId} adminId={adminId} projects={projects} api={inventoryApi} />}
+    {screen === 'inventory' && <InventoryPage key={adminId} adminId={adminId} api={inventoryApi} />}
     {screen === 'account' && <main className="page-content"><h1>내 계정 정보</h1><section className="inventory-card"><p>아이디: <strong>{adminId}</strong></p><p>상품과 창고 재고는 이 계정에 저장되며, 행사별 판매·정산은 각각 보관됩니다.</p><button type="button" className="management-back" onClick={logout}>로그아웃</button></section></main>}
     {['projects', 'projectNew'].includes(screen) && <ProjectsPage creating={screen === 'projectNew'} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} navigate={setScreen} />}
 

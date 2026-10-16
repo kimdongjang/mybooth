@@ -3,77 +3,89 @@ import { PageIntro } from '../components/PageLayout';
 import { won } from '../utils/productDisplay';
 
 const empty = () => ({ id: crypto.randomUUID(), version: -1, name: '', goodsType: '', vtuberName: '', creatorName: '', price: 0, stock: 0 });
+const allocatedStock = item => (item.allocations || []).reduce((sum, row) => sum + Number(row.stock), 0);
 
-export default function InventoryPage({ adminId, projects, api, embedded = false }) {
+export default function InventoryPage({ adminId, api }) {
   const [items, setItems] = useState([]);
-  const [draft, setDraft] = useState(empty);
+  const [view, setView] = useState('list');
+  const [draft, setDraft] = useState(null);
+  const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [inventoryId, setInventoryId] = useState('');
-  const [projectId, setProjectId] = useState(projects[0]?.id || '');
-  const [qty, setQty] = useState('1');
   const pendingKey = `pos_inventory_transfer:${adminId}`;
   const pending = useRef(null);
   const [uncertain, setUncertain] = useState(false);
+  const backButton = useRef(null);
+  const pageCount = Math.max(1, Math.ceil(items.length / 10));
+  const currentPage = Math.min(page, pageCount);
   useEffect(() => {
     let active = true;
-    try { pending.current = JSON.parse(sessionStorage.getItem(pendingKey) || 'null'); setUncertain(Boolean(pending.current)); } catch { /* Ignore damaged browser metadata. */ }
+    try { pending.current = JSON.parse(sessionStorage.getItem(pendingKey) || 'null'); setUncertain(Boolean(pending.current)); } catch { /* Preserve damaged metadata for investigation. */ }
     api('listInventory').then(data => { if (active) { setItems(data.inventory); setReady(true); } }).catch(err => { if (active) setError(err.message); });
     return () => { active = false; };
   }, [adminId]);
+  useEffect(() => { if (view !== 'list') backButton.current?.focus(); }, [view]);
   const run = async task => {
     if (busy) return;
     setBusy(true); setError(''); setMessage('');
     try { await task(); } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
-  const transfer = async direction => {
-    const payload = pending.current || { projectId, inventoryId, qty: Number(qty), direction, requestId: crypto.randomUUID() };
-    pending.current = payload;
-    sessionStorage.setItem(pendingKey, JSON.stringify(payload));
-    setUncertain(true);
-    let data;
-    try { data = await api('transferInventory', payload); }
-    catch (err) {
-      if (err.status >= 400 && err.status < 500) { sessionStorage.removeItem(pendingKey); pending.current = null; setUncertain(false); }
-      throw err;
+  const open = item => { setDraft({ ...item }); setView('detail'); setError(''); setMessage(''); };
+  // Recover only requests started by the previous UI; no new transfers are offered.
+  const resolvePending = async () => {
+    try {
+      const data = await api('transferInventory', pending.current);
+      setItems(data.inventory); setMessage('이전 재고 이동 결과를 확인했습니다.');
+    } catch (err) {
+      if (!(err.status >= 400 && err.status < 500)) throw err;
+      setError(err.message);
     }
     sessionStorage.removeItem(pendingKey); pending.current = null; setUncertain(false);
-    setItems(data.inventory); setMessage('재고 이동을 완료했습니다.');
   };
-  const content = <>
-    {!embedded && <PageIntro title="재고 관리"><p>내 상품을 등록하고 행사별로 수량을 배정하세요. 창고와 모든 행사에 남은 재고를 함께 확인할 수 있습니다.</p></PageIntro>}
+  const save = async event => {
+    event.preventDefault();
+    await run(async () => {
+      const data = await api('saveInventory', { product: draft });
+      setItems(data.inventory); setDraft({ ...data.inventory.find(item => item.id === draft.id) });
+      setView('detail'); setMessage('상품과 재고를 저장했습니다.');
+    });
+  };
+  return <main className="page-content inventory-page">
+    <PageIntro title="재고 관리" />
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
     {!ready && !error && <p role="status">재고를 불러오는 중…</p>}
-    {error && <button type="button" className="management-back" disabled={busy} onClick={() => run(async () => { const data = await api('listInventory'); setItems(data.inventory); setReady(true); })}>목록 새로고침</button>}
-    <section className="inventory-card"><h2>{embedded ? '내 재고에서 가져오기' : '행사에 배정 · 창고로 회수'}</h2>
-      <p className="management-note">배정한 수량 안에서 오프라인 판매가 가능합니다. 회수 전 해당 행사의 모든 기기에서 주문을 동기화해주세요.</p>
-      <fieldset disabled={busy || !ready || uncertain} className="inventory-fields">
-        <label>상품<select value={inventoryId} onChange={e => setInventoryId(e.target.value)}><option value="">상품 선택</option>{items.map(item => <option key={item.id} value={item.id}>{item.name} · 창고 {item.stock}개</option>)}</select></label>
-        <label>행사<select value={projectId} onChange={e => setProjectId(e.target.value)}><option value="">행사 선택</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}{project.archivedAt ? ' (보관)' : ''}</option>)}</select></label>
-        <label>수량<input type="number" min="1" max="2147483647" step="1" value={qty} onChange={e => setQty(e.target.value)} /></label>
-      </fieldset>
-      <div className="inventory-actions"><button type="button" className="management-add" disabled={busy || !ready || uncertain || !inventoryId || !projectId || !Number.isInteger(Number(qty)) || Number(qty) < 1 || projects.find(p => p.id === projectId)?.archivedAt} onClick={() => run(() => transfer('allocate'))}>행사로 가져오기</button>
-        <button type="button" className="management-back" disabled={busy || !ready || uncertain || !inventoryId || !projectId || !Number.isInteger(Number(qty)) || Number(qty) < 1} onClick={() => run(() => transfer('return'))}>창고로 회수</button></div>
-      {uncertain && <div role="status"><p>완료 여부를 확인하려면 같은 요청으로 다시 확인해주세요. 수량은 한 번만 이동합니다.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(() => transfer())}>재고 이동 결과 확인</button></div>}
-    </section>
-    {!embedded && <>
-      <section className="inventory-card"><h2>{draft.version === -1 ? '상품 등록' : '상품 · 창고 재고 수정'}</h2><p className="management-note">창고 수량은 행사에 배정되지 않은 재고입니다. 상품 정보 수정은 앞으로 가져올 행사에 적용됩니다.</p>
-        <form onSubmit={event => { event.preventDefault(); run(async () => { const data = await api('saveInventory', { product: draft }); setItems(data.inventory); setDraft(empty()); setMessage('상품과 창고 재고를 저장했습니다.'); }); }}>
+    {error && <button type="button" className="management-back" disabled={busy} onClick={() => run(async () => {
+      const data = await api('listInventory'); setItems(data.inventory); setReady(true);
+      if (view === 'detail') { const latest = data.inventory.find(item => item.id === draft.id); if (latest) setDraft({ ...latest }); }
+    })}>최신 정보 다시 불러오기</button>}
+    {uncertain && <div role="status" className="inventory-card"><p>이전에 요청한 재고 이동의 완료 여부를 확인해주세요.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(resolvePending)}>이전 이동 결과 확인</button></div>}
+    <section className="product-management">
+      <header className="management-heading"><h2>{view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상품 재고 상세'}</h2>
+        {view === 'list' ? <button type="button" className="management-add" disabled={busy || uncertain || !ready} onClick={() => { setDraft(empty()); setView('new'); setError(''); setMessage(''); }}>+ 상품 추가</button>
+          : <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => { setView('list'); setDraft(null); setError(''); setMessage(''); }}>← 목록으로</button>}
+      </header>
+      {view === 'list' ? <>
+        <div className="management-summary"><span>등록 상품 <b>{items.length}개</b></span></div>
+        <div className="management-table-wrap"><table className="management-table inventory-management-table">
+          <caption className="sr-only">상품 이름, 판매가, 창고 재고, 전체 남은 재고</caption>
+          <thead><tr>{['상품 이름', '판매가', '창고 재고', '전체 재고'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <tbody>{items.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
+            <td><button type="button" className="management-name-link" aria-label={`${item.name} 재고 상세보기`} onClick={() => open(item)}>{item.name}</button><small className="inventory-creator">{item.creatorName || '제작자 미지정'}</small></td>
+            <td className="mono management-row-price">{won(item.price)}원</td><td className="mono">{won(item.stock)}개</td><td className="mono">{won(Number(item.stock) + allocatedStock(item))}개</td>
+          </tr>)}</tbody>
+        </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}</div>
+        <nav className="management-pagination" aria-label="재고 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
+      </> : draft && <article className="inventory-card">
+        <form onSubmit={save}>
           <fieldset disabled={busy || uncertain || !ready} className="inventory-fields">
             {[["name","상품 이름"],["goodsType","굿즈 종류"],["vtuberName","캐릭터"],["creatorName","제작자"],["price","판매가 (원)"],["stock","창고 재고 (개)"]].map(([key,label]) => <label key={key}>{label}<input required={['name','price','stock'].includes(key)} maxLength={200} type={['price','stock'].includes(key) ? 'number' : 'text'} min="0" max="2147483647" step="1" value={draft[key]} onChange={e => setDraft({ ...draft, [key]: ['price','stock'].includes(key) ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value })} /></label>)}
-          </fieldset><div className="inventory-actions"><button className="management-add" disabled={busy || uncertain || !ready}>저장</button><button type="button" className="management-back" onClick={() => setDraft(empty())}>새 상품 입력</button></div>
+          </fieldset><div className="inventory-actions"><button className="management-add" disabled={busy || uncertain || !ready}>{busy ? '저장 중…' : view === 'new' ? '상품 등록' : '수정'}</button></div>
         </form>
-      </section>
-      <section className="inventory-card"><h2>내 재고 목록</h2>{ready && !items.length && <p>등록된 상품이 없습니다. 상품을 등록하면 모든 행사에서 가져올 수 있습니다.</p>}
-        <div className="inventory-list">{items.map(item => {
-          const allocated = item.allocations.reduce((sum, row) => sum + Number(row.stock), 0);
-          return <article key={item.id} className="inventory-item"><h3>{item.name}</h3><p>{item.creatorName || '제작자 미지정'} · {won(item.price)}원</p><dl><div><dt>창고</dt><dd>{won(item.stock)}개</dd></div><div><dt>행사 배정 잔여</dt><dd>{won(allocated)}개</dd></div><div><dt>전체 남은 재고</dt><dd>{won(item.stock + allocated)}개</dd></div></dl><ul>{item.allocations.map(row => <li key={row.project_id}>{row.event_name}: {won(row.stock)}개</li>)}</ul><button type="button" className="management-back" disabled={busy || uncertain} onClick={() => { setDraft({ ...item }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>상품 · 창고 재고 수정</button></article>;
-        })}</div>
-      </section>
-    </>}
-  </>;
-  return embedded ? <div className="event-inventory-picker">{content}</div> : <main className="page-content inventory-page">{content}</main>;
+        {view === 'detail' && <div className="inventory-stock-summary"><p>행사 잔여 재고: <strong>{won(allocatedStock(draft))}개</strong></p><p>전체 남은 재고: <strong>{won(Number(draft.stock || 0) + allocatedStock(draft))}개</strong></p><p className="management-note">창고 재고는 행사에 배정되지 않은 수량입니다. 행사 잔여 재고는 읽기 전용입니다.</p></div>}
+      </article>}
+    </section>
+  </main>;
 }

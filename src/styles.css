@@ -667,3 +667,8 @@ input, select { background: white; color: #17243b; min-height: 36px; }
  .booth-navigation .nav-screens{gap:4px}.nav-event-group{display:contents}.nav-event-name{max-width:none;white-space:normal;overflow-wrap:anywhere}
  .booth-navigation .nav-event-group .release-project{order:1;border-left:0;border-top:1px solid #e2e8f0;margin-top:8px;padding-top:12px;border-radius:0}
 }
+
+.inventory-management-table th:first-child{width:40%}.inventory-management-table th:not(:first-child){width:20%}
+.inventory-creator{display:block;margin-top:4px;font-size:12px;color:#64748b;font-weight:400}
+.inventory-stock-summary{margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:14px}
+@media (max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){.inventory-management-table :is(th,td){padding:10px 6px;font-size:12px}.inventory-creator{font-size:11px}}
