@@ -65,6 +65,27 @@ test('custom product name survives catalog saves and stock edits while historica
   } finally { await db.close(); }
 });
 
+test('legacy initial stock correction persists across save and reload without changing remaining stock or sales', async () => {
+  const { db, id, invoke } = await fixture();
+  try {
+    await db.query('UPDATE pos_products SET initial_stock_qty = 0 WHERE project_id = $1 AND id = $2', [id, 'p1']);
+    const before = (await invoke(null, id)).body;
+    const product = before.products.find(product => product.id === 'p1');
+    assert.equal(product.initialStockQty, 0);
+    assert.equal(product.stockQty, 7);
+    const soldQty = 2; // fixture sale: one bundle containing two p1 units
+    const initialStockQty = soldQty + product.stockQty;
+    const saved = await invoke('replaceProducts', id, { products: before.products.map(item => item.id === product.id ? { ...item, initialStockQty } : item) });
+    assert.equal(saved.status, 200);
+    const reloaded = (await invoke(null, id)).body;
+    const updated = reloaded.products.find(item => item.id === product.id);
+    assert.equal(updated.initialStockQty, 9);
+    assert.equal(updated.stockQty, 7);
+    assert.deepEqual(reloaded.sales, before.sales);
+    assert.equal((await db.query('SELECT initial_stock_qty FROM pos_products WHERE project_id = $1 AND id = $2', [id, product.id])).rows[0].initial_stock_qty, 9);
+  } finally { await db.close(); }
+});
+
 test('password-protected archive/unarchive locks every mutation and preserves settlement', async () => {
   const { db, id, invoke, statements } = await fixture();
   try {

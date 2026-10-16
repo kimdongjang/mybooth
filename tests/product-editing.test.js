@@ -11,6 +11,7 @@ async function harness(filename = 'components/ProductEditForm.jsx') {
   const mocks = {
     react: { useState: initial => { const i = index++; if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial; return [states[i], next => { states[i] = typeof next === 'function' ? next(states[i]) : next; }]; }, useRef: initial => refs[refIndex++] ||= { current: initial }, useId: () => 'test-input' },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
+    './ActionIcon': { default: 'ActionIcon' },
     './PosUI': { Input: 'Input', Quantity: 'Quantity' }, './ProductValueInput': { default: 'ProductValueInput' },
   };
   const cache = new Map();
@@ -153,4 +154,45 @@ test('initial inventory rejects invalid quantities, stale stock and underselling
   assert.equal(fresh.calls[0].initialStockQty, 0);
   assert.equal(fresh.calls[0].stockQty, 0);
   assert.equal(fresh.calls[0].stock, 0);
+});
+
+test('legacy zero initial stock displays sold plus remaining and explicitly saves the correction', async () => {
+  const h = await harness('components/ProductStockForm.jsx');
+  h.props.product = { ...h.props.product, initialStockQty: 0, stockQty: 100, stock: 100 };
+  const render = () => h.render({ soldQty: 3, onSave: h.props.persistProducts });
+  assert.equal(nodes(render()).find(node => node.type === 'Input').props.value, '103');
+  assert.equal(nodes(render()).find(node => node.type === 'Quantity' && node.props.label === '남은 재고').props.value, 100);
+  assert.equal(h.calls.length, 0);
+  await render().props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(h.calls[0])), { initialStockQty: 103, stockQty: 100, stock: 100 });
+  await render().props.onSubmit({ preventDefault() {} });
+  assert.equal(h.calls.length, 1);
+});
+
+test('legacy zero initial stock can still be explicitly reset to zero remaining', async () => {
+  const h = await harness('components/ProductStockForm.jsx');
+  h.props.product = { ...h.props.product, initialStockQty: 0, stockQty: 100, stock: 100 };
+  const render = () => h.render({ soldQty: 0, onSave: h.props.persistProducts });
+  nodes(render()).find(node => node.type === 'Input').props.onChange('0');
+  assert.equal(nodes(render()).find(node => node.type === 'Quantity' && node.props.label === '남은 재고').props.value, 0);
+  await render().props.onSubmit({ preventDefault() {} });
+  assert.equal(h.calls[0].stockQty, 0);
+});
+
+test('image controls handle selection cancellation, selected file, removal and busy state', async () => {
+  const h = await harness('components/ProductImageControls.jsx');
+  const selected = [];
+  let removed = 0;
+  const render = (extra = {}) => h.render({ hasImage: true, onSelect: file => selected.push(file), onRemove: () => { removed++; }, ...extra });
+  const fileInput = () => nodes(render()).find(node => node.type === 'input');
+  fileInput().props.onChange({ target: { files: [], value: '' } });
+  assert.equal(selected.length, 0);
+  const event = { target: { files: [{ name: '상품.png' }], value: 'selected' } };
+  fileInput().props.onChange(event);
+  assert.equal(selected[0].name, '상품.png');
+  assert.equal(event.target.value, '');
+  nodes(render()).find(node => node.props?.className === 'product-image-remove').props.onClick();
+  assert.equal(removed, 1);
+  assert.equal(nodes(render({ hasImage: false })).some(node => node.props?.className === 'product-image-remove'), false);
+  assert.ok(nodes(render({ busy: true, disabled: true })).filter(node => node.type === 'button').every(node => node.props.disabled));
 });

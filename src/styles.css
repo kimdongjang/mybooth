@@ -361,8 +361,6 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .management-image { min-width: 0; }
 .management-image .product-image { width: 100%; max-width: none; border: 1px solid #edf0f4; border-radius: 8px; }
 .management-image p { font-size: 11px; color: #94a3b8; line-height: 1.5; margin-top: 8px; }
-.management-upload { display: block; margin-top: 10px; color: #2563eb; font-size: 12px; }
-.management-upload input { display: block; width: 100%; min-width: 0; margin-top: 6px; font-size: 11px; }
 .management-details { min-width: 0; display: grid; gap: 18px; }
 .management-details fieldset { min-width: 0; border: 0; padding: 0; }
 .management-details legend { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: #334155; }
@@ -599,3 +597,13 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .product-stock-grid { gap: 8px; }
   .product-stock-grid .management-field input, .product-stock-grid .management-quantity { padding: 8px 6px; font-size: 16px; }
 }
+
+.product-image-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 12px; }
+.product-image-controls button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 8px; border: 1px solid; border-radius: 8px; font-size: 13px; font-weight: 600; }
+.product-image-controls svg { flex-shrink: 0; }
+.product-image-controls .product-image-select { color: #1d4ed8; border-color: #bfdbfe; background: #eff6ff; }
+.product-image-select:hover { background: #dbeafe; }
+.product-image-controls .product-image-remove { color: #b91c1c; border-color: #fecaca; background: #fff; }
+.product-image-remove:hover { background: #fef2f2; }
+.product-image-controls button:disabled { opacity: .5; cursor: wait; }
+.product-image-controls button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
