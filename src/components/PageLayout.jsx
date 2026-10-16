@@ -58,7 +58,6 @@ export function AppHeader({ page, navigate, project, saving, sync, onReleaseProj
       <div className="nav-screens">{[['inventory', '재고 관리'], ['account', '내 계정']].map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key ? 'page' : undefined} className={page === key ? 'is-active' : ''} onClick={follow(key)}><Icon name={key === 'inventory' ? 'settings' : 'account'} />{label}</a>)}</div>
     </nav>
     <div className="header-secondary">
-      <div className="header-event-mobile">{eventContext}</div>
       {showEventNav && <nav className="event-subnav" aria-label="행사 메뉴">{[['pos', '상품 판매'], ['settings', '상품 관리'], ['log', '정산'], ['project', '행사 관리']].map(([key, label]) => <button key={key} type="button" data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={page === key ? 'page' : undefined} onClick={() => go(key)}>{label}</button>)}</nav>}
     </div>
   </header>;
