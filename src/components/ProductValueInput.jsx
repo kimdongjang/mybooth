@@ -11,9 +11,9 @@ export default function ProductValueInput({ label, field, products, value, onCha
   const expanded = open && !disabled && options.length > 0;
   const show = () => { if (!disabled) { setOpen(true); setFilter(false); setActive(-1); } };
   const choose = option => { onChange(option); setOpen(false); setActive(-1); };
-  return <div className="management-field product-value-input" onMouseEnter={show} onMouseLeave={event => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) { setOpen(false); setActive(-1); } }}>
+  return <div className="management-field product-value-input" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) { setOpen(false); setActive(-1); } }}>
     <label htmlFor={id}>{label}</label>
-    <Input id={id} role="combobox" autoComplete="off" aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? `${id}-options` : undefined} aria-activedescendant={expanded && active >= 0 ? `${id}-option-${active}` : undefined} required={required} disabled={disabled} value={value} onFocus={show} onClick={show} onChange={next => { onChange(next); setFilter(true); setOpen(true); setActive(-1); }} onKeyDown={event => {
+    <Input id={id} role="combobox" autoComplete="off" aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? `${id}-options` : undefined} aria-activedescendant={expanded && active >= 0 ? `${id}-option-${active}` : undefined} required={required} disabled={disabled} value={value} onFocus={show} onChange={next => { onChange(next); setFilter(true); setOpen(true); setActive(-1); }} onKeyDown={event => {
       if (event.key === 'Escape') { setOpen(false); setActive(-1); }
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault(); setOpen(true);
