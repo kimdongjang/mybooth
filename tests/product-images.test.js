@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 test('upload tokens require authentication, owned product and matching path; restrict size/type', async () => {
-  const context = vm.createContext({ encodeURIComponent });
+  const env = { BLOB_READ_WRITE_TOKEN: 'test-only' };
+  const context = vm.createContext({ encodeURIComponent, process: { env } });
   const source = await readFile(new URL('../api/product-images.js', import.meta.url), 'utf8');
   const module = new vm.SourceTextModule(source, { context });
   let tokenOptions;
@@ -31,9 +32,13 @@ test('upload tokens require authentication, owned product and matching path; res
   await module.evaluate();
   const invoke = async (authenticated, pathname = 'products/project-a/P001/image.png') => {
     const res = { headersSent: false, status(code) { this.code = code; return this; }, json() { this.headersSent = true; return this; } };
-    await module.namespace.default({ method: 'POST', authenticated, body: { pathname, clientPayload: JSON.stringify({ projectId: 'project-a', productId: 'P001' }) } }, res);
+    await module.namespace.default({ method: 'POST', authenticated, body: { type: 'blob.generate-client-token', pathname, clientPayload: JSON.stringify({ projectId: 'project-a', productId: 'P001' }) } }, res);
     return res.code;
   };
+  delete env.BLOB_READ_WRITE_TOKEN;
+  assert.equal(await invoke(false), 401);
+  assert.equal(await invoke(true), 503);
+  env.BLOB_READ_WRITE_TOKEN = 'test-only';
   assert.equal(await invoke(false), 401);
   assert.equal(await invoke(true), 200);
   assert.deepEqual(Array.from(tokenOptions.allowedContentTypes), ['image/jpeg', 'image/png', 'image/webp']);
