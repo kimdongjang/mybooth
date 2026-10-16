@@ -7,7 +7,10 @@ interface SyncStatusProps {
 
 export function SyncStatus({ sync }: SyncStatusProps) {
   const statusText = sync.online ? '온라인' : '오프라인';
-  const queueText = sync.isSyncing ? '동기화 중…' : sync.lastError ? `동기화 확인 필요 (${sync.pendingCount}건)` : sync.pendingCount > 0 ? `동기화 대기 ${sync.pendingCount}건` : '동기화 완료';
+  const syncedDate = sync.lastSyncedAt ? new Date(sync.lastSyncedAt) : null;
+  const validDate = syncedDate && Number.isFinite(syncedDate.getTime()) ? syncedDate : null;
+  const timeText = validDate ? `동기화 ${validDate.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : '동기화 기록 없음';
+  const queueText = sync.isSyncing ? '동기화 중…' : sync.lastError ? `동기화 확인 필요 (${sync.pendingCount}건)` : sync.pendingCount > 0 ? `동기화 대기 ${sync.pendingCount}건` : timeText;
 
   return (
     <button
@@ -16,7 +19,7 @@ export function SyncStatus({ sync }: SyncStatusProps) {
       disabled={sync.isSyncing || !sync.online}
       onClick={sync.syncNow}
       aria-label={`${statusText}, ${queueText}. 지금 동기화`}
-      title={sync.lastError || '지금 동기화'}
+      title={sync.lastError || (validDate ? `마지막 주문 동기화: ${validDate.toLocaleString('ko-KR')}. 지금 동기화` : '아직 동기화한 주문이 없습니다. 지금 동기화')}
       aria-busy={sync.isSyncing}
     >
       <span className="sync-copy" aria-live="polite">
