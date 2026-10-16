@@ -688,6 +688,43 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .inventory-stock-summary{margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:14px}
 @media (max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){.inventory-management-table :is(th,td){padding:10px 6px;font-size:12px}.inventory-creator{font-size:11px}}
 
-.inventory-page .inventory-management-table{min-width:740px}.inventory-page .management-table-wrap{overflow-x:auto}
-.inventory-page .inventory-management-table th:first-child{width:24%}.inventory-page .inventory-management-table th:not(:first-child){width:15.2%}
+/* Compact four-column inventory list; keep all columns visible on narrow phones. */
+.inventory-page .inventory-management-table{min-width:0; width:100%}
+.inventory-page .inventory-management-table th:nth-child(1){width:34%}
+.inventory-page .inventory-management-table th:nth-child(2){width:26%}
+.inventory-page .inventory-management-table th:nth-child(3){width:19%;text-align:right}
+.inventory-page .inventory-management-table th:nth-child(4){width:21%}
+.inventory-page .inventory-management-table :is(th,td){padding:8px 8px;line-height:1.4}
+.inventory-page .inventory-management-table td:nth-child(3){text-align:right}
+.inventory-cell-main,.inventory-cell-sub{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inventory-management-table .management-name-link{min-height:0;padding-block:3px;line-height:1.4}
+.inventory-cell-sub{margin-top:2px;color:#64748b;font-size:11px;font-weight:400}
+.inventory-estimate-note{font-size:11px;color:#64748b;margin-top:6px}
+.inventory-search{padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}
+.inventory-search-bar{display:flex;gap:8px}
+.inventory-query{flex:1;min-width:0}
+.inventory-query input{width:100%;min-width:0;height:42px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;background:white;font-size:14px}
+.inventory-search-button{display:flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;padding:0 14px;border-radius:8px;background:#2563eb;color:white;font-size:14px;font-weight:600;box-shadow:0 2px 4px #2563eb26}
+.inventory-search-button:hover{background:#1d4ed8}
+.inventory-search :is(input,select,button,summary):focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+.inventory-filters summary{display:flex;align-items:center;gap:6px;cursor:pointer;width:fit-content;min-height:40px;font-size:12px;color:#475569;list-style:none}
+.inventory-filters summary::before{content:'＋';color:#2563eb}
+.inventory-filters[open] summary::before{content:'−'}
+.inventory-filter-count{border-radius:99px;padding:0 6px;background:#dbeafe;color:#1d4ed8}
+.inventory-filter-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding-bottom:8px}
+.inventory-filter-grid label{min-width:0;font-size:12px;color:#475569}
+.inventory-filter-grid label span{display:block;margin-bottom:4px}
+.inventory-filter-grid select{width:100%;min-width:0;min-height:40px;border:1px solid #cbd5e1;border-radius:8px;background:white;padding:6px;font-size:14px}
+.inventory-search-reset{font-size:12px;color:#2563eb;min-height:36px;text-decoration:underline}
+@media(max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){
+ .inventory-page .inventory-management-table :is(th,td){padding:7px 4px;font-size:11px}
+ .inventory-page .inventory-management-table th{font-size:10px}
+ .inventory-cell-sub{font-size:10px}
+ .inventory-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .inventory-query input{font-size:16px;height:44px}
+ .inventory-query input::placeholder{font-size:11px}
+ .inventory-search-button{min-height:44px;padding:0 12px}
+ .inventory-filter-grid select{min-height:44px;font-size:16px}
+ .inventory-filters summary{min-height:44px}
+}
 .inventory-history{padding:20px;border-top:1px solid #e2e8f0}.inventory-history h4{font-size:15px;font-weight:700;margin-bottom:8px}

@@ -140,6 +140,8 @@ test('account numbering, cumulative receipts, genre and event sales summaries su
     let item = created.body.inventory[0];
     assert.match(item.productNumber, /^[A-Z]{3}_0001$/);
     const number = item.productNumber;
+    const registeredAt = item.createdAt;
+    assert.ok(Number.isFinite(Date.parse(registeredAt)));
     assert.equal(item.genre, '동방');
     assert.equal(item.totalReceived, 10);
     assert.equal(item.totalEstimated, false);
@@ -159,12 +161,13 @@ test('account numbering, cumulative receipts, genre and event sales summaries su
     assert.equal(item.history[0].soldQty, 2);
     assert.equal(item.history[0].productId, product.id);
     assert.equal(item.history[0].projectId, event);
-    let saved = await invoke('saveInventory', null, { product: { ...item, stock: 3, productNumber: 'FORGED' }, stockChangeType: 'loss' });
+    let saved = await invoke('saveInventory', null, { product: { ...item, stock: 3, productNumber: 'FORGED', createdAt: '2000-01-01T00:00:00.000Z' }, stockChangeType: 'loss' });
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
     item = await readItem();
     assert.equal(item.totalReceived, 10);
     assert.equal(item.remainingStock, 7);
     assert.equal(item.productNumber, number);
+    assert.equal(item.createdAt, registeredAt);
     saved = await invoke('saveInventory', null, { product: { ...item, stock: 5 }, stockChangeType: 'receipt' });
     assert.equal(saved.status, 200);
     item = await readItem();
