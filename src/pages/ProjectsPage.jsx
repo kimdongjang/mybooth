@@ -3,12 +3,12 @@ import { PageIntro } from '../components/PageLayout';
 
 export default function ProjectsPage({ creating, projects, selectedProject, newProjectName, setNewProjectName, onCreateProject, onSelectProject, navigate }) {
   return <main className="page-content projects-page"><div className="page-body event-picker">
-    <PageIntro title={creating ? '새 행사 추가' : '행사 선택'} actions={<button type="button" className="event-button event-button-primary" onClick={() => navigate(creating ? 'projects' : 'projectNew')}>{creating ? '행사 목록으로' : '새 행사 추가'}</button>} />
+    <PageIntro title={creating ? '새 행사 추가' : '행사 선택'} actions={<button data-guide={creating ? undefined : "event"} type="button" className="event-button event-button-primary" onClick={() => navigate(creating ? 'projects' : 'projectNew')}>{creating ? '행사 목록으로' : '새 행사 추가'}</button>} />
     <div>
       {creating ? <form onSubmit={onCreateProject} className="event-panel event-create-form">
         <h2>새 행사 만들기</h2><p>상품·세트·판매 내역이 없는 행사로 시작합니다.</p>
         <label className="event-field">행사 이름<Input required maxLength={100} value={newProjectName} onChange={setNewProjectName} placeholder="예: 10월 서코행사" /></label>
-        <button className="event-button event-button-primary">행사 만들고 판매 화면 열기</button>
+        <button data-guide="eventSave" className="event-button event-button-primary">행사 만들고 판매 화면 열기</button>
       </form> : <div className="project-grid grid gap-3 md:grid-cols-2">
         {projects.map(project => <button key={project.id} type="button" onClick={() => onSelectProject(project)} className="event-picker-card" aria-pressed={selectedProject?.id === project.id}>
           <span className="event-status" data-archived={Boolean(project.archivedAt)}>{project.archivedAt ? '보관 중' : '진행 중'}</span>

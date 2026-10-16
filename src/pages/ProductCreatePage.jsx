@@ -97,7 +97,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
               <label className="management-field"><span>초기 재고 (개)</span><Input required type="number" min="0" step="1" value={draft.stockQty} onChange={value => change('stockQty', value)} /></label>
             </div></fieldset>
             {imageError && <p role="alert" className="management-note">{imageError}</p>}
-            <button type="submit" className="management-add">{saving || busy ? '저장 중…' : registered ? (image ? '이미지 다시 저장' : '등록 완료') : '상품 저장'}</button>
+            <button data-guide="save" type="submit" className="management-add">{saving || busy ? '저장 중…' : registered ? (image ? '이미지 다시 저장' : '등록 완료') : '상품 저장'}</button>
             </div>
           </div>
         </article>

@@ -592,3 +592,16 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .product-value-options button:hover, .product-value-options [aria-selected="true"] button { background: #eff6ff; color: #1d4ed8; }
 .product-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .product-edit-actions [role="status"] { font-size: 13px; color: #475569; }
+
+/* Contextual first-use guidance; no backdrop, so the actual controls stay usable. */
+.guide-launcher { position: fixed; right: 16px; bottom: 16px; z-index: 70; padding: 9px 14px; border: 1px solid #b8cef6; border-radius: 24px; background: white; color: #2457a7; font-size: 13px; box-shadow: 0 3px 14px #1e3a5f18; }
+.getting-started { position: fixed; z-index: 80; box-sizing: border-box; padding: 18px; border: 1px solid #b5cffb; border-radius: 16px; background: #fff; color: #20344f; box-shadow: 0 10px 36px #1c427b26; max-height: calc(100dvh - 24px); overflow-y: auto; font-size: 14px; }
+.getting-started::before { content: ''; display: block; width: 30px; height: 4px; border-radius: 8px; background: #3478ef; margin-bottom: 12px; }
+.guide-eyebrow { font-size: 12px; color: #536d91; margin-bottom: 10px; }
+.guide-eyebrow span { display: block; color: #64748b; margin-top: 3px; }
+.getting-started strong { font-size: 17px; }
+.getting-started p { margin: 9px 0 16px; line-height: 1.65; }
+.guide-actions { display: flex; justify-content: space-between; gap: 10px; }
+.guide-actions button { min-height: 40px; padding: 7px 10px; border-radius: 8px; font-size: 13px; color: #53647a; }
+.guide-actions button:last-child { background: #2563eb; color: white; }
+.guide-actions button:focus-visible, .guide-launcher:focus-visible { outline: 3px solid #93bafa; outline-offset: 3px; }

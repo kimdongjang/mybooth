@@ -1,3 +1,4 @@
+import GettingStarted from './components/GettingStarted';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import SalesPage from './pages/SalesPage';
@@ -620,6 +621,7 @@ export default function App() {
 
   if (!token) return routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />;
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
+    <GettingStarted key={token} scope={`${screen}:${selectedProject?.id || ""}`} />
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onLogout={logout} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
     {readOnly && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
