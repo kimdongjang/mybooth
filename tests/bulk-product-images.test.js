@@ -12,7 +12,7 @@ async function harness({ save = true, failAttach = false } = {}) {
     '../components/ActionIcon': { default: () => null },
     react: { useRef: value => { const i = refIndex++; return refs[i] ||= { current: value }; }, useState: value => { const i = stateIndex++; if (!(i in state)) state[i] = value; return [state[i], next => { state[i] = next; }]; } },
     'react/jsx-runtime': { Fragment: 'fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    '@vercel/blob/client': { upload: async (path, image, options) => { uploaded.push({ path, image, options }); return { url: `https://test.public.blob.vercel-storage.com/${path}` }; } },
+    '../utils/uploadProductImage': { uploadProductImage: async (projectId, productId, image) => { uploaded.push({ projectId, productId, image }); return { url: `https://test.public.blob.vercel-storage.com/${productId}` }; } },
     '../utils/productImage': { PRODUCT_IMAGE_HELP: 'test', prepareProductImage: async file => { if (file.name === 'bad.txt') throw new Error('invalid image'); return { type: 'image/webp' }; } },
   };
   const source = await readFile(new URL('../src/pages/BulkProductImages.jsx', import.meta.url), 'utf8');
@@ -46,7 +46,7 @@ test('bulk creates valid products once, preserves existing products and skips in
   for (const p of products) { assert.equal(p.price, 0); assert.equal(p.stock, 0); assert.equal(p.stockQty, 0); assert.equal(p.initialStockQty, 0); assert.equal(p.id, p.productCode); }
   assert.equal(h.uploaded.length, 2);
   assert.equal(h.attached.length, 2);
-  assert.equal(JSON.parse(h.uploaded[0].options.clientPayload).projectId, 'project-1');
+  assert.equal(h.uploaded[0].projectId, 'project-1');
   assert.equal(h.state[2].length, 1);
 });
 

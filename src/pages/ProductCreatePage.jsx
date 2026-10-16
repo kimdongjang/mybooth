@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { upload } from '@vercel/blob/client';
+import { uploadProductImage } from '../utils/uploadProductImage';
 import { PageIntro } from '../components/PageLayout';
 import { Input, ProductImage } from '../components/PosUI';
 import { prepareProductImage } from '../utils/productImage';
@@ -57,12 +57,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
         setRegistered(true);
       }
       if (image) {
-        const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[image.type];
-        const blob = uploadedImage.current?.file === image ? uploadedImage.current : await upload(`products/${encodeURIComponent(projectId)}/${encodeURIComponent(draft.id)}/${crypto.randomUUID()}.${extension}`, image, {
-          access: 'public', handleUploadUrl: '/api/product-images', contentType: image.type,
-          clientPayload: JSON.stringify({ projectId, productId: draft.id }),
-          headers: { Authorization: `Bearer ${sessionStorage.getItem('pos_admin_token')}` },
-        });
+        const blob = uploadedImage.current?.file === image ? uploadedImage.current : await uploadProductImage(projectId, draft.id, image);
         uploadedImage.current = { file: image, url: blob.url };
         const attached = await imageChange.current(draft.id, blob.url);
         if (!attached) throw new Error('이미지 연결에 실패했습니다.');

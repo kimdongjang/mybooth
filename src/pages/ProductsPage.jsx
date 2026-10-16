@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { upload } from '@vercel/blob/client';
+import { uploadProductImage } from '../utils/uploadProductImage';
 import { managementQuantities, managementBundleStock } from '../utils/managementQuantities';
 import { won, creatorNameOf, productNameFromFields, productNameWithoutCreator } from '../utils/productDisplay';
 import { Input, Panel, Quantity, StockAdjustment, ProductImage } from '../components/PosUI';
@@ -9,7 +9,6 @@ import BulkProductImages from './BulkProductImages';
 import BundleCreatePage from './BundleCreatePage';
 import ActionIcon from '../components/ActionIcon';
 import { PageIntro, PageTabs } from '../components/PageLayout';
-const AUTH_TOKEN_KEY = 'pos_admin_token';
 
 export default function ProductsPage({ readOnly, projectId, settingsTab, setSettingsTab, saving, mutate, products, bundles, sales, persistProducts, persistBundles, creatingBundle, creatingProduct, navigate, bundleName, setBundleName, bundleRows, setBundleRows, bundlePrice, setBundlePrice, addBundleToSettings, backupOrdersJson, backupOrdersCsv }) {
   const [selectedBundleId, setSelectedBundleId] = useState(null);
@@ -80,12 +79,7 @@ function ProductSettingsPanel({ onAdd, readOnly, projectId, saving, onImageChang
     setUploadingId(product.id);
     try {
       const thumbnail = await prepareProductImage(file);
-      const extension = thumbnail.type === 'image/webp' ? 'webp' : 'png';
-      const blob = await upload(`products/${encodeURIComponent(projectId)}/${encodeURIComponent(product.id)}/${crypto.randomUUID()}.${extension}`, thumbnail, {
-        access: 'public', handleUploadUrl: '/api/product-images', contentType: thumbnail.type,
-        clientPayload: JSON.stringify({ projectId, productId: product.id }),
-        headers: { Authorization: `Bearer ${sessionStorage.getItem(AUTH_TOKEN_KEY)}` },
-      });
+      const blob = await uploadProductImage(projectId, product.id, thumbnail);
       await onImageChange(product.id, blob.url);
     } catch (error) { alert(error.message || '이미지 등록에 실패했습니다.'); }
     finally { setUploadingId(null); }
