@@ -37,8 +37,8 @@ function AuthForm({ mode, onAuthenticate }) {
       setSubmitting(false);
     }
   };
-  return <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-line bg-white p-8 shadow-xl shadow-blue-900/5">
-    <div className="mb-5 text-center"><h1 className="text-xl font-bold">{signup ? '회원가입' : '로그인'}</h1><p className="mt-2 text-sm text-[#526078]">관리자별 행사 프로젝트를 관리합니다.</p></div>
+  return <form onSubmit={submit} className="auth-card">
+    <div className="mb-5 text-center"><h1 className="text-xl font-bold">{signup ? '회원가입' : '로그인'}</h1><p className="auth-card-description">{signup ? '새로운 부스의 시작을 함께해요.' : '나의 부스에 오신 것을 환영해요.'}</p></div>
     <fieldset disabled={submitting} className="min-w-0">
       <div className="mb-4 grid grid-cols-2 rounded-lg border border-line bg-white p-1 text-sm font-bold">
         <a href="#/login" aria-current={!signup ? 'page' : undefined} aria-disabled={submitting} onClick={(event) => { if (submitting) event.preventDefault(); }} className={`rounded-md py-2 text-center ${!signup ? 'bg-register text-white' : 'text-[#526078]'}`}>로그인</a>
@@ -51,11 +51,22 @@ function AuthForm({ mode, onAuthenticate }) {
       {error && <div role="alert" className="mb-3 rounded bg-danger px-3 py-2 text-xs text-white">{error}</div>}
       <button disabled={submitting} className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white disabled:opacity-60">{submitting ? '처리 중…' : signup ? '회원가입하고 시작' : '로그인'}</button>
     </fieldset>
-    <p className="mt-4 text-xs leading-5 text-[#64748b]">행사별 상품과 판매 내역을 한곳에서 관리하세요.</p>
   </form>;
 }
 
 export default function AuthPage({ onAuthenticate, mode }) {
   // Remounting clears credentials, errors and password visibility on every switch.
-  return <div className="auth-shell min-h-full flex flex-col bg-paper text-ink"><header className="auth-header border-b border-line bg-white"><a href="#/login" className="display-font brand-title font-bold"><img className="brand-logo" src="/images/mybooth-rounded-logo.png" alt="MyBooth" width="1930" height="815" /></a></header><main className="flex flex-1 items-center justify-center px-4 py-10"><AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} /></main></div>;
+  return <div className="auth-shell min-h-full flex flex-col bg-paper text-ink"><header className="auth-header border-b border-line bg-white"><a href="#/login" className="display-font brand-title font-bold"><img className="brand-logo" src="/images/mybooth-rounded-logo.png" alt="MyBooth" width="1930" height="815" /></a></header><main className="auth-main">
+    <section className="auth-intro" aria-labelledby="auth-intro-title">
+      <span className="auth-eyebrow">여러 작가가 함께하는 굿즈 부스</span>
+      <h2 id="auth-intro-title">함께 만드는 부스,<br /><span>판매 관리는 가볍게.</span></h2>
+      <p className="auth-lead">행사별 상품과 판매 내역을<br className="auth-desktop-break" /> 한곳에서 관리하세요.</p>
+      <div className="auth-benefits">
+        <div><span className="auth-benefit-icon"><Icon name="log" /></span><div><h3>같이 팔고, 작가별로 확인하세요.</h3><p>함께 운영하는 부스도 제작자별 판매금액을 한눈에.</p></div></div>
+        <div><span className="auth-benefit-icon"><Icon name="settings" /></span><div><h3>첫 행사도 차근차근.</h3><p>이미지로 상품을 구분하고, 세트 판매와 남은 재고까지.</p></div></div>
+        <div><span className="auth-benefit-icon"><Icon name="project" /></span><div><h3>다음 행사에도, MyBooth.</h3><p>행사마다 상품과 판매 기록을 나누어 관리하세요.</p></div></div>
+      </div>
+    </section>
+    <AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} />
+  </main></div>;
 }
