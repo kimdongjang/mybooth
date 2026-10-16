@@ -1,7 +1,7 @@
 import Icon from './Icon';
 import { useEffect, useRef, useState } from 'react';
 import { SyncStatus } from './SyncStatus';
-import { pagePaths, projectPages } from '../hooks/usePageRoute';
+import { pagePaths } from '../hooks/usePageRoute';
 
 export function PageIntro({ title, children, actions }) {
   return <div className="page-intro">
@@ -27,7 +27,7 @@ export function PageTabs({ id, label, tabs, selected, onSelect }) {
   </div>;
 }
 
-export function AppHeader({ page, navigate, project, adminId, saving, sync, onLogout }) {
+export function AppHeader({ page, navigate, project, adminId, saving, sync, onReleaseProject, releaseDisabled }) {
   const [open, setOpen] = useState(false);
   const toggle = useRef(null);
   useEffect(() => { setOpen(false); }, [page, project?.id]);
@@ -41,18 +41,19 @@ export function AppHeader({ page, navigate, project, adminId, saving, sync, onLo
   }, [open]);
   const go = (key) => { setOpen(false); navigate(key); };
   return <header className="app-header border-b border-line bg-white text-ink">
-    <div className="header-brand flex min-w-0 items-center gap-2.5"><div className="header-identity"><a href="#/sales" className="display-font brand-title font-bold" onClick={(event) => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); go('pos'); }}><img className="brand-logo" src="/images/mybooth-rounded-logo.png" alt="MyBooth" width="1930" height="815" /></a><p className="header-event-name" title={project?.name || adminId}>{page === 'inventory' ? '내 재고' : page === 'account' ? '내 계정' : project?.name || '행사 선택'}</p></div>{saving && <span className="shrink-0 text-xs text-register">저장 중...</span>}</div>
+    <div className="header-brand flex min-w-0 items-center gap-2.5"><div className="header-identity"><a href="#/sales" className="display-font brand-title font-bold" onClick={(event) => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); go('pos'); }}><img className="brand-logo" src="/images/mybooth-rounded-logo.png" alt="MyBooth" width="1930" height="815" /></a><p className="header-event-name" title={project?.name || adminId}>{project?.name || (page === 'inventory' ? '내 재고' : page === 'account' ? '내 계정' : '행사 선택')}</p></div>{saving && <span className="shrink-0 text-xs text-register">저장 중...</span>}</div>
     <div className="header-controls">{project && <div className="mobile-sync"><SyncStatus sync={sync} /></div>}<button data-guide={project && page === "pos" && !open ? "menu" : undefined} ref={toggle} type="button" className={`menu-toggle ${open ? 'is-open' : ''}`} aria-label={open ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={open} aria-controls="booth-navigation" onClick={() => setOpen(!open)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>
     <nav id="booth-navigation" aria-label="부스 메뉴" className={`booth-navigation ${open ? 'is-open' : ''}`}>
       {project && <div className="navigation-sync"><SyncStatus sync={sync} /></div>}
       <div className="nav-screens">{[['projects', '행사'], ['inventory', '재고 관리'], ['account', '내 계정']].map(([key, label]) => {
         const active = key === 'projects' ? !['inventory', 'account'].includes(page) : page === key;
-        return <a key={key} href={`#${pagePaths[key]}`} aria-current={active ? 'page' : undefined} className={active ? 'is-active' : ''} onClick={event => {
+        const destination = key === 'projects' && project ? 'pos' : key;
+        return <a key={key} href={`#${pagePaths[destination]}`} aria-current={active ? 'page' : undefined} className={active ? 'is-active' : ''} onClick={event => {
           if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
-          event.preventDefault(); go(key);
+          event.preventDefault(); go(destination);
         }}><Icon name={key === 'inventory' ? 'settings' : key === 'account' ? 'account' : 'project'} />{label}</a>;
       })}</div>
-      <div className="nav-utilities"><button onClick={() => { setOpen(false); onLogout(); }}><Icon name="logout" />로그아웃</button></div>
+      <div className="nav-utilities">{project && <button className="release-project" disabled={releaseDisabled} onClick={() => { setOpen(false); onReleaseProject(); }}><Icon name="logout" />행사 선택 해제</button>}</div>
     </nav>
   </header>;
 }

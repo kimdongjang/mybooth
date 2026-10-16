@@ -60,6 +60,7 @@ export default function App() {
     }
     if (loading || projectLoading) return;
     if (['login', 'signup'].includes(routePage)) { setScreen(selectedProject ? 'pos' : 'projects', true); return; }
+    if (selectedProject && ['projects', 'projectNew'].includes(routePage)) { setScreen('pos', true); return; }
     if (!selectedProject && !['projects', 'projectNew', 'restore', 'inventory', 'account'].includes(routePage)) setScreen('projects', true);
     else if (!Object.values(pagePaths).some((path) => window.location.hash === `#${path}`)) setScreen(screen, true);
     document.title = `${pageTitles[screen]} · 마이 부스`;
@@ -260,7 +261,20 @@ export default function App() {
     return { ...data, project: data.projects?.find(item => item.id === data.project?.id) || data.project };
   };
 
+  const releaseProject = () => {
+    if (saving || loading || projectLoading) return;
+    activeScope.current = `${token || ''}:`;
+    sessionStorage.removeItem(SELECTED_PROJECT_KEY);
+    setSelectedProject(null);
+    setReadyScope(null);
+    setDataRevision(null);
+    setProducts([]); setBundles([]); setSales([]); setCart([]);
+    setError('');
+    setScreen('projects');
+  };
+
   const selectProject = (project) => {
+    if (selectedProject && selectedProject.id !== project.id) { setScreen('pos'); return; }
     if (project.id === selectedProject?.id) { setScreen('pos'); return; }
     setError('');
     setSelectedProject(project);
@@ -636,8 +650,8 @@ export default function App() {
   if (!token) return routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />;
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
     <GettingStarted key={token} scope={`${screen}:${selectedProject?.id || ""}`} />
-    <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onLogout={logout} />
-    {!['inventory', 'account'].includes(screen) && <nav className="event-subnav" aria-label="행사 메뉴">{[['projects','행사 선택'], ['pos','상품 판매'], ['settings','상품 관리'], ['log','정산'], ['project','행사 관리']].map(([key,label]) => <button key={key} type="button" data-guide={key === 'settings' && screen === 'pos' ? 'manage' : undefined} disabled={!selectedProject && key !== 'projects'} aria-current={screen === key ? 'page' : undefined} onClick={() => setScreen(key)}>{label}</button>)}</nav>}
+    <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onReleaseProject={releaseProject} releaseDisabled={saving || loading || projectLoading} />
+    {selectedProject && !['projects', 'projectNew', 'inventory', 'account'].includes(screen) && <nav className="event-subnav" aria-label="행사 메뉴">{[['pos','상품 판매'], ['settings','상품 관리'], ['log','정산'], ['project','행사 관리']].map(([key,label]) => <button key={key} type="button" data-guide={key === 'settings' && screen === 'pos' ? 'manage' : undefined} aria-current={screen === key ? 'page' : undefined} onClick={() => setScreen(key)}>{label}</button>)}</nav>}
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
     {readOnly && !['inventory', 'account'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
     {loading || projectLoading || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
