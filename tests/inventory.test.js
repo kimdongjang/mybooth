@@ -311,11 +311,15 @@ test('inventory deletion after active-event product and bundle sales preserves s
     await invoke('replaceBundles', event, { bundles: [{ id: 'delete-bundle', name: '세트', price: 0, items: [{ productId: product.id, qty: 2 }] }] });
     const bundleSale = { localOrderId: 'delete-bundle-sale', method: 'transfer', total: 0, cart: [{ type: 'bundle', id: 'delete-bundle', name: '세트', qty: 1, unitPrice: 0, subItems: [{ productId: product.id, qty: 2 }] }] };
     assert.equal((await invoke('finalizeSale', event, bundleSale)).status, 200);
-    const before = (await invoke(null, event)).body;
+    let before = (await invoke(null, event)).body;
     const request = { inventoryId: original.id, version: 1 };
     assert.equal((await invoke('removeInventory', null, request, 'b')).status, 404);
     assert.equal((await invoke('removeInventory', null, { inventoryId: null, version: 1 })).status, 400);
     assert.equal((await invoke('removeInventory', null, { ...request, version: 0 })).status, 409);
+    assert.equal((await invoke('removeInventory', null, request)).status, 409);
+    assert.deepEqual((await invoke(null, event)).body, before);
+    assert.equal((await invoke('removeProduct', event, { productId: product.id })).status, 200);
+    before = (await invoke(null, event)).body;
     assert.equal((await invoke('removeInventory', null, request)).status, 200);
     assert.equal((await invoke('removeInventory', null, request)).status, 200);
     assert.equal((await invoke('listInventory')).body.inventory.length, 0);
@@ -328,14 +332,14 @@ test('inventory deletion after active-event product and bundle sales preserves s
     assert.equal(removed.product_number, original.productNumber);
     assert.equal((await invoke('saveInventory', null, { product: { ...original, version: 2, stock: 5 } })).status, 409);
     assert.equal((await invoke('transferInventory', null, { projectId: otherEvent, inventoryId: original.id, qty: 1, direction: 'allocate', requestId: 'removed-new-allocation' })).status, 409);
-    // Already allocated event stock can still be sold and pending sale commands remain valid.
-    assert.equal((await invoke('finalizeSale', event, { ...sale, localOrderId: 'after-inventory-delete' })).status, 200);
+    // Removal from the event stops new sales; historical cancellations remain valid.
+    assert.equal((await invoke('finalizeSale', event, { ...sale, localOrderId: 'after-inventory-delete' })).status, 500);
     assert.equal((await invoke('voidSale', event, { id: sale.localOrderId })).status, 200);
     assert.equal((await invoke('voidSale', event, { id: bundleSale.localOrderId })).status, 200);
-    assert.equal((await invoke('voidSale', event, { id: 'after-inventory-delete' })).status, 200);
-    assert.equal((await invoke(null, event)).body.products[0].stockQty, 6);
+    assert.equal((await db.query('SELECT stock_qty FROM pos_products WHERE project_id=$1 AND id=$2', [event,product.id])).rows[0].stock_qty, 6);
     assert.equal((await invoke('transferInventory', null, { projectId: event, inventoryId: original.id, qty: 6, direction: 'return', requestId: 'removed-return' })).status, 200);
     assert.equal((await invoke('listInventory')).body.inventory.length, 0);
+    assert.equal((await invoke(null, event)).body.products.length, 0);
     assert.equal((await db.query('SELECT stock FROM pos_inventory WHERE admin_id=$1 AND id=$2', ['a',original.id])).rows[0].stock, 10);
     assert.equal((await db.query('SELECT * FROM pos_inventory_links WHERE inventory_id=$1',[original.id])).rows.length, 1);
   } finally { await db.close(); }
@@ -362,5 +366,34 @@ test('unlinked inventory deletion rolls back failures and rejects stale edits wi
     assert.equal((await invoke('saveInventory', null, { product: { ...original, version: -1 } })).status, 409);
     assert.equal((await invoke('listInventory')).body.inventory.length, 0);
     assert.equal((await db.query('SELECT * FROM pos_inventory WHERE admin_id=$1',['a'])).rows.length, 1);
+  } finally { await db.close(); }
+});
+
+
+test('inventory deletion rechecks all active events, includes zero stock, and excludes archived or removed registrations', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const item = (await invoke('saveInventory', null, { product: { id: 'multi-event', version: -1, name: '공통 원본', stock: 4 } })).body.inventory[0];
+    const events = [];
+    for (let index = 0; index < 4; index++) {
+      const event = (await invoke('createProject', null, { name: `행사${index}` })).body.project.id;
+      await invoke('transferInventory', null, { projectId: event, inventoryId: item.id, qty: 1, direction: 'allocate', requestId: `allocation-${index}` });
+      events.push({ id: event, productId: (await invoke(null, event)).body.products[0].id });
+    }
+    await db.query('UPDATE pos_projects SET archived_at=NOW() WHERE id=$1', [events[2].id]);
+    await invoke('removeProduct', events[3].id, { productId: events[3].productId });
+    await invoke('finalizeSale', events[0].id, { localOrderId: 'sold-out', method: 'cash', total: 0, cart: [{ type: 'product', id: events[0].productId, name: '원본', unitPrice: 0, qty: 1 }] });
+    const state = (await invoke('listInventory')).body.inventory[0];
+    assert.equal(state.allocations.filter(row => row.is_active && !row.archived_at).length, 2);
+    assert.equal(state.allocations.find(row => row.project_id === events[0].id).stock, 0);
+    const request = { inventoryId: item.id, version: 4 };
+    assert.equal((await invoke('removeInventory', null, request)).status, 409);
+    await invoke('removeProduct', events[1].id, { productId: events[1].productId });
+    assert.equal((await invoke('removeInventory', null, request)).status, 409);
+    await invoke('removeProduct', events[0].id, { productId: events[0].productId });
+    assert.equal((await invoke('removeInventory', null, request)).status, 200);
+    assert.equal((await invoke(null, events[2].id)).body.products.length, 1);
+    assert.equal((await invoke('voidSale', events[0].id, { id: 'sold-out' })).status, 200);
+    assert.equal((await invoke(null, events[0].id)).body.products.length, 0);
   } finally { await db.close(); }
 });

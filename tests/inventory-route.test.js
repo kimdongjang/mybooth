@@ -29,6 +29,9 @@ test('inventory deep links, direct refresh, back/forward and event history queri
   usePageRoute()[1]('/settlement?projectId=owned-event&productId=linked-id&productName=goods');
   assert.equal(usePageRoute()[0], 'log');
   assert.equal(usePageRoute()[2], window.location.hash);
+  usePageRoute()[1]('/products?projectId=another-event&productId=event-product');
+  assert.equal(usePageRoute()[0], 'settings');
+  assert.equal(usePageRoute()[2], '#/products?projectId=another-event&productId=event-product');
   window.location.hash = '#/inventory/a'; listeners.get('popstate')();
   assert.equal(usePageRoute()[0], 'inventory');
   assert.equal(usePageRoute()[2], '#/inventory/a');

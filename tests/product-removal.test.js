@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 const nodes = node => !node || typeof node !== 'object' ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
-async function harness(inventoryId = 'warehouse/원본') {
+async function harness(inventoryId = 'warehouse/원본', initialProductId = '') {
   const state = [], refs = [], calls = [];
   let index = 0, refIndex = 0, confirmed = true, result = true;
   const context = vm.createContext({ confirm: () => confirmed });
@@ -24,9 +24,9 @@ async function harness(inventoryId = 'warehouse/원본') {
   });
   await module.evaluate();
   const product = { id: 'event-product', inventoryId, name: '행사 상품', price: 0, stock: 2 };
-  const props = { products: [product], bundles: [], sales: [], onRemove: async id => { calls.push(id); return result; } };
+  const props = { initialProductId, products: [product], bundles: [], sales: [], onRemove: async id => { calls.push(id); return result; } };
   const render = () => { index = refIndex = 0; return module.namespace.ProductSettingsPanel(props); };
-  nodes(render()).find(node => node.props?.['aria-label'] === '행사 상품 상세보기').props.onClick();
+  if (!initialProductId) nodes(render()).find(node => node.props?.['aria-label'] === '행사 상품 상세보기').props.onClick();
   const remove = () => nodes(render()).find(node => node.props?.['aria-label'] === '행사 상품 상품 제거').props.onClick();
   return { render, remove, calls, props, confirm: value => { confirmed = value; }, result: value => { result = value; } };
 }
@@ -49,4 +49,11 @@ test('legacy products without inventory links offer the inventory list instead o
   const notice = nodes(h.render()).find(node => node.props?.['aria-label'] === '상품 제거 완료');
   assert.equal(nodes(notice).find(node => node.type === 'a').props.href, '#/inventory');
   assert.equal(nodes(notice).some(node => node.props?.children === '재고관리에서 확인하기'), false);
+});
+
+
+test('inventory event shortcut opens the requested event product detail immediately', async () => {
+  const h = await harness('warehouse-original', 'event-product');
+  assert.ok(nodes(h.render()).find(node => node.props?.['aria-label'] === '행사 상품 상품 제거'));
+  assert.equal(h.calls.length, 0);
 });

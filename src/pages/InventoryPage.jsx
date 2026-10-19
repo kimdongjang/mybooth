@@ -57,6 +57,7 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
     else { setView('detail'); const item = items.find(item => item.id === id); setDraft(item ? { ...item } : null); }
   }, [routeHash, ready]);
   const savedItem = draft && items.find(item => item.id === draft.id);
+  const blockingAllocations = (savedItem?.allocations || []).filter(row => row.is_active !== false && !row.archived_at);
   const stockDelta = draft ? Number(draft.stock) - Number(savedItem?.stock || 0) : 0;
   const open = (event, item) => {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
@@ -84,10 +85,19 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
     });
   };
   const remove = () => {
-    if (busy || uncertain || !ready || !draft) return;
-    if (!confirm(`“${draft.name}” 상품을 재고 관리에서 삭제할까요?\n창고 수량과 연결된 행사 상품·남은 수량·판매 이력은 보존됩니다. 기존 행사의 판매와 판매 취소는 계속 가능하며, 새 행사 배정과 재고 수정은 중단됩니다.\n실물 재고를 폐기하거나 행사 상품을 함께 삭제하는 작업은 아닙니다.`)) return;
+    if (busy || uncertain || !ready || !draft || blockingAllocations.length) return;
+    if (!confirm(`“${draft.name}” 상품을 재고 관리에서 삭제할까요?\n창고 수량과 연결된 행사 상품·남은 수량·판매 이력은 보존됩니다. 과거 판매·정산 이력과 판매 취소에 필요한 데이터는 보존되며, 새 행사 배정과 재고 수정은 중단됩니다.\n실물 재고를 폐기하거나 행사 상품을 함께 삭제하는 작업은 아닙니다.`)) return;
     return run(async () => {
-      const data = await api('removeInventory', { inventoryId: draft.id, version: draft.version });
+      let data;
+      try { data = await api('removeInventory', { inventoryId: draft.id, version: draft.version }); }
+      catch (err) {
+        if (err.status === 409) {
+          const latest = await api('listInventory');
+          setItems(latest.inventory);
+          setDraft(latest.inventory.find(item => item.id === draft.id) || null);
+        }
+        throw err;
+      }
       setItems(data.inventory); setDraft(null); setView('list');
       setDeletionNotice(`“${draft.name}” 상품을 재고 관리에서 삭제했습니다. 연결된 행사 상품·수량과 판매 이력은 유지됩니다.`);
       navigate('inventory');
@@ -142,7 +152,20 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
         {filteredItems.some(item => item.totalEstimated) && <p className="inventory-estimate-note">* 총재고는 기존 자료 기준입니다.</p>}
         <nav className="management-pagination" aria-label="재고 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
       </> : draft && <article className="management-product">
-        <div className="management-product-header"><h3>{draft.name || '새 상품'}</h3><span className="mono inventory-creator">{draft.productNumber || '저장 시 상품 번호 발급'}</span>{view === 'detail' && <button type="button" className="management-delete" disabled={busy || uncertain || !ready} onClick={remove}>상품 삭제</button>}</div>
+        <div className="management-product-header"><h3>{draft.name || '새 상품'}</h3><span className="mono inventory-creator">{draft.productNumber || '저장 시 상품 번호 발급'}</span>{view === 'detail' && <button type="button" className="management-delete" disabled={busy || uncertain || !ready || blockingAllocations.length > 0} onClick={remove}>상품 삭제</button>}</div>
+        {view === 'detail' && blockingAllocations.length > 0 && <section className="inventory-card" aria-label="재고 삭제 전 행사 상품 제거 안내">
+          <h4>행사에서 상품을 먼저 제거해주세요</h4>
+          <p>활성 행사에 등록된 상품이 있어 재고를 삭제할 수 없습니다. 각 행사에서 상품을 제거한 뒤 돌아와 최신 정보를 불러와주세요. 남은 수량이 0개여도 행사에 등록되어 있으면 먼저 제거해야 합니다.</p>
+          <ul>{blockingAllocations.map(row => <li key={`${row.project_id}:${row.product_id}`}>
+            <a className="event-text-link" href={`#/products?projectId=${encodeURIComponent(row.project_id)}&productId=${encodeURIComponent(row.product_id)}`} onClick={event => {
+              if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+              event.preventDefault(); navigate(`/products?projectId=${encodeURIComponent(row.project_id)}&productId=${encodeURIComponent(row.product_id)}`);
+            }}>{row.event_name} · 상품 관리 →</a> <span>남은 수량 {won(row.stock)}개</span>
+          </li>)}</ul>
+          <button type="button" className="management-back" disabled={busy} onClick={() => run(async () => {
+            const data = await api('listInventory'); setItems(data.inventory); setDraft(data.inventory.find(item => item.id === draft.id) || null);
+          })}>최신 정보 불러오기</button>
+        </section>}
         <div className="management-product-body">
           <div className="management-image"><ProductImage imageUrl={draft.imageUrl} name={draft.name} /></div>
           <form onSubmit={save} className="management-details">

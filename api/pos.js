@@ -198,7 +198,7 @@ async function inventoryState(adminId) {
     ON CONFLICT DO NOTHING`;
   const items = await sql`SELECT * FROM pos_inventory WHERE admin_id = ${adminId} ORDER BY id`;
   const allocations = await sql`SELECT l.inventory_id, l.product_id, p.project_id,
-    e.name AS event_name, COALESCE(p.stock_qty,p.stock) AS stock, COALESCE(p.initial_stock_qty,p.stock_qty,p.stock) AS initial_stock
+    e.name AS event_name, e.archived_at, COALESCE(p.is_active, TRUE) AS is_active, COALESCE(p.stock_qty,p.stock) AS stock, COALESCE(p.initial_stock_qty,p.stock_qty,p.stock) AS initial_stock
     FROM pos_inventory_links l JOIN pos_products p ON p.project_id=l.project_id AND p.id=l.product_id
     JOIN pos_projects e ON e.id=l.project_id AND e.admin_id=l.admin_id
     WHERE l.admin_id = ${adminId} ORDER BY p.project_id, p.id`;
@@ -265,6 +265,14 @@ async function inventoryAction(adminId, action, payload) {
     if (!row) throw Object.assign(new Error('재고를 찾을 수 없습니다.'), { status: 404 });
     if (row.product.removedAt) return inventoryState(adminId);
     if (row.version !== payload.version) throw Object.assign(new Error('재고가 변경되었습니다. 최신 정보를 불러와주세요.'), { status: 409 });
+    if (action === 'removeInventory') {
+      const active = await sql`SELECT p.id FROM pos_inventory_links l
+        JOIN pos_products p ON p.project_id=l.project_id AND p.id=l.product_id
+        JOIN pos_projects e ON e.id=l.project_id AND e.admin_id=l.admin_id
+        WHERE l.admin_id=${adminId} AND l.inventory_id=${payload.inventoryId}
+          AND e.archived_at IS NULL AND COALESCE(p.is_active, TRUE)=TRUE`;
+      if (active.rows.length) throw Object.assign(new Error('활성 행사에 등록된 상품이 있습니다. 아래 행사 상품 관리에서 먼저 제거한 뒤 재고 상품을 삭제해주세요.'), { status: 409 });
+    }
     const product = { ...row.product, removedAt: new Date().toISOString() };
     await sql`UPDATE pos_inventory SET product=${JSON.stringify(product)}::jsonb,version=version+1 WHERE admin_id=${adminId} AND id=${payload.inventoryId}`;
     return inventoryState(adminId);
@@ -363,7 +371,7 @@ async function inventoryAction(adminId, action, payload) {
     const stock = Number(product.stock_qty ?? product.stock) + delta;
     const initial = Number(product.initial_stock_qty ?? product.stock_qty ?? product.stock) + delta;
     inventoryInteger(stock); inventoryInteger(initial); inventoryInteger(item.stock - delta);
-    await sql`UPDATE pos_products SET stock=${stock},stock_qty=${stock},initial_stock_qty=${initial},is_active=TRUE,updated_at=NOW() WHERE project_id=${projectId} AND id=${link.product_id}`;
+    await sql`UPDATE pos_products SET stock=${stock},stock_qty=${stock},initial_stock_qty=${initial},is_active=${direction === 'allocate' ? true : product.is_active !== false},updated_at=NOW() WHERE project_id=${projectId} AND id=${link.product_id}`;
     await sql`UPDATE pos_inventory SET stock=stock-${delta},version=version+1 WHERE admin_id=${adminId} AND id=${inventoryId}`;
     await sql`INSERT INTO pos_inventory_transfers VALUES (${adminId},${requestId},${JSON.stringify(request)}::jsonb)`;
     await sql`UPDATE pos_projects SET updated_at=NOW() WHERE id=${projectId}`;

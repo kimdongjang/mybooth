@@ -19,7 +19,7 @@ export function usePageRoute() {
     return () => { window.removeEventListener('hashchange', update); window.removeEventListener('popstate', update); };
   }, []);
   const navigate = useCallback((next, replace = false) => {
-    const path = pagePaths[next] || (typeof next === 'string' && (next.startsWith('/inventory/') || next.startsWith('/settlement?')) ? next : pagePaths.pos);
+    const path = pagePaths[next] || (typeof next === 'string' && (next.startsWith('/inventory/') || next.startsWith('/settlement?') || next.startsWith('/products?')) ? next : pagePaths.pos);
     const hash = `#${path}`;
     if (replace) window.history.replaceState(null, '', hash);
     else if (window.location.hash !== hash) window.history.pushState(null, '', hash);
