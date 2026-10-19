@@ -241,6 +241,7 @@ async function inventoryState(adminId) {
       productNumber = await nextInventoryNumber(adminId);
       await sql`UPDATE pos_inventory SET product_number=${productNumber} WHERE admin_id=${adminId} AND id=${row.id}`;
     }
+    if (row.product.removedAt) continue;
     inventory.push({ ...row.product, id: row.id, productNumber, genre: row.product.genre || '', stock: row.stock, version: row.version,
       totalReceived, totalEstimated, remainingStock: remaining, history, allocations: linked });
   }
@@ -258,6 +259,16 @@ async function inventoryAction(adminId, action, payload) {
   // also take their existing project lock. Serialization failures return 409.
   await sql`SELECT id FROM pos_admins WHERE id = ${adminId} FOR UPDATE`;
   await sql`SELECT id FROM pos_projects WHERE admin_id=${adminId} ORDER BY id FOR UPDATE`;
+  if (action === 'removeInventory') {
+    if (typeof payload.inventoryId !== 'string' || !payload.inventoryId || payload.inventoryId.length > 500) throw Object.assign(new Error('올바른 재고 상품을 선택해주세요.'), { status: 400 });
+    const row = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${payload.inventoryId}`).rows[0];
+    if (!row) throw Object.assign(new Error('재고를 찾을 수 없습니다.'), { status: 404 });
+    if (row.product.removedAt) return inventoryState(adminId);
+    if (row.version !== payload.version) throw Object.assign(new Error('재고가 변경되었습니다. 최신 정보를 불러와주세요.'), { status: 409 });
+    const product = { ...row.product, removedAt: new Date().toISOString() };
+    await sql`UPDATE pos_inventory SET product=${JSON.stringify(product)}::jsonb,version=version+1 WHERE admin_id=${adminId} AND id=${payload.inventoryId}`;
+    return inventoryState(adminId);
+  }
   if (action === 'createEventProduct') {
     const { projectId, product: input = {} } = payload;
     if (typeof projectId !== 'string' || !projectId) throw Object.assign(new Error('행사를 선택해주세요.'), { status: 400 });
@@ -299,6 +310,7 @@ async function inventoryAction(adminId, action, payload) {
     if (input.id != null && (typeof input.id !== 'string' || !input.id || input.id.length > 500)) throw Object.assign(new Error('잘못된 상품 ID입니다.'), { status: 400 });
     const id = input.id || uid();
     const old = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${id}`).rows[0];
+    if (old?.product?.removedAt) throw Object.assign(new Error('제거된 재고는 수정할 수 없습니다.'), { status: 409 });
     if (input.id && (old ? old.version !== input.version : input.version !== -1)) throw Object.assign(new Error('재고가 변경되었습니다. 새로고침해주세요.'), { status: 409 });
     const price = submittedPrice ?? old?.product?.price ?? 0;
     if (input.genre != null && (typeof input.genre !== 'string' || input.genre.length > 200)) throw Object.assign(new Error('장르는 200자 이내로 입력해주세요.'), { status: 400 });
@@ -337,6 +349,7 @@ async function inventoryAction(adminId, action, payload) {
     if (event.archived_at && direction === 'allocate') throw Object.assign(new Error('보관된 행사에는 배정할 수 없습니다.'), { status: 409 });
     const item = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${inventoryId} FOR UPDATE`).rows[0];
     if (!item) throw Object.assign(new Error('재고를 찾을 수 없습니다.'), { status: 404 });
+    if (item.product.removedAt && direction === 'allocate') throw Object.assign(new Error('제거된 재고는 새로 배정할 수 없습니다.'), { status: 409 });
     let link = (await sql`SELECT product_id FROM pos_inventory_links WHERE project_id=${projectId} AND admin_id=${adminId} AND inventory_id=${inventoryId}`).rows[0];
     if (!link) {
       if (direction === 'return') throw Object.assign(new Error('배정된 상품이 없습니다.'), { status: 400 });
@@ -596,7 +609,7 @@ async function handler(req, res) {
     if (req.method === 'GET') return res.status(200).json(projectId ? await readState(admin.id, projectId) : await listProjects(admin.id));
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     const { action, payload = {} } = req.body || {};
-    if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
+    if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct', 'removeInventory'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
     if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
     if (action === 'restoreProject') {
       if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });

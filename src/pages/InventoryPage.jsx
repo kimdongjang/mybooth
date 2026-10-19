@@ -28,6 +28,7 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [deletionNotice, setDeletionNotice] = useState('');
   const pendingKey = `pos_inventory_transfer:${adminId}`;
   const pending = useRef(null);
   const [uncertain, setUncertain] = useState(false);
@@ -82,14 +83,25 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
       setView('detail'); setMessage('상품과 재고를 저장했습니다.');
     });
   };
+  const remove = () => {
+    if (busy || uncertain || !ready || !draft) return;
+    if (!confirm(`“${draft.name}” 상품을 재고 관리에서 삭제할까요?\n창고 수량과 연결된 행사 상품·남은 수량·판매 이력은 보존됩니다. 기존 행사의 판매와 판매 취소는 계속 가능하며, 새 행사 배정과 재고 수정은 중단됩니다.\n실물 재고를 폐기하거나 행사 상품을 함께 삭제하는 작업은 아닙니다.`)) return;
+    return run(async () => {
+      const data = await api('removeInventory', { inventoryId: draft.id, version: draft.version });
+      setItems(data.inventory); setDraft(null); setView('list');
+      setDeletionNotice(`“${draft.name}” 상품을 재고 관리에서 삭제했습니다. 연결된 행사 상품·수량과 판매 이력은 유지됩니다.`);
+      navigate('inventory');
+    });
+  };
   return <main className="page-content inventory-page">
     <PageIntro title="재고 관리" />
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
+    {deletionNotice && <div role="status" className="inventory-card"><p>{deletionNotice}</p><button type="button" className="management-back" onClick={() => setDeletionNotice('')}>닫기</button></div>}
     {!ready && !error && <p role="status">재고를 불러오는 중…</p>}
     {error && <button type="button" className="management-back" disabled={busy} onClick={() => run(async () => {
       const data = await api('listInventory'); setItems(data.inventory); setReady(true);
-      if (view === 'detail') { const latest = data.inventory.find(item => item.id === draft.id); if (latest) setDraft({ ...latest }); }
+      if (view === 'detail' && draft) { const latest = data.inventory.find(item => item.id === draft.id); setDraft(latest ? { ...latest } : null); }
     })}>최신 정보 다시 불러오기</button>}
     {uncertain && <div role="status" className="inventory-card"><p>이전에 요청한 재고 이동의 완료 여부를 확인해주세요.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(resolvePending)}>이전 이동 결과 확인</button></div>}
     <section className="product-management">
@@ -130,7 +142,7 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
         {filteredItems.some(item => item.totalEstimated) && <p className="inventory-estimate-note">* 총재고는 기존 자료 기준입니다.</p>}
         <nav className="management-pagination" aria-label="재고 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
       </> : draft && <article className="management-product">
-        <div className="management-product-header"><h3>{draft.name || '새 상품'}</h3><span className="mono inventory-creator">{draft.productNumber || '저장 시 상품 번호 발급'}</span></div>
+        <div className="management-product-header"><h3>{draft.name || '새 상품'}</h3><span className="mono inventory-creator">{draft.productNumber || '저장 시 상품 번호 발급'}</span>{view === 'detail' && <button type="button" className="management-delete" disabled={busy || uncertain || !ready} onClick={remove}>상품 삭제</button>}</div>
         <div className="management-product-body">
           <div className="management-image"><ProductImage imageUrl={draft.imageUrl} name={draft.name} /></div>
           <form onSubmit={save} className="management-details">

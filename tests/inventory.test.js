@@ -296,3 +296,71 @@ test('event removal keeps the exact inventory link, stock and sale history for t
     assert.equal((await invoke('removeProduct', event, { productId: 'legacy' })).status, 409);
   } finally { await db.close(); }
 });
+
+
+test('inventory deletion after active-event product and bundle sales preserves settlement, cancellation and physical stock', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const event = (await invoke('createProject', null, { name: '진행 중 행사' })).body.project.id;
+    const otherEvent = (await invoke('createProject', null, { name: '다음 행사' })).body.project.id;
+    const original = (await invoke('saveInventory', null, { product: { id: 'delete-with-sales', version: -1, name: '삭제 상품', stock: 10 } })).body.inventory[0];
+    await invoke('transferInventory', null, { projectId: event, inventoryId: original.id, qty: 6, direction: 'allocate', requestId: 'delete-move' });
+    const product = (await invoke(null, event)).body.products[0];
+    const sale = { localOrderId: 'delete-product-sale', method: 'cash', total: 0, cart: [{ type: 'product', id: product.id, name: product.name, qty: 1, unitPrice: 0 }] };
+    assert.equal((await invoke('finalizeSale', event, sale)).status, 200);
+    await invoke('replaceBundles', event, { bundles: [{ id: 'delete-bundle', name: '세트', price: 0, items: [{ productId: product.id, qty: 2 }] }] });
+    const bundleSale = { localOrderId: 'delete-bundle-sale', method: 'transfer', total: 0, cart: [{ type: 'bundle', id: 'delete-bundle', name: '세트', qty: 1, unitPrice: 0, subItems: [{ productId: product.id, qty: 2 }] }] };
+    assert.equal((await invoke('finalizeSale', event, bundleSale)).status, 200);
+    const before = (await invoke(null, event)).body;
+    const request = { inventoryId: original.id, version: 1 };
+    assert.equal((await invoke('removeInventory', null, request, 'b')).status, 404);
+    assert.equal((await invoke('removeInventory', null, { inventoryId: null, version: 1 })).status, 400);
+    assert.equal((await invoke('removeInventory', null, { ...request, version: 0 })).status, 409);
+    assert.equal((await invoke('removeInventory', null, request)).status, 200);
+    assert.equal((await invoke('removeInventory', null, request)).status, 200);
+    assert.equal((await invoke('listInventory')).body.inventory.length, 0);
+    assert.deepEqual((await invoke(null, event)).body, before);
+    const removed = (await db.query('SELECT * FROM pos_inventory WHERE admin_id=$1 AND id=$2', ['a',original.id])).rows[0];
+    assert.ok(removed.product.removedAt);
+    assert.equal(removed.version, 2);
+    assert.equal(removed.stock, 4);
+    assert.equal(Number(removed.total_received), 10);
+    assert.equal(removed.product_number, original.productNumber);
+    assert.equal((await invoke('saveInventory', null, { product: { ...original, version: 2, stock: 5 } })).status, 409);
+    assert.equal((await invoke('transferInventory', null, { projectId: otherEvent, inventoryId: original.id, qty: 1, direction: 'allocate', requestId: 'removed-new-allocation' })).status, 409);
+    // Already allocated event stock can still be sold and pending sale commands remain valid.
+    assert.equal((await invoke('finalizeSale', event, { ...sale, localOrderId: 'after-inventory-delete' })).status, 200);
+    assert.equal((await invoke('voidSale', event, { id: sale.localOrderId })).status, 200);
+    assert.equal((await invoke('voidSale', event, { id: bundleSale.localOrderId })).status, 200);
+    assert.equal((await invoke('voidSale', event, { id: 'after-inventory-delete' })).status, 200);
+    assert.equal((await invoke(null, event)).body.products[0].stockQty, 6);
+    assert.equal((await invoke('transferInventory', null, { projectId: event, inventoryId: original.id, qty: 6, direction: 'return', requestId: 'removed-return' })).status, 200);
+    assert.equal((await invoke('listInventory')).body.inventory.length, 0);
+    assert.equal((await db.query('SELECT stock FROM pos_inventory WHERE admin_id=$1 AND id=$2', ['a',original.id])).rows[0].stock, 10);
+    assert.equal((await db.query('SELECT * FROM pos_inventory_links WHERE inventory_id=$1',[original.id])).rows.length, 1);
+  } finally { await db.close(); }
+});
+
+test('unlinked inventory deletion rolls back failures and rejects stale edits without recreating removed items', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const original = (await invoke('saveInventory', null, { product: { id: 'unlinked-delete', version: -1, name: '창고 전용', stock: 0 } })).body.inventory[0];
+    const query = db.query.bind(db);
+    let fail = true, marked = false;
+    db.query = (text, values) => {
+      if (text.startsWith('UPDATE pos_inventory SET product=') && values.some(value => typeof value === 'string' && value.includes('removedAt'))) marked = true;
+      if (fail && marked && text.startsWith('SELECT * FROM pos_inventory WHERE admin_id =')) { fail = false; throw new Error('injected response failure after deletion'); }
+      return query(text, values);
+    };
+    const request = { inventoryId: original.id, version: original.version };
+    assert.equal((await invoke('removeInventory', null, request)).status, 500);
+    const retained = (await invoke('listInventory')).body.inventory;
+    assert.equal(retained.length, 1);
+    assert.equal(retained[0].version, original.version);
+    assert.equal(retained[0].removedAt, undefined);
+    assert.equal((await invoke('removeInventory', null, request)).status, 200);
+    assert.equal((await invoke('saveInventory', null, { product: { ...original, version: -1 } })).status, 409);
+    assert.equal((await invoke('listInventory')).body.inventory.length, 0);
+    assert.equal((await db.query('SELECT * FROM pos_inventory WHERE admin_id=$1',['a'])).rows.length, 1);
+  } finally { await db.close(); }
+});
