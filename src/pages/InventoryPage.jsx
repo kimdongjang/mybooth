@@ -14,7 +14,6 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
   const [items, setItems] = useState([]);
   const [view, setView] = useState('list');
   const [draft, setDraft] = useState(null);
-  const [stockChangeType, setStockChangeType] = useState('receipt');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(emptySearch);
   const [query, setQuery] = useState('');
@@ -59,7 +58,7 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
     const path = routeHash.split('?')[0];
     let id = null;
     try { id = path.startsWith('#/inventory/') ? decodeURIComponent(path.slice('#/inventory/'.length)) : null; } catch { id = '__invalid__'; }
-    setError(''); setMessage(''); setStockChangeType('receipt');
+    setError(''); setMessage('');
     if (!id) { setView('list'); setDraft(null); }
     else if (id === 'new') { setView('new'); setDraft(empty()); }
     else { setView('detail'); const item = items.find(item => item.id === id); setDraft(item ? { ...item } : null); }
@@ -85,10 +84,10 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
     event.preventDefault();
     await run(async () => {
       const { price, ...product } = draft;
-      const data = await api('saveInventory', { product, stockChangeType });
+      const data = await api('saveInventory', { product, stockChangeType: stockDelta > 0 ? 'receipt' : 'correction' });
       setItems(data.inventory); setDraft({ ...data.inventory.find(item => item.id === draft.id) });
       if (view === 'new') navigate(`/inventory/${encodeURIComponent(draft.id)}`, true);
-      setView('detail'); setMessage('상품과 재고를 저장했습니다.');
+      setView('detail'); alert('상품과 재고를 저장했습니다.');
     });
   };
   const remove = () => {
@@ -176,11 +175,10 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
           <form id="inventory-product-form" onSubmit={save} className="management-details">
             <InventoryProductFields draft={draft} products={items} onChange={changeDraft} disabled={busy || uncertain || !ready} />
             <fieldset disabled={busy || uncertain || !ready}><legend>재고</legend><div className="product-stock-grid">
-              <label className="management-field"><span>{view === 'new' ? '최초 입고 수량' : '창고 남은재고'}</span><Input aria-label="창고 남은재고" required type="number" min="0" max="2147483647" step="1" value={draft.stock} onChange={value => changeDraft('stock', value)} /></label>
-              <Quantity label="총재고 (누적 입고)" value={Number(draft.totalReceived ?? savedItem?.totalReceived ?? 0) + (view === 'new' ? Number(draft.stock || 0) : stockDelta > 0 && stockChangeType === 'receipt' ? stockDelta : 0)} />
-              <Quantity label="남은재고" value={Number(draft.stock || 0) + allocatedStock(draft)} />
+              <label className="management-field"><span>{view === 'new' ? '최초 입고 수량' : '창고 보관 수량'}</span><Input aria-label="창고 보관 수량" required type="number" min="0" max="2147483647" step="1" value={draft.stock} onChange={value => changeDraft('stock', value)} /></label>
+              <Quantity label="누적 입고 수량" value={Number(draft.totalReceived ?? savedItem?.totalReceived ?? 0) + (view === 'new' ? Number(draft.stock || 0) : stockDelta > 0 ? stockDelta : 0)} />
+              <Quantity label="전체 남은 수량 (창고 + 행사)" value={Number(draft.stock || 0) + allocatedStock(draft)} />
             </div></fieldset>
-            {view === 'detail' && stockDelta !== 0 && <label className="management-field"><span>수량 변경 사유</span><select value={stockChangeType} onChange={event => setStockChangeType(event.target.value)} disabled={busy || uncertain}><option value="receipt">추가 입고</option><option value="loss">분실</option><option value="disposal">폐기</option><option value="correction">수량 정정</option></select></label>}
           </form>
         </div>
         {view === 'detail' && <section className="inventory-history"><h4>행사별 판매 이력</h4><p className="management-note">보존된 판매 내역 기준이며 취소된 판매는 제외합니다. 링크를 누르면 해당 행사로 전환해 판매 내역을 엽니다.</p>

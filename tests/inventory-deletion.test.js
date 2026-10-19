@@ -5,10 +5,10 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 const nodes = node => !node || typeof node !== 'object' ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
 async function harness(allocations = []) {
-  const states = [], refs = [], deps = [], effects = [], calls = [], navigations = [], confirmations = [];
+  const states = [], refs = [], deps = [], effects = [], calls = [], navigations = [], confirmations = [], alerts = [];
   let stateIndex, refIndex, effectIndex, confirmed = true, failure = false;
   const item = { id: 'original', name: '판매 이력 상품', version: 7, stock: 4, totalReceived: 10, remainingStock: 7, allocations, history: [] };
-  const context = vm.createContext({ crypto: { randomUUID: () => 'new' }, sessionStorage: { getItem: () => null }, confirm: message => { confirmations.push(message); return confirmed; } });
+  const context = vm.createContext({ alert: message => alerts.push(message), crypto: { randomUUID: () => 'new' }, sessionStorage: { getItem: () => null }, confirm: message => { confirmations.push(message); return confirmed; } });
   const mocks = {
     react: {
       useState: initial => { const i = stateIndex++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === 'function' ? value(states[i]) : value; }]; },
@@ -34,7 +34,7 @@ async function harness(allocations = []) {
   const render = () => { stateIndex = refIndex = effectIndex = 0; const tree = module.namespace.default(props); while (effects.length) effects.shift()(); return tree; };
   render(); await Promise.resolve(); render(); render();
   const remove = () => nodes(render()).find(node => node.props?.children === '상품 삭제').props.onClick();
-  return { render, remove, item, calls, navigations, confirmations, props, confirm: value => { confirmed = value; }, fail: value => { failure = value; } };
+  return { render, remove, item, calls, alerts, navigations, confirmations, props, confirm: value => { confirmed = value; }, fail: value => { failure = value; } };
 }
 
 test('inventory delete confirms its scope, sends the saved version and keeps success feedback after returning to the list', async () => {
@@ -113,4 +113,22 @@ test('blocked-delete popup can be dismissed with Escape without deleting invento
   dialog.props.onCancel({ preventDefault() {} });
   assert.equal(nodes(h.render()).some(node => node.type === 'dialog'), false);
   assert.equal(h.calls.some(call => call.action === 'removeInventory'), false);
+});
+
+
+test('inventory save uses an alert and unambiguous stock labels with automatic receipt/correction reasons', async () => {
+  const h = await harness();
+  let tree = h.render();
+  assert.ok(nodes(tree).find(node => node.props?.label === '누적 입고 수량'));
+  assert.ok(nodes(tree).find(node => node.props?.label === '전체 남은 수량 (창고 + 행사)'));
+  assert.equal(nodes(tree).some(node => node.type === 'select' && node.props?.value === 'receipt'), false);
+  nodes(tree).find(node => node.props?.['aria-label'] === '창고 보관 수량').props.onChange('3');
+  tree = h.render();
+  await nodes(tree).find(node => node.type === 'form' && node.props.id === 'inventory-product-form').props.onSubmit({ preventDefault() {} });
+  assert.equal(h.calls.find(call => call.action === 'saveInventory').payload.stockChangeType, 'correction');
+  assert.deepEqual(h.alerts, ['상품과 재고를 저장했습니다.']);
+  assert.equal(nodes(h.render()).some(node => node.props?.children === '상품과 재고를 저장했습니다.'), false);
+  nodes(h.render()).find(node => node.props?.['aria-label'] === '창고 보관 수량').props.onChange('6');
+  await nodes(h.render()).find(node => node.type === 'form' && node.props.id === 'inventory-product-form').props.onSubmit({ preventDefault() {} });
+  assert.equal(h.calls.filter(call => call.action === 'saveInventory').at(-1).payload.stockChangeType, 'receipt');
 });

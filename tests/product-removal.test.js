@@ -57,3 +57,21 @@ test('inventory event shortcut opens the requested event product detail immediat
   assert.ok(nodes(h.render()).find(node => node.props?.['aria-label'] === '행사 상품 상품 제거'));
   assert.equal(h.calls.length, 0);
 });
+
+
+test('event detail identifies its context and offers header save, deletion and visible image actions', async () => {
+  const h = await harness('warehouse-original', 'event-product');
+  h.props.projectName = '2026 행사';
+  h.props.products[0].imageUrl = 'https://example.test/image.webp';
+  const tree = h.render();
+  const context = nodes(tree).find(node => node.props?.['aria-label'] === '현재 관리 위치');
+  assert.ok(nodes(context).find(node => node.props?.children === '행사 판매 상품'));
+  assert.ok(nodes(context).find(node => node.props?.children === '2026 행사'));
+  assert.equal(nodes(context).find(node => node.type === 'a').props.href, '#/inventory/warehouse-original');
+  const header = nodes(tree).find(node => node.props?.className === 'management-product-header inventory-detail-header');
+  assert.equal(nodes(header).find(node => node.props?.children === '수정').props.form, 'event-product-edit-form');
+  assert.ok(nodes(header).find(node => node.props?.children === '상품 삭제'));
+  assert.ok(nodes(tree).find(node => node.props?.formId === 'event-product-edit-form' && node.props.hideSubmit));
+  assert.ok(nodes(tree).find(node => node.props?.className === 'management-upload product-image-upload'));
+  assert.ok(nodes(tree).find(node => node.props?.className === 'product-image-remove'));
+});

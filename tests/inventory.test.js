@@ -158,7 +158,7 @@ test('legacy adoption preserves event IDs, separate products with matching names
     assert.equal(new Set(first.inventory.map(item => item.productNumber)).size, 2);
     const adopted = (await invoke(null, a)).body;
     assert.equal(adopted.products[0].inventoryId, first.inventory.find(item => item.allocations[0].project_id === a).id);
-    assert.deepEqual({ ...adopted, products: adopted.products.map(product => ({ ...product, inventoryId: null })) }, before);
+    assert.deepEqual({ ...adopted, products: adopted.products.map(product => ({ ...product, inventoryId: null, productNumber: null })) }, before);
     assert.deepEqual((await invoke('listInventory')).body, first);
     const item = first.inventory.find(item => item.allocations[0].project_id === a);
     assert.equal((await invoke('transferInventory', null, { projectId: a, inventoryId: item.id, qty: 5, direction: 'return', requestId: 'legacy-return' })).status, 200);
@@ -395,5 +395,35 @@ test('inventory deletion rechecks all active events, includes zero stock, and ex
     assert.equal((await invoke(null, events[2].id)).body.products.length, 1);
     assert.equal((await invoke('voidSale', events[0].id, { id: 'sold-out' })).status, 200);
     assert.equal((await invoke(null, events[0].id)).body.products.length, 0);
+  } finally { await db.close(); }
+});
+
+
+test('event genre inherits warehouse data, persists independent edits and clearing, and rejects invalid genres atomically', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const event = (await invoke('createProject', null, { name: '장르 행사' })).body.project.id;
+    const item = (await invoke('saveInventory', null, { product: { id: 'genre-source', version: -1, name: '상품', genre: '공통 장르', stock: 3 } })).body.inventory[0];
+    await invoke('transferInventory', null, { projectId: event, inventoryId: item.id, qty: 2, direction: 'allocate', requestId: 'genre-link' });
+    let product = (await invoke(null, event)).body.products[0];
+    assert.equal(product.genre, '공통 장르');
+    assert.equal(product.productNumber, item.productNumber);
+    let saved = await invoke('replaceProducts', event, { products: [{ ...product, genre: '행사 장르' }] });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.products[0].genre, '행사 장르');
+    assert.equal((await invoke('listInventory')).body.inventory[0].genre, '공통 장르');
+    const backup = (await invoke('backupProject', event, { password: 'test-password' })).body.backup;
+    assert.equal(backup.products[0].genre, '행사 장르');
+    const copied = await invoke('duplicateProject', event, { password: 'test-password', name: '장르 복제' });
+    assert.equal((await invoke(null, copied.body.project.id)).body.products[0].genre, '행사 장르');
+    const restored = await invoke('restoreProject', null, { password: 'test-password', name: '장르 복원', backup });
+    assert.equal((await invoke(null, restored.body.project.id)).body.products[0].genre, '행사 장르');
+    product = saved.body.products[0];
+    assert.equal((await invoke('replaceProducts', event, { products: [{ ...product, genre: {} }] })).status, 400);
+    assert.equal((await invoke(null, event)).body.products[0].genre, '행사 장르');
+    saved = await invoke('replaceProducts', event, { products: [{ ...product, genre: '' }] });
+    assert.equal(saved.body.products[0].genre, '');
+    await db.query('UPDATE pos_products SET genre=NULL WHERE project_id=$1', [event]);
+    assert.equal((await invoke(null, event)).body.products[0].genre, '공통 장르');
   } finally { await db.close(); }
 });
