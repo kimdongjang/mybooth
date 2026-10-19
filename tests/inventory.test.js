@@ -582,9 +582,14 @@ test('allocation table can register a new event; archived and removed event prod
     payload.allocationPlan.allocations.push({projectId:third,productId:null,quantity:15,stock:0,initialStock:0,dataRevision:null});
     assert.equal((await f.invoke('saveInventory',null,payload)).status,200);
     item=await f.read(); assert.equal(item.allocations.length,3); assert.equal(item.stock,35);
+    assert.equal((await f.invoke(null,third)).body.products[0].price,1000);
+    assert.equal((await f.invoke(null,f.first)).body.products[0].price,0);
+    const assigned=item.allocations.find(row=>row.project_id===third);
+    await f.db.query('UPDATE pos_products SET price=2500 WHERE project_id=$1 AND id=$2',[third,assigned.product_id]);
     await f.db.query('UPDATE pos_projects SET archived_at=NOW() WHERE id=$1',[f.second]);
     assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.second]:21}))).status,409);
     assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.second]:10}))).status,200);
+    assert.equal((await f.invoke(null,third)).body.products[0].price,2500);
     item=await f.read(); const removed=item.allocations.find(row=>row.project_id===f.first);
     await f.invoke('removeProduct',f.first,{productId:removed.product_id});
     assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.first]:35}))).status,200);

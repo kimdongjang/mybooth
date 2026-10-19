@@ -410,7 +410,7 @@ async function inventoryAction(adminId, action, payload) {
           const remaining = inventoryInteger(Number(row.stock) + delta);
           if (row.product_id === null) {
             row.product_id = uid();
-            await insertProduct(row.project_id, { ...product, id: row.product_id, price: 0, stockQty: 0, initialStockQty: 0 });
+            await insertProduct(row.project_id, { ...product, id: row.product_id, price: 1000, stockQty: 0, initialStockQty: 0 });
             await sql`INSERT INTO pos_inventory_links (project_id,product_id,admin_id,inventory_id) VALUES (${row.project_id},${row.product_id},${adminId},${id})`;
           }
           await sql`UPDATE pos_products SET stock=${remaining},stock_qty=${remaining},initial_stock_qty=${quantity},updated_at=NOW() WHERE project_id=${row.project_id} AND id=${row.product_id}`;
