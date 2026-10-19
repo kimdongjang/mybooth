@@ -58,7 +58,7 @@ test('failed inventory deletion retains the detail and offers reload without sho
   assert.deepEqual(h.navigations, []);
   const tree = h.render();
   assert.ok(nodes(tree).find(node => node.props?.role === 'alert'));
-  assert.ok(nodes(tree).find(node => node.props?.children === '최신 정보 다시 불러오기'));
+  assert.equal(nodes(tree).some(node => node.props?.children === '최신 정보 불러오기'), false);
   assert.ok(nodes(tree).find(node => node.props?.children === '상품 삭제'));
   assert.equal(nodes(tree).some(node => node.type === 'p' && typeof node.props.children === 'string' && node.props.children.includes('재고 관리에서 삭제했습니다')), false);
 });
@@ -72,17 +72,45 @@ test('active event links block inventory deletion including sold-out goods and p
     { project_id: 'removed', product_id: 'gone', event_name: '제거 완료 행사', stock: 2, is_active: false, archived_at: null },
   ]);
   const tree = h.render();
-  assert.equal(nodes(tree).find(node => node.props?.children === '상품 삭제').props.disabled, true);
+  assert.equal(nodes(tree).find(node => node.props?.children === '상품 삭제').props.disabled, false);
+  assert.equal(nodes(tree).some(node => node.type === 'dialog'), false);
   await h.remove();
   assert.equal(h.calls.filter(call => call.action === 'removeInventory').length, 0);
   assert.equal(h.confirmations.length, 0);
-  const guidance = nodes(tree).find(node => node.props?.['aria-label'] === '재고 삭제 전 행사 상품 제거 안내');
+  const guidance = nodes(h.render()).find(node => node.type === 'dialog');
   const links = nodes(guidance).filter(node => node.type === 'a');
   assert.equal(links.length, 2);
   assert.equal(links[0].props.href, '#/products?projectId=event%2Fone&productId=goods%2Fone');
   links[0].props.onClick({ button: 0, preventDefault() {} });
   assert.deepEqual(h.navigations, ['/products?projectId=event%2Fone&productId=goods%2Fone']);
   h.item.allocations = [];
-  await nodes(guidance).find(node => node.props?.children === '최신 정보 불러오기').props.onClick();
-  assert.equal(nodes(h.render()).find(node => node.props?.children === '상품 삭제').props.disabled, false);
+  h.item.version = 8;
+  await h.remove();
+  assert.equal(h.calls.find(call => call.action === 'removeInventory').payload.version, 8);
+});
+
+
+test('inventory header exposes the external form save before deletion and omits verbose notes and refresh actions', async () => {
+  const h = await harness();
+  const tree = h.render();
+  const header = nodes(tree).find(node => node.props?.className === 'management-product-header inventory-detail-header');
+  const buttons = nodes(header).filter(node => node.type === 'button');
+  assert.equal(buttons[0].props.form, 'inventory-product-form');
+  assert.equal(buttons[0].props.type, 'submit');
+  assert.equal(buttons[1].props.children, '상품 삭제');
+  assert.ok(nodes(tree).find(node => node.type === 'form' && node.props.id === buttons[0].props.form));
+  assert.equal(nodes(tree).filter(node => node.props?.children === '수정').length, 1);
+  const text = nodes(tree).map(node => typeof node.props?.children === 'string' ? node.props.children : '').join(' ');
+  assert.equal(text.includes('과거 누락된 입고'), false);
+  assert.equal(text.includes('최신 정보 불러오기'), false);
+});
+
+test('blocked-delete popup can be dismissed with Escape without deleting inventory', async () => {
+  const h = await harness([{ project_id: 'active', product_id: 'p', event_name: '활성 행사', stock: 0, is_active: true }]);
+  await h.remove();
+  const dialog = nodes(h.render()).find(node => node.type === 'dialog');
+  assert.ok(dialog);
+  dialog.props.onCancel({ preventDefault() {} });
+  assert.equal(nodes(h.render()).some(node => node.type === 'dialog'), false);
+  assert.equal(h.calls.some(call => call.action === 'removeInventory'), false);
 });
