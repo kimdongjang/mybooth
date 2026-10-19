@@ -66,7 +66,6 @@ function ProductSettingsPanel({ adminId, inventoryApi, dataRevision, projectName
   const [removedProduct, setRemovedProduct] = useState(null);
   const removalNotice = useRef(null);
   useEffect(() => { if (removedProduct) removalNotice.current?.focus(); }, [removedProduct]);
-  const [transferBusy, setTransferBusy] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const quantities = managementQuantities(sales, bundles);
   const [uploadingId, setUploadingId] = useState(null);
@@ -102,12 +101,12 @@ function ProductSettingsPanel({ adminId, inventoryApi, dataRevision, projectName
     }
   };
 
-  return <section className="product-management"><fieldset disabled={bulkBusy || transferBusy} className="min-w-0">
+  return <section className="product-management"><fieldset disabled={bulkBusy} className="min-w-0">
     <header className="management-heading">
       <div><h2>{selectedProduct ? '행사 상품 상세' : '상품 목록'}</h2></div>
       {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <BulkProductImages projectId={projectId} products={products} persistProducts={persistProducts} onImageChange={onImageChange} disabled={readOnly || saving || bulkBusy} onBusy={setBulkBusy} extraAction={<button type="button" className="management-add" disabled={readOnly || saving || bulkBusy} onClick={onAdd}><ActionIcon />새 상품 등록</button>} />}
     </header>
-    {selectedProduct && <aside role="status" className="event-product-context" aria-label="현재 관리 위치"><span>행사 판매 상품</span><strong>{projectName || '선택한 행사'}</strong><p>기본 정보는 공통 원본과 모든 연결 행사에 반영됩니다. 판매가와 재고 배정은 이 행사에만 적용됩니다.</p>{selectedProduct.inventoryId && <a href={`#/inventory/${encodeURIComponent(selectedProduct.inventoryId)}`}>공통 재고 상세로 돌아가기 →</a>}</aside>}
+    {selectedProduct && <aside role="status" className="event-product-context" aria-label="현재 관리 위치"><span>행사 판매 상품</span><strong>{projectName || '선택한 행사'}</strong><p>기본 정보는 공통 원본과 모든 연결 행사에 반영됩니다. 판매가는 이 행사에만 적용됩니다. 재고 수량은 공통 재고 상세에서 관리합니다.</p>{selectedProduct.inventoryId && <a href={`#/inventory/${encodeURIComponent(selectedProduct.inventoryId)}`}>공통 재고 상세로 돌아가기 →</a>}</aside>}
     {removedProduct && <section ref={removalNotice} tabIndex={-1} role="status" aria-label="상품 제거 완료" className="product-removal-notice">
       <h3>{productNameWithoutCreator(removedProduct)} 상품을 행사에서 제거했습니다.</h3>
       <p>공통 재고와 판매 이력은 유지됩니다. 행사에 배정된 재고도 그대로 남습니다. 실제 재고의 확인 및 삭제는 공통 상품·재고 관리에서 진행해주세요.</p>
@@ -144,7 +143,7 @@ function ProductSettingsPanel({ adminId, inventoryApi, dataRevision, projectName
           </div>
           <div className="management-details">
             <ProductEditForm onSave={async (product, inventoryVersion) => { const data = await inventoryApi('saveEventProduct', { projectId, productId: p.id, inventoryVersion, dataRevision, product }); return data.products.find(row => row.id === p.id); }} formId="event-product-edit-form" hideSubmit key={p.id} product={p} products={products} persistProducts={persistProducts} disabled={readOnly || saving || uploadingId !== null} />
-            <EventInventoryControls key={`${projectId}:${p.id}`} adminId={adminId} projectId={projectId} product={p} api={inventoryApi} readOnly={readOnly || saving || uploadingId !== null} onBusy={setTransferBusy} />
+            <EventInventoryControls key={`${projectId}:${p.id}`} adminId={adminId} projectId={projectId} product={p} api={inventoryApi} />
 
           </div>
         </div>

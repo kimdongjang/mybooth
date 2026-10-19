@@ -116,19 +116,30 @@ test('blocked-delete popup can be dismissed with Escape without deleting invento
 });
 
 
-test('inventory save uses an alert and unambiguous stock labels with automatic receipt/correction reasons', async () => {
-  const h = await harness();
+test('inventory saves common fields and the allocation plan together, with alert-only success', async () => {
+  const h = await harness([{ project_id: 'event', product_id: 'goods', event_name: '행사', initial_stock: 6, stock: 6 }]);
+  h.item.totalStock = 10;
   let tree = h.render();
-  assert.ok(nodes(tree).find(node => node.props?.label === '누적 입고 수량'));
-  assert.ok(nodes(tree).find(node => node.props?.label === '전체 남은 수량 (창고 + 행사)'));
-  assert.equal(nodes(tree).some(node => node.type === 'select' && node.props?.value === 'receipt'), false);
-  nodes(tree).find(node => node.props?.['aria-label'] === '창고 보관 수량').props.onChange('3');
-  tree = h.render();
-  await nodes(tree).find(node => node.type === 'form' && node.props.id === 'inventory-product-form').props.onSubmit({ preventDefault() {} });
-  assert.equal(h.calls.find(call => call.action === 'saveInventory').payload.stockChangeType, 'correction');
+  assert.equal(nodes(tree).some(node => node.props?.label === '누적 입고 수량'), false);
+  assert.equal(nodes(tree).some(node => node.props?.['aria-label'] === '창고 보관 수량'), false);
+  assert.equal(nodes(tree).some(node => node.props?.children === '배정·회수할 행사'), false);
+  nodes(tree).find(node => node.props?.['aria-label'] === '총재고').props.onChange('12');
+  nodes(h.render()).find(node => node.props?.['aria-label'] === '행사 배정 수량').props.onChange('7');
+  await nodes(h.render()).find(node => node.type === 'form' && node.props.id === 'inventory-product-form').props.onSubmit({ preventDefault() {} });
+  const plan = h.calls.find(call => call.action === 'saveInventory').payload.allocationPlan;
+  assert.equal(plan.totalStock, 12);
+  assert.equal(plan.allocations[0].quantity, 7);
+  assert.equal(plan.allocations[0].stock, 6);
+  assert.equal(plan.allocations[0].initialStock, 6);
   assert.deepEqual(h.alerts, ['상품과 재고를 저장했습니다.']);
   assert.equal(nodes(h.render()).some(node => node.props?.children === '상품과 재고를 저장했습니다.'), false);
-  nodes(h.render()).find(node => node.props?.['aria-label'] === '창고 보관 수량').props.onChange('6');
+  assert.equal(nodes(h.render()).find(node => node.props?.['aria-label'] === '행사 판매 수량').type, 'output');
+});
+
+test('allocation total overflow blocks saving before sending a mutation', async () => {
+  const h = await harness([{ project_id: 'event', product_id: 'goods', event_name: '행사', initial_stock: 6, stock: 6 }]);
+  nodes(h.render()).find(node => node.props?.['aria-label'] === '총재고').props.onChange('5');
   await nodes(h.render()).find(node => node.type === 'form' && node.props.id === 'inventory-product-form').props.onSubmit({ preventDefault() {} });
-  assert.equal(h.calls.filter(call => call.action === 'saveInventory').at(-1).payload.stockChangeType, 'receipt');
+  assert.equal(h.calls.some(call => call.action === 'saveInventory'), false);
+  assert.ok(nodes(h.render()).find(node => node.props?.role === 'alert'));
 });

@@ -201,7 +201,7 @@ async function inventoryState(adminId) {
     ON CONFLICT DO NOTHING`;
   const items = await sql`SELECT * FROM pos_inventory WHERE admin_id = ${adminId} ORDER BY id`;
   const allocations = await sql`SELECT l.inventory_id, l.product_id, p.project_id,
-    e.name AS event_name, e.archived_at, COALESCE(p.is_active, TRUE) AS is_active, COALESCE(p.stock_qty,p.stock) AS stock, COALESCE(p.initial_stock_qty,p.stock_qty,p.stock) AS initial_stock
+    e.name AS event_name, e.archived_at, (SELECT revision FROM pos_event_archives WHERE project_id=p.project_id) AS data_revision, COALESCE(p.is_active, TRUE) AS is_active, COALESCE(p.stock_qty,p.stock) AS stock, COALESCE(p.initial_stock_qty,p.stock_qty,p.stock) AS initial_stock
     FROM pos_inventory_links l JOIN pos_products p ON p.project_id=l.project_id AND p.id=l.product_id
     JOIN pos_projects e ON e.id=l.project_id AND e.admin_id=l.admin_id
     WHERE l.admin_id = ${adminId} ORDER BY p.project_id, p.id`;
@@ -225,7 +225,10 @@ async function inventoryState(adminId) {
   }
   const inventory = [];
   for (const row of items.rows) {
-    const linked = allocations.rows.filter(a => a.inventory_id === row.id);
+    // Legacy imports may have initial_stock=0 despite remaining stock/sales.
+    // Establish the assignment baseline without changing physical quantities.
+    const linked = allocations.rows.filter(a => a.inventory_id === row.id).map(a => ({ ...a,
+      initial_stock: Math.max(Number(a.initial_stock), Number(a.stock) + (sold.get(JSON.stringify([a.project_id,a.product_id]))?.qty || 0)) }));
     const remaining = Number(row.stock) + linked.reduce((sum,a) => sum + Number(a.stock),0);
     const history = linked.map(a => ({ projectId: a.project_id, eventName: a.event_name, productId: a.product_id,
       soldQty: sold.get(JSON.stringify([a.project_id,a.product_id]))?.qty || 0,
@@ -246,9 +249,10 @@ async function inventoryState(adminId) {
     }
     if (row.product.removedAt) continue;
     inventory.push({ ...row.product, id: row.id, productNumber, genre: row.product.genre || '', stock: row.stock, version: row.version,
-      totalReceived, totalEstimated, remainingStock: remaining, history, allocations: linked });
+      totalReceived, totalEstimated, totalStock: Number(row.stock) + linked.reduce((sum,a) => sum + Number(a.initial_stock),0), remainingStock: remaining, history, allocations: linked.map(row => ({ ...row, data_revision: detachedProjectIds.has(row.project_id) ? row.data_revision : null })) });
   }
-  return { inventory };
+  const inventoryEvents = (await sql`SELECT e.id,e.name,e.archived_at,(SELECT revision FROM pos_event_archives WHERE project_id=e.id) AS data_revision FROM pos_projects e WHERE e.admin_id=${adminId} ORDER BY e.created_at,e.id`).rows;
+  return { inventory, inventoryEvents: inventoryEvents.map(event => ({ ...event, data_revision: detachedProjectIds.has(event.id) ? event.data_revision : null })) };
 }
 
 function inventoryInteger(value, minimum = 0) {
@@ -351,7 +355,7 @@ async function inventoryAction(adminId, action, payload) {
     const input = payload.product || {};
     if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 200) throw Object.assign(new Error('상품 이름을 입력해주세요. (최대 200자)'), { status: 400 });
     const submittedPrice = input.price == null ? null : inventoryInteger(input.price);
-    const stock = inventoryInteger(input.stock);
+    let stock = inventoryInteger(input.stock);
     if (input.id != null && (typeof input.id !== 'string' || !input.id || input.id.length > 500)) throw Object.assign(new Error('잘못된 상품 ID입니다.'), { status: 400 });
     const id = input.id || uid();
     const old = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${id}`).rows[0];
@@ -365,6 +369,60 @@ async function inventoryAction(adminId, action, payload) {
     await inventoryState(adminId);
     if (old) {
       const baseline = (await sql`SELECT total_received FROM pos_inventory WHERE admin_id=${adminId} AND id=${id}`).rows[0];
+      if (payload.allocationPlan) {
+        const plan = payload.allocationPlan;
+        const totalStock = inventoryInteger(plan.totalStock);
+        const current = (await inventoryState(adminId)).inventory.find(item => item.id === id);
+        if (!Array.isArray(plan.allocations) || plan.allocations.length < current.allocations.length) throw Object.assign(new Error('행사 연결이 변경되었습니다. 새로고침 후 다시 수정해주세요.'), { status: 409 });
+        const seen = new Set();
+        let assigned = 0;
+        const changes = [];
+        for (const entry of plan.allocations) {
+          if (!entry || typeof entry.projectId !== 'string' || (entry.productId !== null && typeof entry.productId !== 'string')) throw Object.assign(new Error('잘못된 행사 배정 목록입니다.'), { status: 400 });
+          const key = JSON.stringify([entry.projectId,entry.productId]);
+          let row = current.allocations.find(row => row.project_id === entry.projectId && row.product_id === entry.productId);
+          if (!row && entry.productId === null) {
+            const event = (await sql`SELECT id,name,archived_at FROM pos_projects WHERE admin_id=${adminId} AND id=${entry.projectId}`).rows[0];
+            if (event && !current.allocations.some(a => a.project_id === entry.projectId)) row = { project_id: event.id, product_id: null, archived_at: event.archived_at, stock: 0, initial_stock: 0 };
+          }
+          if (!row || seen.has(key)) throw Object.assign(new Error('잘못된 행사 배정 목록입니다.'), { status: 400 });
+          seen.add(key);
+          // A sale/void does not increment the inventory version. Compare event
+          // quantities as well, under the same project locks used by checkout.
+          if (entry.stock !== Number(row.stock) || entry.initialStock !== Number(row.initial_stock) || (entry.dataRevision ?? null) !== (await dataRevision(row.project_id))) throw Object.assign(new Error('행사 재고 또는 판매 내역이 변경되었습니다. 새로고침 후 다시 수정해주세요.'), { status: 409 });
+          const quantity = inventoryInteger(entry.quantity);
+          const sold = current.history.find(h => h.projectId === row.project_id && h.productId === row.product_id)?.soldQty || 0;
+          const delta = quantity - Number(row.initial_stock);
+          if (quantity < sold || Number(row.stock) + delta < 0) throw Object.assign(new Error('행사 배정 수량은 이미 판매·차감한 수량보다 적을 수 없습니다.'), { status: 400 });
+          if (row.archived_at && delta > 0) throw Object.assign(new Error('보관된 행사의 배정 수량은 늘릴 수 없습니다.'), { status: 409 });
+          assigned += quantity;
+          changes.push({ row, quantity, delta });
+        }
+        if (current.allocations.some(row => !seen.has(JSON.stringify([row.project_id,row.product_id])))) throw Object.assign(new Error('행사 연결이 변경되었습니다. 새로고침해주세요.'), { status: 409 });
+        if (assigned > totalStock) throw Object.assign(new Error('행사 배정 수량 합계가 총재고를 초과합니다.'), { status: 400 });
+        stock = totalStock - assigned;
+        const totalDelta = totalStock - current.totalStock;
+        // Lifetime receipts are never reduced by a total correction or transfer.
+        const totalReceived = Number(baseline.total_received) + Math.max(0,totalDelta);
+        inventoryInteger(totalReceived);
+        for (const { row, quantity, delta } of changes) {
+          if (!delta) continue;
+          const remaining = inventoryInteger(Number(row.stock) + delta);
+          if (row.product_id === null) {
+            row.product_id = uid();
+            await insertProduct(row.project_id, { ...product, id: row.product_id, price: 0, stockQty: 0, initialStockQty: 0 });
+            await sql`INSERT INTO pos_inventory_links (project_id,product_id,admin_id,inventory_id) VALUES (${row.project_id},${row.product_id},${adminId},${id})`;
+          }
+          await sql`UPDATE pos_products SET stock=${remaining},stock_qty=${remaining},initial_stock_qty=${quantity},updated_at=NOW() WHERE project_id=${row.project_id} AND id=${row.product_id}`;
+          await sql`UPDATE pos_projects SET updated_at=NOW() WHERE id=${row.project_id} AND admin_id=${adminId}`;
+          const request = { action: 'allocationPlan', projectId: row.project_id, inventoryId: id, direction: delta > 0 ? 'allocate' : 'return', qty: Math.abs(delta) };
+          await sql`INSERT INTO pos_inventory_transfers (admin_id,id,request) VALUES (${adminId},${uid()},${JSON.stringify(request)}::jsonb)`;
+        }
+        await sql`UPDATE pos_inventory SET product=${JSON.stringify(product)}::jsonb,stock=${stock},total_received=${totalReceived},version=version+1 WHERE admin_id=${adminId} AND id=${id}`;
+        if (totalDelta) await sql`INSERT INTO pos_inventory_adjustments (admin_id,inventory_id,id,delta,reason) VALUES (${adminId},${id},${uid()},${totalDelta},${totalDelta > 0 ? 'receipt' : 'correction'})`;
+        await syncCommonProduct(adminId, id, product);
+        return inventoryState(adminId);
+      }
       const delta = stock - Number(old.stock);
       const reason = payload.stockChangeType || (delta > 0 ? 'receipt' : 'correction');
       if (delta && (!['receipt','loss','disposal','correction'].includes(reason) || (reason === 'receipt' && delta < 0) || (['loss','disposal'].includes(reason) && delta > 0))) throw Object.assign(new Error('수량 변경 방향에 맞는 입고·분실·폐기·정정 사유를 선택해주세요.'), { status: 400 });

@@ -510,3 +510,135 @@ test('inventory transfer validates separated-event revisions and replays an ackn
     assert.equal((await invoke(null, 'pxwiu2t')).body.products[0].stockQty, 2);
   } finally { await db.close(); }
 });
+
+function allocationPayload(item, totalStock = item.totalStock, quantities = {}) {
+  return { product: { ...item }, allocationPlan: { totalStock, allocations: item.allocations.map(row => ({ projectId: row.project_id, productId: row.product_id, quantity: quantities[row.project_id] ?? Number(row.initial_stock), stock: Number(row.stock), initialStock: Number(row.initial_stock), dataRevision: row.data_revision ?? null })) } };
+}
+
+async function allocationFixture() {
+  const f = await fixture();
+  const first = (await f.invoke('createProject', null, { name: '첫 행사' })).body.project.id;
+  const second = (await f.invoke('createProject', null, { name: '둘째 행사' })).body.project.id;
+  await f.invoke('saveInventory', null, { product: { id: 'plan-product', version: -1, name: '공통 상품', stock: 100 } });
+  for (const [projectId,qty] of [[first,30],[second,20]]) assert.equal((await f.invoke('transferInventory', null, { inventoryId: 'plan-product', projectId, qty, direction: 'allocate', requestId: projectId })).status, 200);
+  const read = async () => (await f.invoke('listInventory')).body.inventory.find(item => item.id === 'plan-product');
+  return { ...f, first, second, read };
+}
+
+test('allocation plan saves total and all event quantities atomically without changing sales, prices or lifetime receipt history', async () => {
+  const f = await allocationFixture();
+  try {
+    let item = await f.read();
+    const productId = item.allocations.find(row => row.project_id === f.first).product_id;
+    await f.db.query('UPDATE pos_products SET price=1000 WHERE project_id=$1 AND id=$2', [f.first,productId]);
+    assert.equal((await f.invoke('finalizeSale', f.first, { localOrderId: 'plan-sale', method: 'cash', total: 3000, cart: [{ type: 'product', id: productId, name: '공통 상품', unitPrice: 1000, qty: 3 }] })).status, 200);
+    item = await f.read();
+    const payload = allocationPayload(item,100,{[f.first]:40,[f.second]:10});
+    const saved = await f.invoke('saveInventory', null, payload);
+    assert.equal(saved.status,200,JSON.stringify(saved.body));
+    item = await f.read();
+    assert.equal(item.totalStock,100); assert.equal(item.stock,50); assert.equal(item.remainingStock,97);
+    assert.equal(item.allocations.find(row=>row.project_id===f.first).stock,37);
+    assert.equal(item.history.find(row=>row.projectId===f.first).soldQty,3);
+    assert.equal((await f.invoke(null,f.first)).body.products[0].price,1000);
+    assert.equal((await f.invoke('saveInventory',null,payload)).status,409);
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,90))).status,200);
+    item=await f.read(); assert.equal(item.totalStock,90); assert.equal(item.totalReceived,100); assert.equal(item.stock,40);
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,110))).status,200);
+    item=await f.read(); assert.equal(item.totalStock,110); assert.equal(item.totalReceived,120);
+    const sale=(await f.invoke(null,f.first)).body.sales[0];
+    assert.equal((await f.invoke('voidSale',f.first,{id:sale.id})).status,200);
+    item=await f.read(); assert.equal(item.allocations.find(row=>row.project_id===f.first).stock,40);
+  } finally { await f.db.close(); }
+});
+
+test('allocation plan rejects over-allocation, sold-stock reduction, stale sale snapshots, invalid rows and foreign events', async () => {
+  const f=await allocationFixture();
+  try {
+    const item=await f.read();
+    for (const payload of [allocationPayload(item,49),allocationPayload(item,100,{[f.first]:-1}),allocationPayload(item,100,{[f.first]:1.5})]) assert.equal((await f.invoke('saveInventory',null,payload)).status,400);
+    const duplicate=allocationPayload(item); duplicate.allocationPlan.allocations.push(duplicate.allocationPlan.allocations[0]);
+    assert.equal((await f.invoke('saveInventory',null,duplicate)).status,400);
+    const missing=allocationPayload(item); missing.allocationPlan.allocations.pop();
+    assert.equal((await f.invoke('saveInventory',null,missing)).status,409);
+    const foreign=(await f.invoke('createProject',null,{name:'다른 계정'},'b')).body.project.id;
+    const denied=allocationPayload(item); denied.allocationPlan.allocations.push({projectId:foreign,productId:null,quantity:1,stock:0,initialStock:0});
+    assert.equal((await f.invoke('saveInventory',null,denied)).status,400);
+    const productId=item.allocations.find(row=>row.project_id===f.first).product_id;
+    assert.equal((await f.invoke('finalizeSale',f.first,{localOrderId:'stale-plan-sale',method:'cash',total:0,cart:[{type:'product',id:productId,name:item.name,unitPrice:0,qty:3}]})).status,200);
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item))).status,409);
+    const fresh=await f.read();
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(fresh,100,{[f.first]:2}))).status,400);
+    assert.equal((await f.read()).stock,50);
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(fresh),'b')).status,409);
+  } finally {await f.db.close();}
+});
+
+test('allocation table can register a new event; archived and removed event products keep their restrictions', async () => {
+  const f=await allocationFixture();
+  try {
+    const third=(await f.invoke('createProject',null,{name:'새 배정 행사'})).body.project.id;
+    let item=await f.read(); const payload=allocationPayload(item);
+    payload.allocationPlan.allocations.push({projectId:third,productId:null,quantity:15,stock:0,initialStock:0,dataRevision:null});
+    assert.equal((await f.invoke('saveInventory',null,payload)).status,200);
+    item=await f.read(); assert.equal(item.allocations.length,3); assert.equal(item.stock,35);
+    await f.db.query('UPDATE pos_projects SET archived_at=NOW() WHERE id=$1',[f.second]);
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.second]:21}))).status,409);
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.second]:10}))).status,200);
+    item=await f.read(); const removed=item.allocations.find(row=>row.project_id===f.first);
+    await f.invoke('removeProduct',f.first,{productId:removed.product_id});
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.first]:35}))).status,200);
+    item=await f.read(); assert.equal(item.allocations.find(row=>row.project_id===f.first).is_active,false);
+  } finally {await f.db.close();}
+});
+
+test('allocation plan rolls back common metadata, warehouse, event changes and ledgers after a downstream failure', async () => {
+  const f=await allocationFixture();
+  try {
+    const item=await f.read();
+    await f.db.exec("CREATE FUNCTION fail_plan() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected plan failure'; END $$; CREATE TRIGGER fail_plan BEFORE UPDATE ON pos_inventory FOR EACH ROW EXECUTE FUNCTION fail_plan()");
+    const payload=allocationPayload(item,110,{[f.first]:40,[f.second]:10}); payload.product.name='실패할 이름';
+    assert.equal((await f.invoke('saveInventory',null,payload)).status,500);
+    const after=await f.read(); assert.deepEqual(after,item);
+    assert.equal(Number((await f.db.query('SELECT COUNT(*) AS n FROM pos_inventory_transfers')).rows[0].n),2);
+    assert.equal(Number((await f.db.query('SELECT COUNT(*) AS n FROM pos_inventory_adjustments')).rows[0].n),1);
+  } finally {await f.db.close();}
+});
+
+test('allocation plans preserve unrecorded legacy deductions and validate separated-event revisions', async () => {
+  const f=await allocationFixture();
+  try {
+    let item=await f.read();
+    const row=item.allocations.find(row=>row.project_id===f.first);
+    await f.db.query('UPDATE pos_products SET stock=25,stock_qty=25 WHERE project_id=$1 AND id=$2',[f.first,row.product_id]);
+    item=await f.read();
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.first]:4}))).status,400);
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.first]:26}))).status,200);
+    item=await f.read();
+    assert.equal(item.allocations.find(row=>row.project_id===f.first).stock,21);
+    assert.equal(item.history.find(row=>row.projectId===f.first).soldQty,0);
+    await f.db.query("INSERT INTO pos_projects (id,admin_id,name) VALUES ('pxwiu2t','a','분리 행사')");
+    await f.db.query("INSERT INTO pos_event_archives (project_id,revision,snapshot) VALUES ('pxwiu2t','plan-revision','{}')");
+    const listed=(await f.invoke('listInventory')).body;
+    assert.equal(listed.inventoryEvents.find(row=>row.id==='pxwiu2t').data_revision,'plan-revision');
+    const payload=allocationPayload(item);payload.allocationPlan.allocations.push({projectId:'pxwiu2t',productId:null,quantity:10,stock:0,initialStock:0,dataRevision:'stale'});
+    assert.equal((await f.invoke('saveInventory',null,payload)).status,409);
+    payload.allocationPlan.allocations.at(-1).dataRevision='plan-revision';
+    assert.equal((await f.invoke('saveInventory',null,payload)).status,200);
+    assert.equal((await f.read()).allocations.find(row=>row.project_id==='pxwiu2t').data_revision,'plan-revision');
+  } finally {await f.db.close();}
+});
+
+test('zero legacy opening quantities use remaining plus sold as allocation baseline without inventing physical stock', async () => {
+  const f=await allocationFixture();
+  try {
+    let item=await f.read(); const row=item.allocations.find(row=>row.project_id===f.first);
+    await f.db.query('UPDATE pos_products SET initial_stock_qty=0 WHERE project_id=$1 AND id=$2',[f.first,row.product_id]);
+    assert.equal((await f.invoke('finalizeSale',f.first,{localOrderId:'zero-opening-sale',method:'cash',total:0,cart:[{type:'product',id:row.product_id,name:item.name,unitPrice:0,qty:3}]})).status,200);
+    item=await f.read(); assert.equal(item.totalStock,100); assert.equal(item.remainingStock,97);
+    assert.equal(item.allocations.find(row=>row.project_id===f.first).initial_stock,30);
+    assert.equal((await f.invoke('saveInventory',null,allocationPayload(item,100,{[f.first]:40}))).status,200);
+    item=await f.read(); assert.equal(item.stock,40); assert.equal(item.remainingStock,97);
+    const changed=item.allocations.find(row=>row.project_id===f.first); assert.equal(changed.stock,37); assert.equal(changed.initial_stock,40);
+  } finally {await f.db.close();}
+});
