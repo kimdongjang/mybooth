@@ -728,3 +728,9 @@ input, select { background: white; color: #17243b; min-height: 36px; }
  .inventory-filters summary{min-height:44px}
 }
 .inventory-history{padding:20px;border-top:1px solid #e2e8f0}.inventory-history h4{font-size:15px;font-weight:700;margin-bottom:8px}
+
+.product-removal-notice{margin:16px 0;padding:16px;border:1px solid #93c5fd;border-radius:12px;background:#eff6ff;color:#1e3a8a;overflow-wrap:anywhere}
+.product-removal-notice h3{font-weight:700;margin-bottom:8px}
+.product-removal-notice p{margin-bottom:12px}
+.product-removal-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.product-removal-actions .management-back{display:inline-flex;align-items:center;justify-content:center;min-height:44px;background:white}

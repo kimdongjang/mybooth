@@ -313,7 +313,7 @@ export default function App() {
     setSaving(true);
     setError('');
     try {
-      if (['resetDefaults', 'upsertDefaults', 'replaceProducts', 'replaceBundles', 'clearSales'].includes(action)) {
+      if (['resetDefaults', 'upsertDefaults', 'replaceProducts', 'replaceBundles', 'clearSales', 'removeProduct'].includes(action)) {
         const waiting = await orderRepository.countWaiting(selectedProject.id);
         if (waiting > 0) throw new Error('미동기화 주문이 남아 있습니다. 주문 동기화를 완료한 뒤 상품·세트 변경을 다시 시도해주세요.');
       }
@@ -322,6 +322,7 @@ export default function App() {
       const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: selectedProject.id, dataRevision, action, payload }) });
       if (activeScope.current !== scope) return;
       await applyState(data, false, queueVersion);
+      if (action === 'removeProduct') setCart(current => current.filter(line => line.type === 'product' ? line.id !== payload.productId : !(line.subItems || []).some(item => item.productId === payload.productId)));
       success?.(data);
       return true;
     } catch (err) {

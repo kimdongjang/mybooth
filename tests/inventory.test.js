@@ -156,7 +156,9 @@ test('legacy adoption preserves event IDs, separate products with matching names
     assert.ok(first.inventory.every(item => item.stock === 0 && item.allocations.length === 1));
     assert.ok(first.inventory.every(item => item.totalReceived === 5 && item.remainingStock === 5 && item.totalEstimated));
     assert.equal(new Set(first.inventory.map(item => item.productNumber)).size, 2);
-    assert.deepEqual((await invoke(null, a)).body, before);
+    const adopted = (await invoke(null, a)).body;
+    assert.equal(adopted.products[0].inventoryId, first.inventory.find(item => item.allocations[0].project_id === a).id);
+    assert.deepEqual({ ...adopted, products: adopted.products.map(product => ({ ...product, inventoryId: null })) }, before);
     assert.deepEqual((await invoke('listInventory')).body, first);
     const item = first.inventory.find(item => item.allocations[0].project_id === a);
     assert.equal((await invoke('transferInventory', null, { projectId: a, inventoryId: item.id, qty: 5, direction: 'return', requestId: 'legacy-return' })).status, 200);
@@ -255,5 +257,42 @@ test('account numbering, cumulative receipts, genre and event sales summaries su
     await db.query('UPDATE pos_inventory_numbers SET last_number=9999 WHERE admin_id=$1', ['a']);
     assert.equal((await invoke('saveInventory', null, { product: { name: '번호 초과', stock: 0 } })).status, 409);
     assert.equal((await readItem()).productNumber, number);
+  } finally { await db.close(); }
+});
+
+
+test('event removal keeps the exact inventory link, stock and sale history for the inventory detail shortcut', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const event = (await invoke('createProject', null, { name: '제거 안내 행사' })).body.project.id;
+    const original = (await invoke('saveInventory', null, { product: { id: 'warehouse-original', version: -1, name: '공통 상품', stock: 10 } })).body.inventory[0];
+    await invoke('transferInventory', null, { projectId: event, inventoryId: original.id, qty: 6, direction: 'allocate', requestId: 'notice-allocation' });
+    const product = (await invoke(null, event)).body.products[0];
+    assert.notEqual(product.id, original.id);
+    assert.equal(product.inventoryId, original.id);
+    assert.equal((await invoke(null, event, {}, 'b')).status, 500);
+    assert.equal((await invoke('removeProduct', event, { productId: product.id }, 'b')).status, 500);
+    const sale = { localOrderId: 'notice-sale', method: 'cash', total: 0, cart: [{ type: 'product', id: product.id, name: product.name, unitPrice: 0, qty: 2 }] };
+    assert.equal((await invoke('finalizeSale', event, sale)).status, 200);
+    const removed = await invoke('removeProduct', event, { productId: product.id });
+    assert.equal(removed.status, 200);
+    assert.equal(removed.body.products.length, 0);
+    assert.equal(removed.body.sales.length, 1);
+    assert.equal((await invoke('removeProduct', event, { productId: product.id })).status, 200);
+    let item = (await invoke('listInventory')).body.inventory.find(item => item.id === product.inventoryId);
+    assert.ok(item);
+    assert.equal(item.stock, 4);
+    assert.equal(item.remainingStock, 8);
+    assert.equal(item.allocations[0].stock, 4);
+    assert.equal(item.history[0].soldQty, 2);
+    assert.equal((await invoke('replaceProducts', event, { products: [{ id: 'legacy', name: '기존 상품', price: 0, stockQty: 0, initialStockQty: 0 }] })).status, 200);
+    assert.equal((await invoke(null, event)).body.products[0].inventoryId, null);
+    assert.equal((await invoke('voidSale', event, { id: sale.localOrderId })).status, 200);
+    item = (await invoke('listInventory')).body.inventory.find(item => item.id === original.id);
+    assert.equal(item.remainingStock, 10);
+    assert.equal(item.allocations[0].stock, 6);
+    assert.equal((await invoke('finalizeSale', event, { ...sale, localOrderId: 'removed-sale' })).status, 500);
+    await db.query('UPDATE pos_projects SET archived_at=NOW() WHERE id=$1', [event]);
+    assert.equal((await invoke('removeProduct', event, { productId: 'legacy' })).status, 409);
   } finally { await db.close(); }
 });
