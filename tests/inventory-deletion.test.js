@@ -143,3 +143,13 @@ test('allocation total overflow blocks saving before sending a mutation', async 
   assert.equal(h.calls.some(call => call.action === 'saveInventory'), false);
   assert.ok(nodes(h.render()).find(node => node.props?.role === 'alert'));
 });
+
+test('allocation event names link to the exact event settings and preserve native modified clicks', async () => {
+  const h=await harness([{project_id:'event/one',product_id:'goods',event_name:'행사',initial_stock:6,stock:6}]);
+  const link=nodes(h.render()).find(node=>node.type==='a'&&node.props?.children==='행사');
+  assert.equal(link.props.href,'#/products?projectId=event%2Fone');
+  link.props.onClick({button:0,ctrlKey:true,preventDefault(){throw new Error('native click intercepted');}});
+  assert.equal(h.navigations.length,0);
+  link.props.onClick({button:0,preventDefault(){}});
+  assert.deepEqual(h.navigations,['/products?projectId=event%2Fone']);
+});

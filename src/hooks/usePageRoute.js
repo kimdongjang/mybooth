@@ -6,7 +6,14 @@ export const pageTitles = { inventory: '공통 상품·재고 관리', account: 
 export const pageForHash = hash => {
   const path = String(hash).split('?')[0];
   if (/^#\/inventory\/[^/?#]+$/.test(path)) return 'inventory';
-  return Object.entries(pagePaths).find(([, value]) => path === `#${value}`)?.[0] || null;
+  return Object.entries(pagePaths).find(([, value]) => path === `#${value}`)?.[0] || (/^#\/products\/[^/?#]+$/.test(path) ? 'settings' : null);
+};
+export const productIdForHash = hash => {
+  const path = String(hash).split('?')[0];
+  if (Object.values(pagePaths).some(value => path === `#${value}`)) return '';
+  const match = /^#\/products\/([^/?#]+)$/.exec(path);
+  if (!match) return '';
+  try { return decodeURIComponent(match[1]); } catch { return ''; }
 };
 const readRoute = () => ({ page: pageForHash(window.location.hash) || 'pos', hash: window.location.hash });
 
@@ -19,7 +26,7 @@ export function usePageRoute() {
     return () => { window.removeEventListener('hashchange', update); window.removeEventListener('popstate', update); };
   }, []);
   const navigate = useCallback((next, replace = false) => {
-    const path = pagePaths[next] || (typeof next === 'string' && (next.startsWith('/inventory/') || next.startsWith('/settlement?') || next.startsWith('/products?')) ? next : pagePaths.pos);
+    const path = pagePaths[next] || (typeof next === 'string' && (next.startsWith('/inventory/') || next.startsWith('/settlement?') || next.startsWith('/products?') || next.startsWith('/products/')) ? next : pagePaths.pos);
     const hash = `#${path}`;
     if (replace) window.history.replaceState(null, '', hash);
     else if (window.location.hash !== hash) window.history.pushState(null, '', hash);

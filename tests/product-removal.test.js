@@ -6,7 +6,7 @@ import ts from 'typescript';
 
 const nodes = node => !node || typeof node !== 'object' ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
 async function harness(inventoryId = 'warehouse/원본', initialProductId = '') {
-  const state = [], refs = [], calls = [];
+  const state = [], refs = [], calls = [], navigations = [];
   let index = 0, refIndex = 0, confirmed = true, result = true;
   const context = vm.createContext({ confirm: () => confirmed });
   const mocks = {
@@ -24,11 +24,11 @@ async function harness(inventoryId = 'warehouse/원본', initialProductId = '') 
   });
   await module.evaluate();
   const product = { id: 'event-product', inventoryId, name: '행사 상품', price: 0, stock: 2 };
-  const props = { initialProductId, products: [product], bundles: [], sales: [], onRemove: async id => { calls.push(id); return result; } };
+  const props = { initialProductId, projectId: 'event/one', navigate: path => { navigations.push(path); props.initialProductId = path.startsWith('/products/') ? decodeURIComponent(path.split('?')[0].slice('/products/'.length)) : ''; }, products: [product], bundles: [], sales: [], onRemove: async id => { calls.push(id); return result; } };
   const render = () => { index = refIndex = 0; return module.namespace.ProductSettingsPanel(props); };
-  if (!initialProductId) nodes(render()).find(node => node.props?.['aria-label'] === '행사 상품 상세보기').props.onClick();
+  if (!initialProductId) nodes(render()).find(node => node.props?.['aria-label'] === '행사 상품 상세보기').props.onClick({ button: 0, preventDefault() {} });
   const remove = () => nodes(render()).find(node => node.props?.['aria-label'] === '행사 상품 상품 제거').props.onClick();
-  return { render, remove, calls, props, confirm: value => { confirmed = value; }, result: value => { result = value; } };
+  return { render, remove, calls, props, navigations, confirm: value => { confirmed = value; }, result: value => { result = value; } };
 }
 
 test('removal notice appears only after success and links to the exact encoded inventory detail', async () => {
@@ -59,19 +59,36 @@ test('inventory event shortcut opens the requested event product detail immediat
 });
 
 
-test('event detail identifies its context and offers header save, deletion and visible image actions', async () => {
+test('event detail omits the context block and duplicate heading and moves its inventory link into the product header', async () => {
   const h = await harness('warehouse-original', 'event-product');
   h.props.projectName = '2026 행사';
   h.props.products[0].imageUrl = 'https://example.test/image.webp';
   const tree = h.render();
-  const context = nodes(tree).find(node => node.props?.['aria-label'] === '현재 관리 위치');
-  assert.ok(nodes(context).find(node => node.props?.children === '행사 판매 상품'));
-  assert.ok(nodes(context).find(node => node.props?.children === '2026 행사'));
-  assert.equal(nodes(context).find(node => node.type === 'a').props.href, '#/inventory/warehouse-original');
+  assert.equal(nodes(tree).some(node => node.props?.['aria-label'] === '현재 관리 위치'), false);
+  assert.equal(nodes(tree).some(node => node.props?.children === '행사 상품 상세' || node.props?.children === '← 목록으로'), false);
   const header = nodes(tree).find(node => node.props?.className === 'management-product-header inventory-detail-header');
+  assert.equal(nodes(header).find(node => node.type === 'a').props.href, '#/inventory/warehouse-original');
   assert.equal(nodes(header).find(node => node.props?.children === '수정').props.form, 'event-product-edit-form');
   assert.ok(nodes(header).find(node => node.props?.children === '상품 삭제'));
   assert.ok(nodes(tree).find(node => node.props?.formId === 'event-product-edit-form' && node.props.hideSubmit));
   assert.ok(nodes(tree).find(node => node.props?.className === 'management-upload product-image-upload'));
   assert.ok(nodes(tree).find(node => node.props?.className === 'product-image-remove'));
+});
+
+test('product selection uses encoded detail URLs, modified clicks remain native, and route props control back/forward selection', async () => {
+  const h = await harness(); h.props.initialProductId = ''; h.navigations.length = 0;
+  let link = nodes(h.render()).find(node => node.props?.['aria-label'] === '행사 상품 상세보기');
+  assert.equal(link.type, 'a');
+  assert.equal(link.props.href, '#/products/event-product?projectId=event%2Fone');
+  link.props.onClick({button:0,ctrlKey:true,preventDefault(){throw new Error('native tab click intercepted');}});
+  assert.equal(h.navigations.length,0);
+  link.props.onClick({button:0,preventDefault(){}});
+  assert.equal(h.navigations[0],'/products/event-product?projectId=event%2Fone');
+  assert.ok(nodes(h.render()).find(node=>node.props?.['aria-label']==='행사 상품 상품 제거'));
+  h.props.initialProductId='';
+  assert.ok(nodes(h.render()).find(node=>node.props?.['aria-label']==='행사 상품 상세보기'));
+  h.props.initialProductId='missing-product';
+  assert.ok(nodes(h.render()).find(node=>node.props?.children==='상품을 찾을 수 없습니다'));
+  const back=nodes(h.render()).find(node=>node.props?.children==='상품 목록으로');
+  assert.equal(back.props.href,'#/products?projectId=event%2Fone');
 });

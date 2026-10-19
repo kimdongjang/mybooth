@@ -17,12 +17,14 @@ async function harness(component,props,storage=new Map()) {
   return {render,storage};
 }
 
-test('event inventory shows four read-only counts and exact common-inventory link without transfer controls',async()=>{
+test('event inventory shows four read-only counts in the allocation detail without duplicate links or transfer controls',async()=>{
  const h=await harness('EventInventoryControls',{adminId:'a',projectId:'event',product:{id:'p',inventoryId:'source'},api:async()=>({inventory:[{id:'source',totalStock:1000,allocations:[{project_id:'event',product_id:'p',initial_stock:100,stock:97}],history:[{projectId:'event',productId:'p',soldQty:3}]}]})});
  const tree=h.render(); const counts=nodes(tree).filter(node=>node.type==='Quantity').map(node=>[node.props.label,node.props.value]);
  assert.deepEqual(counts,[['총재고',1000],['행사 배정 수량',100],['판매 수량',3],['남은 수량',97]]);
  assert.equal(nodes(tree).some(node=>node.type==='form'||node.type==='input'||node.type==='select'),false);
- assert.equal(nodes(tree).find(node=>node.type==='a').props.href,'#/inventory/source');
+ assert.equal(nodes(tree).some(node=>node.type==='a'),false);
+ assert.ok(nodes(tree).find(node=>node.props?.children==='행사 배정 재고 상세'));
+ assert.ok(nodes(tree).find(node=>node.props?.className==='product-stock-grid event-inventory-grid'));
 });
 
 test('recovery only replays the exact stored request and keeps network-uncertain data across reload',async()=>{

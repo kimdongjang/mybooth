@@ -197,14 +197,20 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
             const sold = savedItem?.history.find(history => history.projectId === row.project_id && history.productId === row.product_id)?.soldQty || 0;
             const consumed = Number(row.initial_stock) - Number(row.stock);
             const remaining = Number(row.stock) + Number(row.quantity) - Number(row.initial_stock);
-            return <tr key={allocationKey(row)}><td>{row.event_name}{row.archived_at ? ' (보관)' : ''}{row.is_active === false && <small className="inventory-cell-sub">행사에서 제거됨</small>}</td>
+            return <tr key={allocationKey(row)}><td><a className="event-text-link" href={`#/products?projectId=${encodeURIComponent(row.project_id)}`} onClick={event => {
+              if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+              event.preventDefault(); navigate(`/products?projectId=${encodeURIComponent(row.project_id)}`);
+            }}>{row.event_name}</a>{row.archived_at ? ' (보관)' : ''}{row.is_active === false && <small className="inventory-cell-sub">행사에서 제거됨</small>}</td>
               <td><Input form="inventory-product-form" aria-label={`${row.event_name} 배정 수량`} required type="number" min={Math.max(sold,consumed,0)} max={row.archived_at ? Number(row.initial_stock) : 2147483647} step="1" value={row.quantity} disabled={busy || uncertain || pendingMoves || (row.archived_at && !row.product_id)} onChange={value => setDraft(current => ({ ...current, allocationQuantities: { ...current.allocationQuantities, [allocationKey(row)]: value === '' ? '' : Number(value) } }))} /></td>
               <td><output className="inventory-readonly-quantity" aria-label={`${row.event_name} 판매 수량`}>{won(sold)}개</output></td><td><output className="inventory-readonly-quantity" aria-label={`${row.event_name} 남은 수량`}>{won(remaining)}개</output>{consumed !== sold && <small className="inventory-cell-sub">과거 재고 차감 반영</small>}</td></tr>;
           })}</tbody></table></div>
           {!allocationRows.length && <p className="management-note">등록된 행사가 없습니다.</p>}
         </section>}
         {view === 'detail' && <section className="inventory-history"><h4>행사별 판매 이력</h4><p className="management-note">보존된 판매 내역 기준이며 취소된 판매는 제외합니다. 링크를 누르면 해당 행사로 전환해 판매 내역을 엽니다.</p>
-          <div className="management-table-wrap"><table className="management-table"><thead><tr><th scope="col">행사</th><th scope="col">판매 수량</th><th scope="col">판매 내역</th></tr></thead><tbody>{(draft.history || []).map(history => <tr key={history.projectId}><td>{history.eventName}{history.estimated && <small className="inventory-creator">과거 세트 구성 일부 추정 또는 누락</small>}</td><td>{won(history.soldQty)}개</td><td><a className="event-text-link" href={`#/settlement?projectId=${encodeURIComponent(history.projectId)}&productId=${encodeURIComponent(history.productId)}&productName=${encodeURIComponent(draft.name)}`} onClick={event => {
+          <div className="management-table-wrap"><table className="management-table"><thead><tr><th scope="col">행사</th><th scope="col">판매 수량</th><th scope="col">판매 내역</th></tr></thead><tbody>{(draft.history || []).map(history => <tr key={history.projectId}><td><a className="event-text-link" href={`#/products?projectId=${encodeURIComponent(history.projectId)}`} onClick={event => {
+            if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+            event.preventDefault(); navigate(`/products?projectId=${encodeURIComponent(history.projectId)}`);
+          }}>{history.eventName}</a>{history.estimated && <small className="inventory-creator">과거 세트 구성 일부 추정 또는 누락</small>}</td><td>{won(history.soldQty)}개</td><td><a className="event-text-link" href={`#/settlement?projectId=${encodeURIComponent(history.projectId)}&productId=${encodeURIComponent(history.productId)}&productName=${encodeURIComponent(draft.name)}`} onClick={event => {
             if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
             event.preventDefault(); navigate(`/settlement?projectId=${encodeURIComponent(history.projectId)}&productId=${encodeURIComponent(history.productId)}&productName=${encodeURIComponent(draft.name)}`);
           }}>행사 판매 내역 →</a></td></tr>)}</tbody></table></div>{!draft.history?.length && <p className="catalog-empty">연결된 행사와 판매 이력이 없습니다.</p>}
