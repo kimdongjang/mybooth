@@ -21,7 +21,7 @@ export function ItemButton({ name, saleNumber, imageUrl, price, stock, soldout, 
     {!bundle && <ProductImage imageUrl={imageUrl} name={name} />}
     <div className="flex flex-1 flex-col p-3">
       {bundle && <span className="mb-2 text-[10px] font-bold tracking-wide text-register">세트 할인</span>}
-      {saleNumber && <span className="event-sale-number">판매 {saleNumber}번</span>}
+      {saleNumber && <span className="event-sale-number">{saleNumber}번 상품</span>}
       <span className="product-name break-words">{name}</span>
       {creatorName && <span className="product-creator mt-1 self-start max-w-full break-words">{creatorName}</span>}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="product-price mono text-register">{won(price)}원</span><span className={`product-stock ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>

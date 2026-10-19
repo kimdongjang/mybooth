@@ -10,6 +10,7 @@ async function harness(inventoryId = 'warehouse/원본', initialProductId = '') 
   let index = 0, refIndex = 0, confirmed = true, result = true;
   const context = vm.createContext({ confirm: () => confirmed });
   const mocks = {
+    '../hooks/useProductReorder': { useProductReorder: () => ({busy:false,message:'',rowProps:()=>({}),handleProps:()=>({})}) },
     react: { useState: initial => { const i = index++; if (!(i in state)) state[i] = initial; return [state[i], value => { state[i] = typeof value === 'function' ? value(state[i]) : value; }]; }, useRef: initial => refs[refIndex++] ||= { current: initial }, useMemo: fn => fn(), useEffect() {} },
     'react/jsx-runtime': { Fragment: 'fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '../utils/productDisplay': { won: String, compareProductSaleNumber: (a,b)=>(a.saleNumber||0)-(b.saleNumber||0), creatorNameOf: () => '', productNameWithoutCreator: p => p.name },
@@ -91,4 +92,18 @@ test('product selection uses encoded detail URLs, modified clicks remain native,
   assert.ok(nodes(h.render()).find(node=>node.props?.children==='상품을 찾을 수 없습니다'));
   const back=nodes(h.render()).find(node=>node.props?.children==='상품 목록으로');
   assert.equal(back.props.href,'#/products?projectId=event%2Fone');
+});
+
+test('all products expose grab handles with read-only numbers and compact detail identity',async()=>{
+ const h=await harness();h.props.initialProductId='';
+ h.props.products=Array.from({length:30},(_,i)=>({id:`p${i}`,name:`상품 ${i}`,saleNumber:i+1,inventoryId:'original'}));
+ const tree=h.render();
+ assert.equal(nodes(tree).filter(node=>node.props?.className==='product-grab-handle').length,30);
+ assert.equal(nodes(tree).filter(node=>node.type==='output'&&node.props?.className==='product-sale-number').length,30);
+ assert.equal(nodes(tree).some(node=>node.type==='input'&&node.props?.type==='number'),false);
+ assert.equal(nodes(tree).some(node=>node.props?.['aria-label']==='상품 목록 페이지'),false);
+ h.props.initialProductId='p0';
+ const detail=h.render();assert.ok(nodes(detail).find(node=>node.props?.className==='event-product-meta'));
+ const number=nodes(detail).find(node=>node.props?.className==='event-product-tag');
+ assert.equal([number.props.children].flat().join(''),'1번 상품');
 });

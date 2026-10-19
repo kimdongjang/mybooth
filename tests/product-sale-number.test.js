@@ -2,32 +2,64 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
-import ts from 'typescript';
-const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(Infinity).flatMap(nodes)];
+
 async function harness(){
- const state=[],refs=[],calls=[];let i,r,effect=false;
- const context=vm.createContext({});
- const source=await readFile(new URL('../src/components/ProductSaleNumberForm.jsx',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(ts.transpileModule(source,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText,{context});
- const mocks={react:{useState:initial=>{const n=i++;if(!(n in state))state[n]=initial;return[state[n],value=>state[n]=typeof value==='function'?value(state[n]):value];},useRef:initial=>refs[r++]||={current:initial},useEffect:callback=>{if(!effect){effect=true;callback();}}},'./PosUI':{Input:'Input'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}};
- await mod.link(name=>new vm.SyntheticModule(Object.keys(mocks[name]),function(){for(const[k,v]of Object.entries(mocks[name]))this.setExport(k,v);},{context}));await mod.evaluate();
- const props={product:{id:'a',name:'상품',saleNumber:1},order:['a','b','c'],onSave:async payload=>{calls.push(payload);return true;}};
- const render=()=>{i=r=0;return mod.namespace.default(props);};render();
- return{render,calls,props,change:value=>nodes(render()).find(node=>node.type==='Input').props.onChange(value),submit:()=>render().props.onSubmit({preventDefault(){}})};
+ const state=[],refs=[],dependencies=[],effects=[],frames=new Map(),listeners=new Map(),calls=[];let i,r,e,frameId=0,hit='a',fail=false;
+ const container={scrollTop:0,getBoundingClientRect:()=>({top:0,bottom:500})};
+ const button={closest:selector=>selector==='table'?{contains:row=>row.inside!==false}:container,focus(){},setPointerCapture(){},hasPointerCapture:()=>false};
+ const context=vm.createContext({window:{addEventListener:(key,fn)=>listeners.set(key,fn),removeEventListener:key=>listeners.delete(key)},document:{elementFromPoint:()=>hit===null?null:{closest:()=>({dataset:{productRow:hit},inside:hit!=='foreign'})},querySelector:()=>({scrollIntoView(){}})},requestAnimationFrame:fn=>{frames.set(++frameId,fn);return frameId;},cancelAnimationFrame:id=>frames.delete(id)});
+ const mod=new vm.SourceTextModule(await readFile(new URL('../src/hooks/useProductReorder.js',import.meta.url),'utf8'),{context});
+ await mod.link(()=>new vm.SyntheticModule(['useState','useRef','useEffect'],function(){
+  this.setExport('useState',initial=>{const n=i++;if(!(n in state))state[n]=initial;return[state[n],next=>state[n]=typeof next==='function'?next(state[n]):next];});
+  this.setExport('useRef',initial=>refs[r++]||={current:initial});
+  this.setExport('useEffect',(fn,deps)=>{const n=e++;if(!dependencies[n]||deps.some((value,j)=>value!==dependencies[n][j])){dependencies[n]=deps;effects.push(fn);}});
+ },{context}));await mod.evaluate();
+ const props={products:[{id:'a',name:'A'},{id:'b',name:'B'},{id:'c',name:'C'}],disabled:false,onSave:async payload=>{calls.push(payload);if(fail)throw new Error('stale order');return true;}};
+ const render=()=>{i=r=e=0;const result=mod.namespace.useProductReorder(props);while(effects.length)effects.shift()();return result;};render();
+ const pointer=(overrides={})=>({button:0,isPrimary:true,pointerId:1,clientX:100,clientY:200,currentTarget:button,preventDefault(){},...overrides});
+ const key=value=>({key:value,preventDefault(){}});
+ return {props,calls,render,pointer,key,container,frames,listeners,hit:value=>{hit=value;},fail:value=>{fail=value;},tick:()=>{const next=frames.entries().next().value;if(next){frames.delete(next[0]);next[1]();}}};
 }
 
-test('sale-number editor submits the target product and full baseline order only on explicit apply',async()=>{
- const h=await harness();h.change('3');assert.equal(h.calls.length,0);await h.submit();
+test('grab handle saves once on drop using immutable baseline order; pointer cancellation and outside drops never save',async()=>{
+ const h=await harness();let api=h.render();api.handleProps(h.props.products[0]).onPointerDown(h.pointer());
+ h.hit('c');api=h.render();api.handleProps(h.props.products[0]).onPointerMove(h.pointer());assert.equal(h.calls.length,0);
+ assert.equal(h.render().state.to,2);
+ await h.render().handleProps(h.props.products[0]).onPointerUp(h.pointer());
  assert.deepEqual(JSON.parse(JSON.stringify(h.calls[0])),{productId:'a',saleNumber:3,expectedOrder:['a','b','c']});
- for(const value of ['','0','1.5','4']){h.change(value);await h.submit();}
- assert.equal(h.calls.length,1);assert.ok(nodes(h.render()).find(node=>node.props?.role==='alert'));
- h.change('2');h.props.disabled=true;await h.submit();assert.equal(h.calls.length,1);
+ await h.render().handleProps(h.props.products[0]).onPointerUp(h.pointer());assert.equal(h.calls.length,1);assert.equal(h.frames.size,0);
+ h.hit('b');h.render().handleProps(h.props.products[0]).onPointerDown(h.pointer());h.render().handleProps(h.props.products[0]).onPointerCancel();assert.equal(h.render().state,null);
+ h.render().handleProps(h.props.products[0]).onPointerDown(h.pointer());h.hit('foreign');await h.render().handleProps(h.props.products[0]).onPointerUp(h.pointer());assert.equal(h.calls.length,1);
 });
 
-test('sale-number ordering is numeric, deterministic, and places legacy unnumbered products last',async()=>{
- const source=await readFile(new URL('../src/utils/productDisplay.js',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(source);await mod.link(()=>{});await mod.evaluate();
- const products=[{id:'ten',saleNumber:10},{id:'legacy'},{id:'two',saleNumber:2},{id:'one',saleNumber:1}];
- products.sort(mod.namespace.compareProductSaleNumber);
- assert.deepEqual(products.map(p=>p.id),['one','two','ten','legacy']);
+test('touch pointer edge scrolling, keyboard move/drop, Escape and stale-list/read-only cancellation preserve scope',async()=>{
+ const h=await harness();const a=h.props.products[0];
+ h.render().handleProps(a).onPointerDown(h.pointer({clientY:490,pointerType:'touch'}));h.hit('b');h.tick();assert.equal(h.container.scrollTop,12);
+ h.render().handleProps(a).onPointerCancel();
+ h.render().handleProps(a).onKeyDown(h.key('Enter'));h.render().handleProps(a).onKeyDown(h.key('ArrowDown'));await h.render().handleProps(a).onKeyDown(h.key('Enter'));
+ assert.equal(h.calls[0].saleNumber,2);
+ h.render().handleProps(a).onKeyDown(h.key(' '));h.render().handleProps(a).onKeyDown(h.key('End'));h.render().handleProps(a).onKeyDown(h.key('Escape'));assert.equal(h.calls.length,1);
+ h.render().handleProps(a).onPointerDown(h.pointer());h.props.products=[...h.props.products].reverse();h.render();await h.render().handleProps(a).onPointerUp(h.pointer());assert.equal(h.calls.length,1);
+ h.props.disabled=true;h.render().handleProps(a).onPointerDown(h.pointer());assert.equal(h.render().state,null);
+});
+
+test('failed save keeps the original product order and reports the error',async()=>{
+ const h=await harness();h.fail(true);const a=h.props.products[0];
+ h.render().handleProps(a).onKeyDown(h.key('Enter'));h.render().handleProps(a).onKeyDown(h.key('End'));await h.render().handleProps(a).onKeyDown(h.key('Enter'));
+ assert.deepEqual(h.props.products.map(p=>p.id),['a','b','c']);assert.equal(h.render().message,'stale order');assert.equal(h.render().busy,false);
+});
+
+test('sale-number ordering remains numeric with legacy unnumbered products last',async()=>{
+ const source=await readFile(new URL('../src/utils/productDisplay.js',import.meta.url),'utf8');const mod=new vm.SourceTextModule(source);await mod.link(()=>{});await mod.evaluate();
+ const products=[{id:'ten',saleNumber:10},{id:'legacy'},{id:'two',saleNumber:2},{id:'one',saleNumber:1}];products.sort(mod.namespace.compareProductSaleNumber);assert.deepEqual(products.map(p=>p.id),['one','two','ten','legacy']);
+});
+
+test('window blur cancels a grab and a pending save blocks another grab',async()=>{
+ const h=await harness();const a=h.props.products[0];
+ h.render().handleProps(a).onPointerDown(h.pointer());h.listeners.get('blur')();assert.equal(h.render().state,null);assert.equal(h.calls.length,0);
+ let resolveSave;h.props.onSave=payload=>{h.calls.push(payload);return new Promise(resolve=>{resolveSave=resolve;});};
+ h.render().handleProps(a).onKeyDown(h.key('Enter'));h.render().handleProps(a).onKeyDown(h.key('End'));
+ const saving=h.render().handleProps(a).onKeyDown(h.key('Enter'));
+ assert.equal(h.render().busy,true);h.render().handleProps(a).onPointerDown(h.pointer());assert.equal(h.render().state,null);assert.equal(h.calls.length,1);
+ resolveSave(true);await saving;assert.equal(h.render().busy,false);
 });

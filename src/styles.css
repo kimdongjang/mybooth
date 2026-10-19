@@ -794,7 +794,19 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 
 .inventory-breadcrumb{min-width:0}.inventory-breadcrumb ol{display:flex;align-items:center;gap:10px;list-style:none;margin:0;padding:0;white-space:nowrap}
 .inventory-breadcrumb a{font-size:14px;font-weight:500;color:#64748b}.inventory-breadcrumb h1{font-size:17px;font-weight:700;color:#17243b}.inventory-breadcrumb li[aria-hidden]{color:#94a3b8}
-.product-sale-number-form{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:125px}.product-sale-number-form label{width:58px}.product-sale-number-form input{min-height:40px;text-align:center}.product-sale-number-form button{min-height:40px;padding:6px 8px}.product-sale-number-form p{flex-basis:100%;font-size:11px;color:#b91c1c}
 .event-sale-number{align-self:flex-start;display:inline-block;font-size:11px;font-weight:700;color:#2563eb;margin-bottom:3px}
-.event-product-table-wrap{overflow-x:auto;max-width:100%}.event-product-number-table{min-width:940px}.event-product-number-table th:first-child{width:145px}.event-product-number-table th:nth-child(2){width:22%}.event-product-number-table th:nth-child(3){text-align:left}.event-product-number-table th:nth-child(4){text-align:right}
+.event-product-table-wrap{overflow-x:auto;max-width:100%}.event-product-number-table{min-width:940px}.event-product-number-table th:first-child{width:100px}.event-product-number-table th:nth-child(2){width:22%}.event-product-number-table th:nth-child(3){text-align:left}.event-product-number-table th:nth-child(4){text-align:right}
 @media(max-width:600px){.inventory-list-heading{gap:8px;padding:0;flex-wrap:wrap}.inventory-breadcrumb ol{gap:5px}.inventory-breadcrumb a{font-size:11px}.inventory-breadcrumb h1{font-size:14px}.inventory-list-heading>.management-add{padding:8px;font-size:11px}}
+
+.product-order-cell{display:flex;align-items:center;gap:6px}.product-sale-number{font-size:13px;font-weight:700;color:#475569;font-variant-numeric:tabular-nums}
+.product-grab-handle{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex-shrink:0;color:#64748b;border:1px solid transparent;border-radius:7px;cursor:grab;touch-action:none;user-select:none}
+.product-grab-handle:hover,.product-grab-handle[aria-pressed=true]{color:#2563eb;background:#eff6ff;border-color:#bfdbfe}.product-grab-handle[aria-pressed=true]{cursor:grabbing}.product-grab-handle:focus-visible{outline:2px solid #2563eb;outline-offset:2px}.product-grab-handle:disabled{cursor:not-allowed;opacity:.4}
+.event-product-number-table tr[data-dragging=true]{opacity:.55}.event-product-number-table tr[data-drop-position=before] td{box-shadow:inset 0 3px #2563eb}.event-product-number-table tr[data-drop-position=after] td{box-shadow:inset 0 -3px #2563eb}
+.product-reorder-status{font-size:12px;color:#475569;min-height:18px;margin-bottom:8px}
+.event-product-identity{display:flex;flex-direction:column;align-items:flex-start;gap:8px}.event-product-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.event-product-tag{display:inline-flex;align-items:center;min-height:28px;padding:4px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#475569;font-size:12px;font-weight:600;line-height:1.4}.event-product-code{overflow-wrap:anywhere;max-width:100%}.event-product-identity h3{font-size:18px;line-height:1.45;color:#17243b}
+@media(max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){
+ .event-product-number-table{min-width:0;width:100%}.event-product-number-table .event-product-extra-column{display:none}
+ .event-product-number-table th:first-child{width:72px}.event-product-number-table th:nth-child(2){width:auto}.event-product-number-table th:nth-child(4){width:58px}.event-product-number-table th:nth-child(6){width:38px}.event-product-number-table th:nth-child(7){width:42px}
+ .event-product-number-table :is(th,td){padding:9px 4px;font-size:11px}.event-product-number-table .product-order-cell{gap:2px}.event-product-number-table .product-sale-number{font-size:12px}.event-product-number-table .management-mobile-meta{display:block;font-size:10px}.event-product-identity h3{font-size:16px}
+}
