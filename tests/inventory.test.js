@@ -647,3 +647,55 @@ test('zero legacy opening quantities use remaining plus sold as allocation basel
     const changed=item.allocations.find(row=>row.project_id===f.first); assert.equal(changed.stock,37); assert.equal(changed.initial_stock,40);
   } finally {await f.db.close();}
 });
+
+test('event sale numbers move products to a unique position without touching quantities, prices, sales or other events', async () => {
+  const f=await fixture();
+  try {
+    const event=(await f.invoke('createProject',null,{name:'번호 행사'})).body.project.id;
+    const other=(await f.invoke('createProject',null,{name:'다른 번호 행사'})).body.project.id;
+    for(const [projectId,id] of [[event,'number-a'],[event,'number-b'],[event,'number-c'],[other,'number-other']])assert.equal((await f.invoke('createEventProduct',null,{projectId,product:{id,name:id,goodsType:'키링',vtuberName:'',creatorName:'',genre:'',price:1000,stockQty:5}})).status,200);
+    assert.equal((await f.invoke('finalizeSale',event,{localOrderId:'number-sale',method:'cash',total:1000,cart:[{type:'product',id:'number-a',name:'number-a',unitPrice:1000,qty:1}]})).status,200);
+    const before=(await f.invoke(null,event)).body;
+    assert.deepEqual(before.products.map(p=>p.saleNumber),[1,2,3]);
+    const payload={productId:'number-c',saleNumber:1,expectedOrder:before.products.map(p=>p.id)};
+    const moved=await f.invoke('reorderProducts',event,payload);
+    assert.equal(moved.status,200,JSON.stringify(moved.body));
+    assert.deepEqual(moved.body.products.map(p=>[p.id,p.saleNumber]),[['number-c',1],['number-a',2],['number-b',3]]);
+    assert.equal(moved.body.products.find(p=>p.id==='number-a').stockQty,4);
+    assert.equal(moved.body.products.every(p=>p.price===1000),true);
+    assert.deepEqual(moved.body.sales,before.sales);
+    assert.deepEqual((await f.invoke(null,other)).body.products.map(p=>p.saleNumber),[1]);
+    assert.equal((await f.invoke('reorderProducts',event,payload)).status,409);
+    const current=moved.body.products;
+    assert.equal((await f.invoke('replaceProducts',event,{products:current.map(p=>({...p,saleNumber:999})).reverse()})).status,200);
+    assert.deepEqual((await f.invoke(null,event)).body.products.map(p=>p.id),current.map(p=>p.id));
+    const duplicate=await f.invoke('duplicateProject',event,{password:'test-password',name:'순서 복제'});
+    assert.equal(duplicate.status,201,JSON.stringify(duplicate.body));
+    assert.deepEqual((await f.invoke(null,duplicate.body.project.id)).body.products.map(p=>[p.id,p.saleNumber]),current.map(p=>[p.id,p.saleNumber]));
+    assert.equal((await f.invoke('removeProduct',event,{productId:'number-c'})).status,200);
+    assert.deepEqual((await f.invoke(null,event)).body.products.map(p=>p.saleNumber),[1,2]);
+    await f.db.query('UPDATE pos_products SET sale_number=NULL WHERE project_id=$1',[event]);
+    assert.equal((await f.invoke('createEventProduct',null,{projectId:event,product:{id:'number-d',name:'D',goodsType:'키링',vtuberName:'',creatorName:'',genre:'',price:1000,stockQty:1}})).status,200);
+    assert.deepEqual((await f.invoke(null,event)).body.products.map(p=>p.id),['number-a','number-b','number-d']);
+  } finally {await f.db.close();}
+});
+
+test('sale numbering rejects invalid/stale/archived/foreign changes and rolls back an injected reorder failure', async()=>{
+ const f=await fixture();
+ try{
+  const event=(await f.invoke('createProject',null,{name:'검증 번호 행사'})).body.project.id;
+  await f.invoke('replaceProducts',event,{products:[{id:'a',name:'A',price:0,stockQty:2},{id:'b',name:'B',price:1000,stockQty:2}]});
+  const state=(await f.invoke(null,event)).body;
+  const payload={productId:'b',saleNumber:1,expectedOrder:state.products.map(p=>p.id)};
+  for(const saleNumber of [0,-1,1.2,3,'1'])assert.equal((await f.invoke('reorderProducts',event,{...payload,saleNumber})).status,400);
+  assert.equal((await f.invoke('reorderProducts',event,{...payload,productId:'foreign'})).status,400);
+  assert.equal((await f.invoke('reorderProducts',event,{...payload,expectedOrder:['b','a']})).status,409);
+  assert.notEqual((await f.invoke('reorderProducts',event,payload,'b')).status,200);
+  await f.db.query('UPDATE pos_projects SET archived_at=NOW() WHERE id=$1',[event]);
+  assert.equal((await f.invoke('reorderProducts',event,payload)).status,409);
+  await f.db.query('UPDATE pos_projects SET archived_at=NULL WHERE id=$1',[event]);
+  await f.db.exec("CREATE FUNCTION fail_sale_number() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.sale_number IS DISTINCT FROM OLD.sale_number THEN RAISE EXCEPTION 'injected numbering failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_sale_number BEFORE UPDATE ON pos_products FOR EACH ROW EXECUTE FUNCTION fail_sale_number()");
+  assert.equal((await f.invoke('reorderProducts',event,payload)).status,500);
+  assert.deepEqual((await f.invoke(null,event)).body.products,state.products);
+ }finally{await f.db.close();}
+});

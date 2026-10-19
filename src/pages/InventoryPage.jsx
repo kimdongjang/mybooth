@@ -130,7 +130,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     });
   };
   return <main className="page-content inventory-page">
-    <PageIntro title="공통 상품·재고 관리" />
+    {view !== 'list' && <PageIntro title="공통 상품·재고 관리" />}
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
     {deletionNotice && <div role="status" className="inventory-card"><p>{deletionNotice}</p><button type="button" className="management-back" onClick={() => setDeletionNotice('')}>닫기</button></div>}
@@ -138,7 +138,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     {uncertain && <div role="status" className="inventory-card"><p>이전에 요청한 재고 이동의 완료 여부를 확인해주세요.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(resolvePending)}>이전 이동 결과 확인</button></div>}
     <InventoryTransferRecovery adminId={adminId} api={api} onBlocked={setPendingMoves} onInventory={inventory => { setItems(inventory); setDraft(current => current ? inventory.find(row => row.id === current.id) || null : null); }} />
     <section className="product-management">
-      <header className="management-heading"><h2>{view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상품 재고 상세'}</h2>
+      <header className={`management-heading ${view === 'list' ? 'inventory-list-heading' : ''}`}>{view === 'list' ? <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol><li><a href="#/inventory" onClick={event=>{if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||event.button!==0)return;event.preventDefault();navigate('inventory');}}>공통 상품·재고 관리</a></li><li aria-hidden="true">/</li><li><h1 aria-current="page">재고 목록</h1></li></ol></nav> : <h2>{view === 'new' ? '상품 등록' : '상품 재고 상세'}</h2>}
         {view === 'list' ? <button type="button" className="management-add" disabled={busy || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button>
           : <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
       </header>

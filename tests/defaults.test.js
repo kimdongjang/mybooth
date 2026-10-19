@@ -19,6 +19,8 @@ async function fixture() {
       return { rows: rows.pos_projects.filter(p => p.id === values[0] && p.admin_id === values[1]) };
     }
     if (query.startsWith('SELECT inventory_id FROM pos_inventory_links')) return { rows: [] };
+    // Ordering-only SQL is covered against PostgreSQL in inventory.test.js.
+    if (query.startsWith('WITH numbered AS') || query.startsWith('UPDATE pos_products SET sale_number=NULL')) return { rows: [] };
     if (query.startsWith('INSERT INTO ')) {
       const [, table, columns] = query.match(/^INSERT INTO (\w+) \(([^)]+)\)/);
       const row = Object.fromEntries(columns.split(', ').map((column, i) => [column, values[i]]));

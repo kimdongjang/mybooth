@@ -46,6 +46,7 @@ async function initDb() {
   await sql`CREATE TABLE IF NOT EXISTS pos_products (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, stock INTEGER NOT NULL, product_code TEXT, goods_type TEXT, vtuber_name TEXT, creator_name TEXT, stock_qty INTEGER, initial_stock_qty INTEGER, size TEXT, set_creator_name TEXT, set_group_name TEXT, set_price INTEGER, set_description TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY(project_id, id))`;
   await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS image_url TEXT`;
   await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS genre TEXT`;
+  await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS sale_number INTEGER CHECK (sale_number > 0)`;
   await sql`CREATE TABLE IF NOT EXISTS pos_bundles (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, items JSONB NOT NULL, PRIMARY KEY(project_id, id))`;
   await sql`CREATE TABLE IF NOT EXISTS pos_sales (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, time TIMESTAMPTZ NOT NULL, method TEXT NOT NULL, total INTEGER NOT NULL, lines JSONB NOT NULL, PRIMARY KEY(project_id, id))`;
   await sql`CREATE TABLE IF NOT EXISTS pos_sale_receipts (
@@ -190,7 +191,7 @@ async function inventoryState(adminId) {
   await sql`INSERT INTO pos_inventory (admin_id,id,product,stock)
     SELECT e.admin_id, 'legacy:' || length(p.project_id)::text || ':' || p.project_id || p.id,
       jsonb_build_object('name',p.name,'price',p.price,'goodsType',COALESCE(p.goods_type,p.name),
-        'creatorName',COALESCE(p.creator_name,''),'vtuberName',COALESCE(p.vtuber_name,''),'genre',COALESCE(p.genre,''),'imageUrl',p.image_url), 0
+        'creatorName',COALESCE(p.creator_name,''),'vtuberName',COALESCE(p.vtuber_name,''),'genre',COALESCE(p.genre,''),'imageUrl',p.image_url,'createdAt',COALESCE(p.created_at,NOW())), 0
     FROM pos_products p JOIN pos_projects e ON e.id=p.project_id
     WHERE e.admin_id=${adminId} AND NOT EXISTS (SELECT 1 FROM pos_inventory_links l WHERE l.project_id=p.project_id AND l.product_id=p.id)
     ON CONFLICT (admin_id,id) DO NOTHING`;
@@ -494,13 +495,15 @@ async function listProjects(adminId) {
   return { projects: result.rows.map((project) => ({ id: project.id, name: project.name, archivedAt: project.archived_at ? new Date(project.archived_at).toISOString() : null, seedVersion: Number(project.seed_version || 0), createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString() })) };
 }
 
-async function insertProduct(projectId, input, onlyMissing = false) {
+async function insertProduct(projectId, input, onlyMissing = false, saleNumber = null) {
   const product = normalizeProduct(input);
+  if (saleNumber == null) await ensureProductSaleNumbers(projectId);
+  const position = product.isActive ? (saleNumber ?? Number((await sql`SELECT COALESCE(MAX(sale_number),0)+1 AS next FROM pos_products WHERE project_id=${projectId} AND COALESCE(is_active,TRUE)=TRUE`).rows[0]?.next || 1)) : null;
   if (onlyMissing) {
-    await sql`INSERT INTO pos_products (project_id, id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at, image_url, genre) VALUES (${projectId}, ${product.id}, ${displayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt}, ${product.imageUrl}, ${product.genre}) ON CONFLICT (project_id, id) DO NOTHING`;
+    await sql`INSERT INTO pos_products (project_id, id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at, image_url, genre, sale_number) VALUES (${projectId}, ${product.id}, ${displayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt}, ${product.imageUrl}, ${product.genre}, ${position}) ON CONFLICT (project_id, id) DO NOTHING`;
     return;
   }
-  await sql`INSERT INTO pos_products (project_id, id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at, image_url, genre) VALUES (${projectId}, ${product.id}, ${displayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt}, ${product.imageUrl}, ${product.genre})`;
+  await sql`INSERT INTO pos_products (project_id, id, name, price, stock, product_code, goods_type, vtuber_name, creator_name, stock_qty, initial_stock_qty, size, set_creator_name, set_group_name, set_price, set_description, is_active, created_at, updated_at, image_url, genre, sale_number) VALUES (${projectId}, ${product.id}, ${displayName(product)}, ${product.price}, ${product.stockQty}, ${product.productCode}, ${product.goodsType}, ${product.vtuberName}, ${product.creatorName}, ${product.stockQty}, ${product.initialStockQty}, ${product.size}, ${product.setCreatorName}, ${product.setGroupName}, ${product.setPrice}, ${product.setDescription}, ${product.isActive}, ${product.createdAt}, ${product.updatedAt}, ${product.imageUrl}, ${product.genre}, ${position})`;
 }
 
 async function seedProject(adminId, projectId) {
@@ -529,8 +532,33 @@ async function createProject(adminId, name) {
   return { project: { id, name: projectName } };
 }
 
+// A project's row lock serializes numbering with catalog and sale mutations.
+async function ensureProductSaleNumbers(projectId) {
+  await sql`SELECT id FROM pos_projects WHERE id=${projectId} FOR UPDATE`;
+  await sql`WITH numbered AS (
+    SELECT id,ROW_NUMBER() OVER (ORDER BY sale_number NULLS LAST,COALESCE(product_code,id),id)::integer AS position
+    FROM pos_products WHERE project_id=${projectId} AND COALESCE(is_active,TRUE)=TRUE
+  ) UPDATE pos_products p SET sale_number=n.position FROM numbered n
+    WHERE p.project_id=${projectId} AND p.id=n.id AND p.sale_number IS DISTINCT FROM n.position`;
+  await sql`UPDATE pos_products SET sale_number=NULL WHERE project_id=${projectId} AND is_active=FALSE AND sale_number IS NOT NULL`;
+}
+
+async function reorderProducts(projectId, payload) {
+  await ensureProductSaleNumbers(projectId);
+  const current=(await sql`SELECT id FROM pos_products WHERE project_id=${projectId} AND COALESCE(is_active,TRUE)=TRUE ORDER BY sale_number,id`).rows.map(row=>row.id);
+  if (!Array.isArray(payload.expectedOrder) || JSON.stringify(payload.expectedOrder)!==JSON.stringify(current)) throw Object.assign(new Error('상품 순서가 변경되었습니다. 새로고침 후 다시 수정해주세요.'),{status:409});
+  const target=payload.saleNumber;
+  if (!Number.isInteger(target) || target<1 || target>current.length || !current.includes(payload.productId)) throw Object.assign(new Error('판매 번호는 현재 상품 수 안의 양의 정수로 입력해주세요.'),{status:400});
+  const next=current.filter(id=>id!==payload.productId);next.splice(target-1,0,payload.productId);
+  await sql`UPDATE pos_products p SET sale_number=n.position::integer,updated_at=NOW()
+    FROM jsonb_array_elements_text(${JSON.stringify(next)}::jsonb) WITH ORDINALITY AS n(id,position)
+    WHERE p.project_id=${projectId} AND p.id=n.id`;
+  await sql`UPDATE pos_projects SET updated_at=NOW() WHERE id=${projectId}`;
+}
+
 async function readState(adminId, projectId) {
   await assertProject(adminId, projectId);
+  await ensureProductSaleNumbers(projectId);
   const [products, bundles, sales] = await Promise.all([
     sql`SELECT p.*, l.inventory_id, i.product_number, i.version AS inventory_version,
       CASE WHEN i.id IS NOT NULL THEN i.product->>'name' ELSE p.name END AS name,
@@ -538,14 +566,14 @@ async function readState(adminId, projectId) {
       CASE WHEN i.id IS NOT NULL THEN i.product->>'vtuberName' ELSE p.vtuber_name END AS vtuber_name,
       CASE WHEN i.id IS NOT NULL THEN i.product->>'creatorName' ELSE p.creator_name END AS creator_name,
       CASE WHEN i.id IS NOT NULL THEN i.product->>'imageUrl' ELSE p.image_url END AS image_url,
-      CASE WHEN i.id IS NOT NULL THEN COALESCE(i.product->>'genre','') ELSE COALESCE(p.genre,'') END AS genre FROM pos_products p LEFT JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id AND l.admin_id=${adminId} LEFT JOIN pos_inventory i ON i.admin_id=l.admin_id AND i.id=l.inventory_id WHERE p.project_id = ${projectId} AND COALESCE(p.is_active, TRUE) = TRUE ORDER BY p.id`,
+      CASE WHEN i.id IS NOT NULL THEN COALESCE(i.product->>'genre','') ELSE COALESCE(p.genre,'') END AS genre FROM pos_products p LEFT JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id AND l.admin_id=${adminId} LEFT JOIN pos_inventory i ON i.admin_id=l.admin_id AND i.id=l.inventory_id WHERE p.project_id = ${projectId} AND COALESCE(p.is_active, TRUE) = TRUE ORDER BY p.sale_number,p.id`,
     sql`SELECT id, name, price, items FROM pos_bundles WHERE project_id = ${projectId} ORDER BY id`,
     sql`SELECT id, time, method, total, lines FROM pos_sales WHERE project_id = ${projectId} ORDER BY time ASC`,
   ]);
   return {
     archivedAt: (await sql`SELECT archived_at FROM pos_projects WHERE id = ${projectId}`).rows[0]?.archived_at || null,
     dataRevision: await dataRevision(projectId),
-    products: products.rows.map((product) => ({ id: product.id, inventoryId: product.inventory_id || null, productNumber: product.product_number || null, inventoryVersion: product.inventory_version ?? null, genre: product.genre || '', productCode: product.product_code || product.id, goodsType: product.goods_type || product.name, vtuberName: product.vtuber_name || '', creatorName: product.creator_name || '', stockQty: Number(product.stock_qty ?? product.stock ?? 0), initialStockQty: Number(product.initial_stock_qty ?? product.stock_qty ?? product.stock ?? 0), size: product.size || null, imageUrl: product.image_url || null, price: Number(product.price) || 0, setCreatorName: product.set_creator_name || null, setGroupName: product.set_group_name || null, setPrice: product.set_price == null ? null : Number(product.set_price) || 0, setDescription: product.set_description || null, isActive: product.is_active !== false, createdAt: new Date(product.created_at).toISOString(), updatedAt: new Date(product.updated_at).toISOString(), name: product.name, stock: Number(product.stock_qty ?? product.stock ?? 0) })),
+    products: products.rows.map((product) => ({ id: product.id, saleNumber: product.sale_number == null ? null : Number(product.sale_number), inventoryId: product.inventory_id || null, productNumber: product.product_number || null, inventoryVersion: product.inventory_version ?? null, genre: product.genre || '', productCode: product.product_code || product.id, goodsType: product.goods_type || product.name, vtuberName: product.vtuber_name || '', creatorName: product.creator_name || '', stockQty: Number(product.stock_qty ?? product.stock ?? 0), initialStockQty: Number(product.initial_stock_qty ?? product.stock_qty ?? product.stock ?? 0), size: product.size || null, imageUrl: product.image_url || null, price: Number(product.price) || 0, setCreatorName: product.set_creator_name || null, setGroupName: product.set_group_name || null, setPrice: product.set_price == null ? null : Number(product.set_price) || 0, setDescription: product.set_description || null, isActive: product.is_active !== false, createdAt: new Date(product.created_at).toISOString(), updatedAt: new Date(product.updated_at).toISOString(), name: product.name, stock: Number(product.stock_qty ?? product.stock ?? 0) })),
     bundles: bundles.rows.map((bundle) => ({ ...bundle, items: bundle.items || [] })),
     sales: sales.rows.map((sale) => ({ ...sale, time: new Date(sale.time).toISOString(), lines: sale.lines || [] })),
   };
@@ -558,12 +586,15 @@ async function replaceProducts(adminId, projectId, products) {
     const next = products.find(p => p.id === old.id);
     if (!next || Number(next.stockQty ?? next.stock) !== Number(old.stock_qty ?? old.stock) || Number(next.initialStockQty) !== Number(old.initial_stock_qty ?? old.stock_qty ?? old.stock)) throw Object.assign(new Error('공통 재고 상품은 재고 관리에서 배정·회수해주세요. 삭제 대신 회수 후 행사를 보관할 수 있습니다.'), { status: 409 });
   }
+  await ensureProductSaleNumbers(projectId);
+  const existingOrder=new Map((await sql`SELECT id,sale_number FROM pos_products WHERE project_id=${projectId}`).rows.map(row=>[row.id,row.sale_number]));
+  let nextNumber=[...existingOrder.values()].reduce((max,value)=>Math.max(max,Number(value)||0),0)+1;
   await sql`DELETE FROM pos_products WHERE project_id = ${projectId} AND COALESCE(is_active, TRUE) = TRUE`;
   for (const product of products) {
     const normalized = normalizeProduct(product);
     const source = linked.find(row => row.id === product.id)?.common_product;
     const common = source ? Object.fromEntries(['name','goodsType','vtuberName','creatorName','genre','imageUrl'].map(key => [key, source[key] ?? (key === 'imageUrl' ? null : '')])) : {};
-    await insertProduct(projectId, { ...normalized, ...common });
+    await insertProduct(projectId, { ...normalized, ...common }, false, existingOrder.get(product.id) ?? nextNumber++);
   }
   await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
@@ -800,6 +831,7 @@ async function handler(req, res) {
       await sql`UPDATE pos_products SET is_active=FALSE,updated_at=NOW() WHERE project_id=${projectId} AND id=${payload.productId}`;
       await sql`UPDATE pos_projects SET updated_at=NOW() WHERE id=${projectId}`;
     }
+    else if (action === 'reorderProducts') await reorderProducts(projectId, payload);
     else if (action === 'replaceProducts') await replaceProducts(admin.id, projectId, payload.products || []);
     else if (action === 'updateProductImage') await updateProductImage(admin.id, projectId, payload);
     else if (action === 'replaceBundles') await replaceBundles(admin.id, projectId, payload.bundles || []);

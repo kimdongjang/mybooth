@@ -12,7 +12,7 @@ async function harness(inventoryId = 'warehouse/원본', initialProductId = '') 
   const mocks = {
     react: { useState: initial => { const i = index++; if (!(i in state)) state[i] = initial; return [state[i], value => { state[i] = typeof value === 'function' ? value(state[i]) : value; }]; }, useRef: initial => refs[refIndex++] ||= { current: initial }, useMemo: fn => fn(), useEffect() {} },
     'react/jsx-runtime': { Fragment: 'fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    '../utils/productDisplay': { won: String, creatorNameOf: () => '', productNameWithoutCreator: p => p.name },
+    '../utils/productDisplay': { won: String, compareProductSaleNumber: (a,b)=>(a.saleNumber||0)-(b.saleNumber||0), creatorNameOf: () => '', productNameWithoutCreator: p => p.name },
     '../utils/managementQuantities': { managementQuantities: () => ({ products: new Map(), bundles: new Map() }), managementBundleStock: () => 0 },
   };
   let source = await readFile(new URL('../src/pages/ProductsPage.jsx', import.meta.url), 'utf8');

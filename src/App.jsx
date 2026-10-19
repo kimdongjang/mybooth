@@ -11,7 +11,7 @@ import ProjectRestorePage from './pages/ProjectRestorePage';
 import { AppHeader } from './components/PageLayout';
 import { Input } from './components/PosUI';
 import { pagePaths, pageTitles, projectPages, pageForHash, productIdForHash, usePageRoute } from './hooks/usePageRoute';
-import { uid, won, creatorNameOf, productNameFromFields, productNameWithoutCreator, normalizeProductForClient } from './utils/productDisplay';
+import { uid, won, creatorNameOf, productNameFromFields, productNameWithoutCreator, normalizeProductForClient, compareProductSaleNumber } from './utils/productDisplay';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { orderRepository } from './database/orderRepository';
 import { stateRepository } from './database/stateRepository';
@@ -314,7 +314,7 @@ export default function App() {
     setSaving(true);
     setError('');
     try {
-      if (['resetDefaults', 'upsertDefaults', 'replaceProducts', 'replaceBundles', 'clearSales', 'updateProductImage', 'removeProduct'].includes(action)) {
+      if (['resetDefaults', 'upsertDefaults', 'replaceProducts', 'replaceBundles', 'clearSales', 'updateProductImage', 'removeProduct', 'reorderProducts'].includes(action)) {
         const waiting = await orderRepository.countWaiting(selectedProject.id);
         if (waiting > 0) throw new Error('미동기화 주문이 남아 있습니다. 주문 동기화를 완료한 뒤 상품·세트 변경을 다시 시도해주세요.');
       }
@@ -630,12 +630,7 @@ export default function App() {
   }, [bundles, productsById]);
   const visibleProducts = useMemo(() => {
     const filtered = creatorFilter === 'all' ? products : products.filter((p) => creatorNameOf(p) === creatorFilter);
-    return [...filtered].sort((a, b) => (
-      creatorNameOf(a).localeCompare(creatorNameOf(b), 'ko-KR') ||
-      String(a.goodsType || a.name || '').localeCompare(String(b.goodsType || b.name || ''), 'ko-KR') ||
-      String(a.vtuberName || '').localeCompare(String(b.vtuberName || ''), 'ko-KR') ||
-      String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR')
-    ));
+    return [...filtered].sort(compareProductSaleNumber);
   }, [creatorFilter, products]);
   const bundleCreators = useCallback((bundle) => [...new Set((bundle?.items || []).map((item) => creatorNameOf(productsById[item.productId])))], [productsById]);
   const visibleBundles = useMemo(() => {

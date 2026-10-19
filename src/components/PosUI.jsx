@@ -16,11 +16,12 @@ export function ProductImage({ imageUrl, name }) {
   </div>;
 }
 
-export function ItemButton({ name, imageUrl, price, stock, soldout, bundle, creatorName, onClick }) {
+export function ItemButton({ name, saleNumber, imageUrl, price, stock, soldout, bundle, creatorName, onClick }) {
   return <button disabled={soldout} onClick={onClick} className={`product-card flex min-w-0 flex-col overflow-hidden rounded-xl border text-left transition hover:border-register hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed ${bundle ? 'border-blue-200 bg-blue-50' : 'border-line bg-white'} ${soldout ? 'is-soldout' : ''}`}>
     {!bundle && <ProductImage imageUrl={imageUrl} name={name} />}
     <div className="flex flex-1 flex-col p-3">
       {bundle && <span className="mb-2 text-[10px] font-bold tracking-wide text-register">세트 할인</span>}
+      {saleNumber && <span className="event-sale-number">판매 {saleNumber}번</span>}
       <span className="product-name break-words">{name}</span>
       {creatorName && <span className="product-creator mt-1 self-start max-w-full break-words">{creatorName}</span>}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-1 pt-3"><span className="product-price mono text-register">{won(price)}원</span><span className={`product-stock ${soldout ? 'text-danger' : 'text-slate-500'}`}>{soldout ? '품절' : stock}</span></div>

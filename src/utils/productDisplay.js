@@ -19,3 +19,5 @@ export const normalizeProductForClient = (product) => {
     name: product?.name || productNameFromFields(product || {}),
   };
 };
+
+export const compareProductSaleNumber = (a, b) => (Number(a.saleNumber) || Number.MAX_SAFE_INTEGER) - (Number(b.saleNumber) || Number.MAX_SAFE_INTEGER) || String(a.productCode || a.id).localeCompare(String(b.productCode || b.id), 'ko-KR', { numeric: true });

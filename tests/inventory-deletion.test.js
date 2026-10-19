@@ -153,3 +153,13 @@ test('allocation event names link to the exact event settings and preserve nativ
   link.props.onClick({button:0,preventDefault(){}});
   assert.deepEqual(h.navigations,['/products?projectId=event%2Fone']);
 });
+
+test('inventory list uses a single breadcrumb row instead of separate page and section titles', async()=>{
+ const h=await harness();h.props.routeHash='#/inventory';h.render();
+ const tree=h.render();
+ const breadcrumb=nodes(tree).find(node=>node.props?.className==='inventory-breadcrumb');
+ assert.ok(breadcrumb);
+ assert.equal(nodes(breadcrumb).find(node=>node.type==='a').props.children,'공통 상품·재고 관리');
+ assert.equal(nodes(breadcrumb).find(node=>node.type==='h1').props.children,'재고 목록');
+ assert.equal(nodes(tree).some(node=>node.type==='PageIntro'),false);
+});

@@ -1,3 +1,13 @@
+## 재고 목록 breadcrumb·행사 판매 번호 (2026-10-19)
+
+재고 목록의 페이지 제목/섹션 제목을 현재 위치 nav의 공통 상품·재고 관리 / 재고 목록 한 줄로 합친다. 상세/신규 등록 제목은 유지한다. 행사 상품 목록에는 판매 번호 입력/적용을 추가하고 실제 판매 카드/상세에도 번호를 표시한다. 판매 번호는 공통 상품 코드와 별개이며 행사별 활성 상품의1~N 순서다. 목록과 POS는 compareProductSaleNumber의 숫자 오름차순, 구형 미번호 자료는 코드 순서로 표시한다. 좁은 화면의 상품 표는 가로 스크롤로 입력과 상품명을 보존한다.
+
+pos_products.sale_number INTEGER CHECK (>0)를 반복 가능한 ALTER로 추가한다. readState는 소유 행사 확인 후 행사 행 잠금 안에서 기존 번호/코드/ID 순서를1~N으로 정리하고 비활성 상품 번호는NULL로 둔다. 신규 insertProduct는 마지막 번호를 추가하며 replaceProducts는 클라이언트 saleNumber를 무시하고 DB의 기존 순서를 보존한다. 백업/복제/복원은 기존 전체 행 방식으로 번호를 보존하고 과거 미번호/중복 자료는 읽을 때 정리한다. 초기 번호 보정은 수량/가격/판매 스냅샷을 바꾸지 않는다.
+
+reorderProducts({productId,saleNumber,expectedOrder})는 기존 행사 소유권/보관/revision/트랜잭션 잠금 경로를 사용한다. 최신 활성 상품ID 순서와 expectedOrder가 다르면409, 번호 범위/상품이 잘못되면400이다. 대상 상품을 해당 위치로 이동하고 나머지 번호를 한 트랜잭션에서 재배정한다. 다른 행사와 공통 원본/가격/재고/판매는 변경하지 않는다. App은 현재 기기의 미동기화 주문이 있으면 번호 변경도 차단하며 기존 queueVersion/scope 적용 계약을 유지한다. 주문 큐 스키마 변경 없음. 캐시 v90.
+
+기존 행사→공통 재고 신규 채택 시 product.createdAt에 행사 created_at(없으면 현재 시각)을 저장해 새 누락을 방지한다. 이미 누락된 운영 상품은 자동으로 덮어쓰지 않는다. scripts/backfillInventoryRegistrationDates.mjs는 명시적 관리자ID의 목록 표시 상품 중 등록일 미존재/NULL/빈 문자열만 대상으로 기본 preview를 제공한다. apply는 날짜·백업 경로를 요구하며 계정/행사/재고 잠금 후 최소 이전값 백업→한국 날짜00:00 기록/version증가를 원자 실행한다. 기존 날짜/삭제 상품/타 계정/수량·가격은 보존한다. 운영 실행은 별도 승인 대기다.
+
 ## 행사 상품 상세 URL·재고 표시 (2026-10-19)
 
 상품 목록 이름은 #/products/{encoded productId}?projectId={encoded projectId} 앵커로 이동한다. usePageRoute는 상세 경로를 settings로 인식하고 productIdForHash로 안전하게 디코딩한다. App은 경로 상품ID(기존 productId 쿼리도 호환)를 ProductsPage에 전달하며 해당 행사 전환/소유권 범위를 유지한다. ProductSettingsPanel은 로컬 선택 상태 대신 URL prop을 사용하여 새로고침/뒤로·앞으로 이동에 대응한다. Ctrl/중간 클릭은 native 앵커 동작을 유지한다. 상세에서 행사 판매 설정 탭을 누르면 목록 URL로 돌아가고, 삭제 성공도 목록으로 이동한다. 없는/제거된 상품은 찾을 수 없음과 목록 링크를 표시한다. 새 상품/세트 등록 예약 경로는 유지한다.
