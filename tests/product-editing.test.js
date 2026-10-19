@@ -154,3 +154,26 @@ test('initial inventory rejects invalid quantities, stale stock and underselling
   assert.equal(fresh.calls[0].stockQty, 0);
   assert.equal(fresh.calls[0].stock, 0);
 });
+
+
+test('event product genre is editable, trimmed, and submitted by the external header form', async () => {
+  const h = await harness();
+  const render = () => h.render({ formId: 'event-product-edit-form', hideSubmit: true });
+  nodes(render()).find(node => node.props?.field === 'genre').props.onChange('  게임  ');
+  assert.equal(render().props.id, 'event-product-edit-form');
+  assert.equal(nodes(render()).some(node => node.type === 'button' && node.props.type === 'submit'), false);
+  await render().props.onSubmit({ preventDefault() {} });
+  assert.equal(h.calls[0][0].genre, '게임');
+});
+
+
+test('shared event edits submit the baseline inventory version instead of silently overwriting external common changes', async () => {
+  const h = await harness(); h.props.product.inventoryVersion = 3;
+  const calls = [];
+  const onSave = async (patch, version) => { calls.push(version); return { ...patch, inventoryVersion: 4 }; };
+  await h.render({ onSave }).props.onSubmit({ preventDefault() {} });
+  assert.equal(calls[0], 3);
+  h.props.product = { ...h.props.product, name: '다른 곳에서 수정', inventoryVersion: 9 };
+  await h.render({ onSave }).props.onSubmit({ preventDefault() {} });
+  assert.equal(calls[1], 4);
+});

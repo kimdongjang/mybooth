@@ -6,13 +6,14 @@ export function recentProductValues(products, field) {
 }
 
 export function productEditDraft(product) {
-  return { name: product.name || productNameFromFields(product), vtuberName: product.vtuberName || '', goodsType: product.goodsType || '', creatorName: product.creatorName || '', price: String(product.price ?? 0) };
+  return { name: product.name || productNameFromFields(product), vtuberName: product.vtuberName || '', goodsType: product.goodsType || '', creatorName: product.creatorName || '', genre: product.genre || '', price: String(product.price ?? 0) };
 }
 
 export function productEditPatch(draft) {
   const price = Number(draft.price);
   if (!draft.name.trim() || !draft.goodsType.trim() || !String(draft.price).trim() || !Number.isSafeInteger(price) || price < 0) throw new Error('상품 이름, 굿즈 종류와 0 이상의 정수 판매가를 입력해주세요.');
-  return { name: draft.name.trim(), vtuberName: draft.vtuberName.trim(), goodsType: draft.goodsType.trim(), creatorName: draft.creatorName.trim(), price };
+  if (typeof draft.genre !== 'string' || draft.genre.length > 200) throw new Error('장르는 200자 이내로 입력해주세요.');
+  return { genre: draft.genre.trim(), name: draft.name.trim(), vtuberName: draft.vtuberName.trim(), goodsType: draft.goodsType.trim(), creatorName: draft.creatorName.trim(), price };
 }
 
 export function applyProductEdit(products, id, patch) {

@@ -34,6 +34,6 @@ export default function ProductStockForm({ product, soldQty, onSave, disabled })
       <Quantity label="판매수량" value={soldQty} />
       {remaining === null ? <div className="management-field"><span>남은 재고</span><output className="management-quantity mono">—</output></div> : <Quantity label="남은 재고" value={remaining} />}
     </div></fieldset>
-    <div className="product-edit-actions"><button type="submit" className="management-add" disabled={disabled || busy}>{busy ? '저장 중…' : '재고 수정'}</button><span role="status">{status}</span></div>
+    <div className="product-edit-actions">{!disabled && <button type="submit" className="management-add" disabled={disabled || busy}>{busy ? '저장 중…' : '재고 수정'}</button>}<span role="status">{status}</span></div>
   </form>;
 }
