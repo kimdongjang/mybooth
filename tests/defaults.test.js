@@ -18,6 +18,7 @@ async function fixture() {
     if (query.startsWith('SELECT id FROM pos_projects') || query.startsWith('SELECT id, archived_at FROM pos_projects')) {
       return { rows: rows.pos_projects.filter(p => p.id === values[0] && p.admin_id === values[1]) };
     }
+    if (query.startsWith('SELECT inventory_id FROM pos_inventory_links')) return { rows: [] };
     if (query.startsWith('INSERT INTO ')) {
       const [, table, columns] = query.match(/^INSERT INTO (\w+) \(([^)]+)\)/);
       const row = Object.fromEntries(columns.split(', ').map((column, i) => [column, values[i]]));

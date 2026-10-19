@@ -771,3 +771,8 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .management-upload.product-image-upload:focus-within{outline:2px solid #1d4ed8;outline-offset:3px}
 .management-upload.product-image-upload:has(input:disabled){opacity:.5;cursor:not-allowed}
 .product-image-remove{margin-top:8px}
+
+.inventory-transfer-form,.event-inventory-controls{margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0}
+.inventory-transfer-controls{display:flex;align-items:end;gap:10px;flex-wrap:wrap}.inventory-transfer-controls label{min-width:120px;flex:1}.inventory-transfer-controls label span{display:block;font-size:12px;margin-bottom:5px}
+.inventory-transfer-controls select{width:100%;min-height:40px;border:1px solid #cbd5e1;border-radius:6px;padding:6px}.inventory-transfer-controls button{min-height:40px}
+.inventory-transfer-form p{font-size:12px;margin-top:8px}.inventory-transfer-form [role=alert]{color:#b91c1c}.event-inventory-controls h4{font-weight:600;margin-bottom:10px}

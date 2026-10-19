@@ -190,7 +190,7 @@ async function inventoryState(adminId) {
   await sql`INSERT INTO pos_inventory (admin_id,id,product,stock)
     SELECT e.admin_id, 'legacy:' || length(p.project_id)::text || ':' || p.project_id || p.id,
       jsonb_build_object('name',p.name,'price',p.price,'goodsType',COALESCE(p.goods_type,p.name),
-        'creatorName',COALESCE(p.creator_name,''),'vtuberName',COALESCE(p.vtuber_name,''),'imageUrl',p.image_url), 0
+        'creatorName',COALESCE(p.creator_name,''),'vtuberName',COALESCE(p.vtuber_name,''),'genre',COALESCE(p.genre,''),'imageUrl',p.image_url), 0
     FROM pos_products p JOIN pos_projects e ON e.id=p.project_id
     WHERE e.admin_id=${adminId} AND NOT EXISTS (SELECT 1 FROM pos_inventory_links l WHERE l.project_id=p.project_id AND l.product_id=p.id)
     ON CONFLICT (admin_id,id) DO NOTHING`;
@@ -256,6 +256,12 @@ function inventoryInteger(value, minimum = 0) {
   return value;
 }
 
+async function syncCommonProduct(adminId, inventoryId, product) {
+  await sql`UPDATE pos_products p SET name=${product.name},goods_type=${product.goodsType || product.name},vtuber_name=${product.vtuberName || ''},creator_name=${product.creatorName || ''},genre=${product.genre || ''},image_url=${product.imageUrl || null},updated_at=NOW()
+    FROM pos_inventory_links l WHERE l.admin_id=${adminId} AND l.inventory_id=${inventoryId} AND p.project_id=l.project_id AND p.id=l.product_id`;
+  await sql`UPDATE pos_projects SET updated_at=NOW() WHERE admin_id=${adminId} AND id IN (SELECT project_id FROM pos_inventory_links WHERE admin_id=${adminId} AND inventory_id=${inventoryId})`;
+}
+
 async function inventoryAction(adminId, action, payload) {
   await initDb();
   // Serializes warehouse edits/transfers within one account; event mutations
@@ -279,6 +285,34 @@ async function inventoryAction(adminId, action, payload) {
     const product = { ...row.product, removedAt: new Date().toISOString() };
     await sql`UPDATE pos_inventory SET product=${JSON.stringify(product)}::jsonb,version=version+1 WHERE admin_id=${adminId} AND id=${payload.inventoryId}`;
     return inventoryState(adminId);
+  }
+  if (action === 'saveEventProduct' || action === 'saveCommonProductImage') {
+    const { projectId, productId } = payload;
+    if (typeof projectId !== 'string' || !projectId || typeof productId !== 'string' || !productId || productId.length > 500) throw Object.assign(new Error('행사와 상품을 선택해주세요.'), { status: 400 });
+    const project = (await sql`SELECT id,archived_at FROM pos_projects WHERE id=${projectId} AND admin_id=${adminId}`).rows[0];
+    if (!project) throw Object.assign(new Error('행사 접근 권한이 없습니다.'), { status: 404 });
+    if (project.archived_at) throw Object.assign(new Error('보관된 행사에서는 수정할 수 없습니다.'), { status: 409 });
+    const revision = await dataRevision(projectId);
+    if (revision && payload.dataRevision !== revision) throw Object.assign(new Error('행사 데이터가 변경되었습니다. 새로고침해주세요.'), { status: 409 });
+    const priorLink = (await sql`SELECT inventory_id FROM pos_inventory_links WHERE admin_id=${adminId} AND project_id=${projectId} AND product_id=${productId}`).rows[0];
+    if (!priorLink) await inventoryState(adminId);
+    const row = (await sql`SELECT i.* FROM pos_inventory i JOIN pos_inventory_links l ON l.inventory_id=i.id AND l.admin_id=i.admin_id JOIN pos_products p ON p.id=l.product_id AND p.project_id=l.project_id WHERE i.admin_id=${adminId} AND l.project_id=${projectId} AND l.product_id=${productId} AND COALESCE(p.is_active,TRUE)=TRUE`).rows[0];
+    if (!row || row.product.removedAt) throw Object.assign(new Error('공통 상품을 찾을 수 없습니다. 공통 상품·재고 관리를 먼저 열고 다시 시도해주세요.'), { status: 409 });
+    if (action === 'saveEventProduct' && row.version !== payload.inventoryVersion && !(!priorLink && payload.inventoryVersion == null && row.version === 0)) throw Object.assign(new Error('공통 상품이 변경되었습니다. 최신 정보를 불러와주세요.'), { status: 409 });
+    let product;
+    if (action === 'saveCommonProductImage') {
+      await updateProductImage(adminId, projectId, { productId, imageUrl: payload.imageUrl });
+      product = { ...row.product, imageUrl: payload.imageUrl || null };
+    } else {
+      const input = payload.product || {};
+      for (const key of ['name','goodsType','vtuberName','creatorName','genre']) if (typeof input[key] !== 'string' || input[key].length > 200 || (['name','goodsType'].includes(key) && !input[key].trim())) throw Object.assign(new Error('상품 이름과 굿즈 종류는 필수이며 각 항목은200자 이내여야 합니다.'), { status: 400 });
+      const price = inventoryInteger(input.price);
+      product = { ...row.product, ...Object.fromEntries(['name','goodsType','vtuberName','creatorName','genre'].map(key => [key,input[key].trim()])) };
+      await sql`UPDATE pos_products SET price=${price} WHERE project_id=${projectId} AND id=${productId}`;
+    }
+    await sql`UPDATE pos_inventory SET product=${JSON.stringify(product)}::jsonb,version=version+1 WHERE admin_id=${adminId} AND id=${row.id}`;
+    await syncCommonProduct(adminId, row.id, product);
+    return readState(adminId, projectId);
   }
   if (action === 'createEventProduct') {
     const { projectId, product: input = {} } = payload;
@@ -344,11 +378,12 @@ async function inventoryAction(adminId, action, payload) {
       await sql`INSERT INTO pos_inventory (admin_id,id,product,stock,total_received,product_number) VALUES (${adminId},${id},${JSON.stringify(product)}::jsonb,${stock},${stock},${productNumber})`;
       if (stock) await sql`INSERT INTO pos_inventory_adjustments (admin_id,inventory_id,id,delta,reason) VALUES (${adminId},${id},${uid()},${stock},'receipt')`;
     }
+    await syncCommonProduct(adminId, id, product);
   } else if (action === 'transferInventory') {
     const { projectId, inventoryId, direction, requestId } = payload;
     const qty = inventoryInteger(payload.qty, 1);
     if (typeof projectId !== 'string' || !projectId || typeof inventoryId !== 'string' || !inventoryId || !['allocate','return'].includes(direction) || typeof requestId !== 'string' || !requestId || requestId.length > 100) throw Object.assign(new Error('잘못된 재고 이동 요청입니다.'), { status: 400 });
-    const request = { projectId, inventoryId, direction, qty };
+    const request = { projectId, inventoryId, direction, qty, ...(payload.dataRevision != null ? { dataRevision: payload.dataRevision } : {}) };
     const receipt = (await sql`SELECT request FROM pos_inventory_transfers WHERE admin_id=${adminId} AND id=${requestId}`).rows[0];
     if (receipt) {
       if (Object.keys(request).some(key => receipt.request[key] !== request[key])) throw Object.assign(new Error('재고 이동 요청 ID가 중복되었습니다.'), { status: 409 });
@@ -356,6 +391,8 @@ async function inventoryAction(adminId, action, payload) {
     }
     const event = (await sql`SELECT id, archived_at FROM pos_projects WHERE id=${projectId} AND admin_id=${adminId} FOR UPDATE`).rows[0];
     if (!event) throw Object.assign(new Error('행사 접근 권한이 없습니다.'), { status: 404 });
+    const revision = await dataRevision(projectId);
+    if (revision && payload.dataRevision !== revision) throw Object.assign(new Error('행사 데이터가 변경되었습니다. 새로고침해주세요.'), { status: 409 });
     // Archived events may return unsold stock, but cannot receive new stock.
     if (event.archived_at && direction === 'allocate') throw Object.assign(new Error('보관된 행사에는 배정할 수 없습니다.'), { status: 409 });
     const item = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${inventoryId} FOR UPDATE`).rows[0];
@@ -437,14 +474,20 @@ async function createProject(adminId, name) {
 async function readState(adminId, projectId) {
   await assertProject(adminId, projectId);
   const [products, bundles, sales] = await Promise.all([
-    sql`SELECT p.*, l.inventory_id, i.product_number, COALESCE(p.genre, i.product->>'genre', '') AS genre FROM pos_products p LEFT JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id AND l.admin_id=${adminId} LEFT JOIN pos_inventory i ON i.admin_id=l.admin_id AND i.id=l.inventory_id WHERE p.project_id = ${projectId} AND COALESCE(p.is_active, TRUE) = TRUE ORDER BY p.id`,
+    sql`SELECT p.*, l.inventory_id, i.product_number, i.version AS inventory_version,
+      CASE WHEN i.id IS NOT NULL THEN i.product->>'name' ELSE p.name END AS name,
+      CASE WHEN i.id IS NOT NULL THEN COALESCE(i.product->>'goodsType',i.product->>'name') ELSE p.goods_type END AS goods_type,
+      CASE WHEN i.id IS NOT NULL THEN i.product->>'vtuberName' ELSE p.vtuber_name END AS vtuber_name,
+      CASE WHEN i.id IS NOT NULL THEN i.product->>'creatorName' ELSE p.creator_name END AS creator_name,
+      CASE WHEN i.id IS NOT NULL THEN i.product->>'imageUrl' ELSE p.image_url END AS image_url,
+      CASE WHEN i.id IS NOT NULL THEN COALESCE(i.product->>'genre','') ELSE COALESCE(p.genre,'') END AS genre FROM pos_products p LEFT JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id AND l.admin_id=${adminId} LEFT JOIN pos_inventory i ON i.admin_id=l.admin_id AND i.id=l.inventory_id WHERE p.project_id = ${projectId} AND COALESCE(p.is_active, TRUE) = TRUE ORDER BY p.id`,
     sql`SELECT id, name, price, items FROM pos_bundles WHERE project_id = ${projectId} ORDER BY id`,
     sql`SELECT id, time, method, total, lines FROM pos_sales WHERE project_id = ${projectId} ORDER BY time ASC`,
   ]);
   return {
     archivedAt: (await sql`SELECT archived_at FROM pos_projects WHERE id = ${projectId}`).rows[0]?.archived_at || null,
     dataRevision: await dataRevision(projectId),
-    products: products.rows.map((product) => ({ id: product.id, inventoryId: product.inventory_id || null, productNumber: product.product_number || null, genre: product.genre || '', productCode: product.product_code || product.id, goodsType: product.goods_type || product.name, vtuberName: product.vtuber_name || '', creatorName: product.creator_name || '', stockQty: Number(product.stock_qty ?? product.stock ?? 0), initialStockQty: Number(product.initial_stock_qty ?? product.stock_qty ?? product.stock ?? 0), size: product.size || null, imageUrl: product.image_url || null, price: Number(product.price) || 0, setCreatorName: product.set_creator_name || null, setGroupName: product.set_group_name || null, setPrice: product.set_price == null ? null : Number(product.set_price) || 0, setDescription: product.set_description || null, isActive: product.is_active !== false, createdAt: new Date(product.created_at).toISOString(), updatedAt: new Date(product.updated_at).toISOString(), name: product.name, stock: Number(product.stock_qty ?? product.stock ?? 0) })),
+    products: products.rows.map((product) => ({ id: product.id, inventoryId: product.inventory_id || null, productNumber: product.product_number || null, inventoryVersion: product.inventory_version ?? null, genre: product.genre || '', productCode: product.product_code || product.id, goodsType: product.goods_type || product.name, vtuberName: product.vtuber_name || '', creatorName: product.creator_name || '', stockQty: Number(product.stock_qty ?? product.stock ?? 0), initialStockQty: Number(product.initial_stock_qty ?? product.stock_qty ?? product.stock ?? 0), size: product.size || null, imageUrl: product.image_url || null, price: Number(product.price) || 0, setCreatorName: product.set_creator_name || null, setGroupName: product.set_group_name || null, setPrice: product.set_price == null ? null : Number(product.set_price) || 0, setDescription: product.set_description || null, isActive: product.is_active !== false, createdAt: new Date(product.created_at).toISOString(), updatedAt: new Date(product.updated_at).toISOString(), name: product.name, stock: Number(product.stock_qty ?? product.stock ?? 0) })),
     bundles: bundles.rows.map((bundle) => ({ ...bundle, items: bundle.items || [] })),
     sales: sales.rows.map((sale) => ({ ...sale, time: new Date(sale.time).toISOString(), lines: sale.lines || [] })),
   };
@@ -452,13 +495,18 @@ async function readState(adminId, projectId) {
 
 async function replaceProducts(adminId, projectId, products) {
   await assertProject(adminId, projectId);
-  const linked = (await sql`SELECT p.*, l.inventory_id FROM pos_products p JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id WHERE p.project_id=${projectId}`).rows.filter(p => p.inventory_id);
+  const linked = (await sql`SELECT p.*, l.inventory_id, i.product AS common_product FROM pos_products p JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id JOIN pos_inventory i ON i.admin_id=l.admin_id AND i.id=l.inventory_id WHERE p.project_id=${projectId}`).rows.filter(p => p.inventory_id);
   for (const old of linked.filter(row => row.is_active !== false)) {
     const next = products.find(p => p.id === old.id);
     if (!next || Number(next.stockQty ?? next.stock) !== Number(old.stock_qty ?? old.stock) || Number(next.initialStockQty) !== Number(old.initial_stock_qty ?? old.stock_qty ?? old.stock)) throw Object.assign(new Error('공통 재고 상품은 재고 관리에서 배정·회수해주세요. 삭제 대신 회수 후 행사를 보관할 수 있습니다.'), { status: 409 });
   }
   await sql`DELETE FROM pos_products WHERE project_id = ${projectId} AND COALESCE(is_active, TRUE) = TRUE`;
-  for (const product of products) await insertProduct(projectId, product);
+  for (const product of products) {
+    const normalized = normalizeProduct(product);
+    const source = linked.find(row => row.id === product.id)?.common_product;
+    const common = source ? Object.fromEntries(['name','goodsType','vtuberName','creatorName','genre','imageUrl'].map(key => [key, source[key] ?? (key === 'imageUrl' ? null : '')])) : {};
+    await insertProduct(projectId, { ...normalized, ...common });
+  }
   await sql`UPDATE pos_projects SET updated_at = NOW() WHERE id = ${projectId}`;
 }
 
@@ -620,7 +668,11 @@ async function handler(req, res) {
     if (req.method === 'GET') return res.status(200).json(projectId ? await readState(admin.id, projectId) : await listProjects(admin.id));
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     const { action, payload = {} } = req.body || {};
-    if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct', 'removeInventory'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
+    if (action === 'updateProductImage') {
+      const linked = (await sql`SELECT inventory_id FROM pos_inventory_links WHERE admin_id=${admin.id} AND project_id=${req.body.projectId || payload.projectId} AND product_id=${payload.productId}`).rows[0];
+      if (linked) return res.status(200).json(await inventoryAction(admin.id, 'saveCommonProductImage', { ...payload, projectId: req.body.projectId || payload.projectId, dataRevision: req.body.dataRevision ?? payload.dataRevision }));
+    }
+    if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct', 'saveEventProduct', 'removeInventory'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
     if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
     if (action === 'restoreProject') {
       if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });

@@ -1,3 +1,4 @@
+import EventInventoryControls from '../components/EventInventoryControls';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { uploadProductImage } from '../utils/uploadProductImage';
 import { managementQuantities, managementBundleStock } from '../utils/managementQuantities';
@@ -9,16 +10,15 @@ import BulkProductImages from './BulkProductImages';
 import BundleCreatePage from './BundleCreatePage';
 import ActionIcon from '../components/ActionIcon';
 import ProductEditForm from '../components/ProductEditForm';
-import ProductStockForm from '../components/ProductStockForm';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 
-export default function ProductsPage({ projectName, initialProductId = '', readOnly, projectId, settingsTab, setSettingsTab, saving, mutate, products, bundles, sales, registerProduct, persistProducts, persistBundles, creatingBundle, creatingProduct, navigate, bundleName, setBundleName, bundleRows, setBundleRows, bundlePrice, setBundlePrice, addBundleToSettings, backupOrdersJson, backupOrdersCsv }) {
+export default function ProductsPage({ adminId, inventoryApi, dataRevision, projectName, initialProductId = '', readOnly, projectId, settingsTab, setSettingsTab, saving, mutate, products, bundles, sales, registerProduct, persistProducts, persistBundles, creatingBundle, creatingProduct, navigate, bundleName, setBundleName, bundleRows, setBundleRows, bundlePrice, setBundlePrice, addBundleToSettings, backupOrdersJson, backupOrdersCsv }) {
   const [selectedBundleId, setSelectedBundleId] = useState(null);
   const selectedBundle = bundles.find((bundle) => bundle.id === selectedBundleId);
   useEffect(() => { setSelectedBundleId(null); }, [settingsTab, projectId]);
   if (creatingProduct) return <ProductCreatePage projectId={projectId} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} key={projectId} readOnly={readOnly} saving={saving} products={products} registerProduct={registerProduct} onBack={() => navigate('settings', 'products')} />;
   if (creatingBundle) return <BundleCreatePage readOnly={readOnly} saving={saving} products={products} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} onSave={addBundleToSettings} onBack={() => navigate('settings')} />;
-  return <main className="page-content settings-page"><PageIntro title="상품 관리" hideTitle><PageTabs id="settings" label="상품 및 주문 관리" tabs={[["products", "상품 관리"], ["bundles", "세트 관리"], ["backup", "주문 백업"]]} selected={settingsTab} onSelect={setSettingsTab} /></PageIntro><div id={`settings-panel-${settingsTab}`} role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} tabIndex={0} className="settings-content">{settingsTab === 'products' && <ProductSettingsPanel projectName={projectName} initialProductId={initialProductId} onRemove={productId => mutate('removeProduct', { productId })} onAdd={() => navigate('productNew', 'products')} readOnly={readOnly} key={projectId} projectId={projectId} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} />}{settingsTab === 'bundles' && (selectedBundle ? <BundleDetail readOnly={readOnly} bundle={selectedBundle} products={products} sales={sales} bundles={bundles} persistBundles={persistBundles} onBack={() => setSelectedBundleId(null)} /> : <section className="product-management"><header className="management-heading"><div><h2>세트 목록</h2></div><button type="button" disabled={readOnly || saving} className="management-add" onClick={() => navigate('bundleNew')}>+ 세트 추가</button></header><div className="management-summary"><span>등록 세트 <b>{bundles.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '수량은 자동으로 계산됩니다'}</span></div><p className="management-note">판매 가능 수량은 현재 구성품의 남은 재고 기준이며, 다른 세트와 재고를 공유합니다.</p><BundleManagementTable readOnly={readOnly} bundles={bundles} products={products} sales={sales} persistBundles={persistBundles} onSelect={setSelectedBundleId} />{!bundles.length && <div className="management-empty"><h3>등록된 세트가 없습니다</h3><p>세트 추가 버튼으로 구성품과 판매가를 입력하세요.</p></div>}</section>)}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</div></main>;
+  return <main className="page-content settings-page"><PageIntro title="행사 판매 설정" hideTitle><PageTabs id="settings" label="상품 및 주문 관리" tabs={[["products", "행사 판매 설정"], ["bundles", "세트 관리"], ["backup", "주문 백업"]]} selected={settingsTab} onSelect={setSettingsTab} /></PageIntro><div id={`settings-panel-${settingsTab}`} role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} tabIndex={0} className="settings-content">{settingsTab === 'products' && <ProductSettingsPanel adminId={adminId} inventoryApi={inventoryApi} dataRevision={dataRevision} projectName={projectName} initialProductId={initialProductId} onRemove={productId => mutate('removeProduct', { productId })} onAdd={() => navigate('productNew', 'products')} readOnly={readOnly} key={projectId} projectId={projectId} saving={saving} onImageChange={(productId, imageUrl) => mutate('updateProductImage', { productId, imageUrl })} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} />}{settingsTab === 'bundles' && (selectedBundle ? <BundleDetail readOnly={readOnly} bundle={selectedBundle} products={products} sales={sales} bundles={bundles} persistBundles={persistBundles} onBack={() => setSelectedBundleId(null)} /> : <section className="product-management"><header className="management-heading"><div><h2>세트 목록</h2></div><button type="button" disabled={readOnly || saving} className="management-add" onClick={() => navigate('bundleNew')}>+ 세트 추가</button></header><div className="management-summary"><span>등록 세트 <b>{bundles.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : '수량은 자동으로 계산됩니다'}</span></div><p className="management-note">판매 가능 수량은 현재 구성품의 남은 재고 기준이며, 다른 세트와 재고를 공유합니다.</p><BundleManagementTable readOnly={readOnly} bundles={bundles} products={products} sales={sales} persistBundles={persistBundles} onSelect={setSelectedBundleId} />{!bundles.length && <div className="management-empty"><h3>등록된 세트가 없습니다</h3><p>세트 추가 버튼으로 구성품과 판매가를 입력하세요.</p></div>}</section>)}{settingsTab === 'backup' && <Panel title="주문 백업 (IndexedDB)"><p className="mb-3 text-xs text-[#526078]">현재 브라우저 IndexedDB에 저장된 모든 주문과 동기화 상태를 다운로드합니다.</p><div className="flex gap-2"><button className="rounded-md bg-register-2 px-3 py-2 text-xs text-white" onClick={backupOrdersJson}>주문 백업(JSON)</button><button className="rounded-md bg-transfer px-3 py-2 text-xs text-white" onClick={backupOrdersCsv}>주문 백업(CSV)</button></div></Panel>}</div></main>;
 }
 
 
@@ -62,10 +62,11 @@ function BundleDetail({ readOnly, bundle, products, sales, bundles, persistBundl
   </section>;
 }
 
-function ProductSettingsPanel({ projectName, initialProductId = '', onRemove, onAdd, readOnly, projectId, saving, onImageChange, products, bundles, sales, persistProducts, persistBundles }) {
+function ProductSettingsPanel({ adminId, inventoryApi, dataRevision, projectName, initialProductId = '', onRemove, onAdd, readOnly, projectId, saving, onImageChange, products, bundles, sales, persistProducts, persistBundles }) {
   const [removedProduct, setRemovedProduct] = useState(null);
   const removalNotice = useRef(null);
   useEffect(() => { if (removedProduct) removalNotice.current?.focus(); }, [removedProduct]);
+  const [transferBusy, setTransferBusy] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const quantities = managementQuantities(sales, bundles);
   const [uploadingId, setUploadingId] = useState(null);
@@ -91,12 +92,6 @@ function ProductSettingsPanel({ projectName, initialProductId = '', onRemove, on
     finally { setUploadingId(null); }
   };
   const sortedProducts = useMemo(() => [...products].sort((a, b) => String(a.productCode || a.id).localeCompare(String(b.productCode || b.id), 'ko-KR', { numeric: true })), [products]);
-  const updateProduct = (id, patch) => persistProducts(products.map((product) => {
-    if (product.id !== id) return product;
-    const next = { ...product, ...patch };
-    const stockQty = Number(next.stockQty ?? next.stock ?? 0) || 0;
-    return { ...next, stockQty, stock: stockQty };
-  }));
   const deleteProduct = async (productId) => {
     if (readOnly || saving || uploadingId !== null) return;
     if (!confirm('이 행사 상품을 목록과 판매에서 제거할까요? 배정 재고와 판매 이력은 보존되며, 이 상품이 포함된 세트는 판매할 수 없습니다.')) return;
@@ -107,15 +102,15 @@ function ProductSettingsPanel({ projectName, initialProductId = '', onRemove, on
     }
   };
 
-  return <section className="product-management"><fieldset disabled={bulkBusy} className="min-w-0">
+  return <section className="product-management"><fieldset disabled={bulkBusy || transferBusy} className="min-w-0">
     <header className="management-heading">
       <div><h2>{selectedProduct ? '행사 상품 상세' : '상품 목록'}</h2></div>
       {selectedProduct ? <button ref={backButton} type="button" className="management-back" onClick={() => setSelectedId(null)}>← 목록으로</button> : <BulkProductImages projectId={projectId} products={products} persistProducts={persistProducts} onImageChange={onImageChange} disabled={readOnly || saving || bulkBusy} onBusy={setBulkBusy} extraAction={<button type="button" className="management-add" disabled={readOnly || saving || bulkBusy} onClick={onAdd}><ActionIcon />새 상품 등록</button>} />}
     </header>
-    {selectedProduct && <aside role="status" className="event-product-context" aria-label="현재 관리 위치"><span>행사 판매 상품</span><strong>{projectName || '선택한 행사'}</strong><p>이 행사의 판매가와 상품 정보를 관리합니다.</p>{selectedProduct.inventoryId && <a href={`#/inventory/${encodeURIComponent(selectedProduct.inventoryId)}`}>공통 재고 상세로 돌아가기 →</a>}</aside>}
+    {selectedProduct && <aside role="status" className="event-product-context" aria-label="현재 관리 위치"><span>행사 판매 상품</span><strong>{projectName || '선택한 행사'}</strong><p>기본 정보는 공통 원본과 모든 연결 행사에 반영됩니다. 판매가와 재고 배정은 이 행사에만 적용됩니다.</p>{selectedProduct.inventoryId && <a href={`#/inventory/${encodeURIComponent(selectedProduct.inventoryId)}`}>공통 재고 상세로 돌아가기 →</a>}</aside>}
     {removedProduct && <section ref={removalNotice} tabIndex={-1} role="status" aria-label="상품 제거 완료" className="product-removal-notice">
       <h3>{productNameWithoutCreator(removedProduct)} 상품을 행사에서 제거했습니다.</h3>
-      <p>공통 재고와 판매 이력은 유지됩니다. 행사에 배정된 재고도 그대로 남습니다. 실제 재고의 확인 및 삭제는 재고 관리에서 진행해주세요.</p>
+      <p>공통 재고와 판매 이력은 유지됩니다. 행사에 배정된 재고도 그대로 남습니다. 실제 재고의 확인 및 삭제는 공통 상품·재고 관리에서 진행해주세요.</p>
       <div className="product-removal-actions">
         {removedProduct.inventoryId ? <a className="management-back" href={`#/inventory/${encodeURIComponent(removedProduct.inventoryId)}`}>재고관리에서 확인하기</a> : <><p>연결된 공통 재고가 없는 상품입니다.</p><a className="management-back" href="#/inventory">재고관리 목록 보기</a></>}
         <button type="button" className="management-back" onClick={() => setRemovedProduct(null)}>닫기</button>
@@ -148,9 +143,8 @@ function ProductSettingsPanel({ projectName, initialProductId = '', onRemove, on
             {p.imageUrl && <button type="button" disabled={saving || uploadingId !== null} className="product-image-remove" onClick={() => onImageChange(p.id, null)}>이미지 제거</button>}
           </div>
           <div className="management-details">
-            <ProductEditForm formId="event-product-edit-form" hideSubmit key={p.id} product={p} products={products} persistProducts={persistProducts} disabled={readOnly || saving || uploadingId !== null} />
-            <ProductStockForm key={p.id} product={p} soldQty={quantities.products.get(p.id) || 0} onSave={patch => updateProduct(p.id, patch)} disabled={true} />
-            <p className="management-note">수량은 공통 재고에서 이 행사로 배정하거나 회수해 변경하세요.</p>
+            <ProductEditForm onSave={async (product, inventoryVersion) => { const data = await inventoryApi('saveEventProduct', { projectId, productId: p.id, inventoryVersion, dataRevision, product }); return data.products.find(row => row.id === p.id); }} formId="event-product-edit-form" hideSubmit key={p.id} product={p} products={products} persistProducts={persistProducts} disabled={readOnly || saving || uploadingId !== null} />
+            <EventInventoryControls key={`${projectId}:${p.id}`} adminId={adminId} projectId={projectId} product={p} api={inventoryApi} readOnly={readOnly || saving || uploadingId !== null} onBusy={setTransferBusy} />
 
           </div>
         </div>

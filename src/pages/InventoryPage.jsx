@@ -1,3 +1,4 @@
+import InventoryTransferForm from '../components/InventoryTransferForm';
 import { useEffect, useRef, useState } from 'react';
 import { PageIntro } from '../components/PageLayout';
 import InventoryProductFields from '../components/InventoryProductFields';
@@ -10,7 +11,8 @@ const dateLabel = value => value && !Number.isNaN(Date.parse(value)) ? new Date(
 const empty = () => ({ id: crypto.randomUUID(), version: -1, name: '', goodsType: '', vtuberName: '', creatorName: '', genre: '', stock: 0 });
 const allocatedStock = item => (item.allocations || []).reduce((sum, row) => sum + Number(row.stock), 0);
 
-export default function InventoryPage({ adminId, api, routeHash, navigate }) {
+export default function InventoryPage({ projects = [], adminId, api, routeHash, navigate }) {
+  const [targetProjectId, setTargetProjectId] = useState('');
   const [items, setItems] = useState([]);
   const [view, setView] = useState('list');
   const [draft, setDraft] = useState(null);
@@ -64,6 +66,7 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
     else { setView('detail'); const item = items.find(item => item.id === id); setDraft(item ? { ...item } : null); }
   }, [routeHash, ready]);
   const savedItem = draft && items.find(item => item.id === draft.id);
+  const unsavedInventory = Boolean(savedItem && draft && ['name','goodsType','vtuberName','creatorName','genre','stock'].some(key => String(draft[key] ?? '') !== String(savedItem[key] ?? '')));
   const stockDelta = draft ? Number(draft.stock) - Number(savedItem?.stock || 0) : 0;
   const open = (event, item) => {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
@@ -118,7 +121,7 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
     });
   };
   return <main className="page-content inventory-page">
-    <PageIntro title="재고 관리" />
+    <PageIntro title="공통 상품·재고 관리" />
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
     {deletionNotice && <div role="status" className="inventory-card"><p>{deletionNotice}</p><button type="button" className="management-back" onClick={() => setDeletionNotice('')}>닫기</button></div>}
@@ -181,6 +184,12 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
             </div></fieldset>
           </form>
         </div>
+        {view === 'detail' && <section className="inventory-history"><h4>행사별 재고 배정 관리</h4>
+          <div className="management-table-wrap"><table className="management-table"><thead><tr><th>행사</th><th>배정 수량</th><th>실제 판매 수량</th><th>남은 수량</th></tr></thead><tbody>{(savedItem?.allocations || []).map(row => <tr key={`${row.project_id}:${row.product_id}`}><td>{row.event_name}{row.archived_at ? ' (보관)' : ''}</td><td>{won(row.initial_stock)}</td><td>{won(savedItem?.history.find(history => history.projectId === row.project_id && history.productId === row.product_id)?.soldQty || 0)}</td><td>{won(row.stock)}</td></tr>)}</tbody></table></div>
+          <label className="management-field"><span>배정·회수할 행사</span><select value={targetProjectId} disabled={busy || uncertain || unsavedInventory} onChange={event => setTargetProjectId(event.target.value)}><option value="">행사 선택</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}{project.archivedAt ? ' (보관)' : ''}</option>)}</select></label>
+          {unsavedInventory && <p>변경한 공통 정보와 창고 수량을 먼저 저장해주세요.</p>}
+          {targetProjectId && <InventoryTransferForm key={`${draft.id}:${targetProjectId}`} adminId={adminId} inventoryId={draft.id} projectId={targetProjectId} api={api} disabled={busy || uncertain || unsavedInventory} onBusy={setBusy} onInventory={inventory => { setItems(inventory); setDraft(inventory.find(row => row.id === draft.id) || null); }} />}
+        </section>}
         {view === 'detail' && <section className="inventory-history"><h4>행사별 판매 이력</h4><p className="management-note">보존된 판매 내역 기준이며 취소된 판매는 제외합니다. 링크를 누르면 해당 행사로 전환해 판매 내역을 엽니다.</p>
           <div className="management-table-wrap"><table className="management-table"><thead><tr><th scope="col">행사</th><th scope="col">판매 수량</th><th scope="col">판매 내역</th></tr></thead><tbody>{(draft.history || []).map(history => <tr key={history.projectId}><td>{history.eventName}{history.estimated && <small className="inventory-creator">과거 세트 구성 일부 추정 또는 누락</small>}</td><td>{won(history.soldQty)}개</td><td><a className="event-text-link" href={`#/settlement?projectId=${encodeURIComponent(history.projectId)}&productId=${encodeURIComponent(history.productId)}&productName=${encodeURIComponent(draft.name)}`} onClick={event => {
             if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
@@ -197,7 +206,7 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
         <a href={`#/products?projectId=${encodeURIComponent(row.project_id)}&productId=${encodeURIComponent(row.product_id)}`} onClick={event => {
           if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
           event.preventDefault(); setDeleteBlockers(null); navigate(`/products?projectId=${encodeURIComponent(row.project_id)}&productId=${encodeURIComponent(row.product_id)}`);
-        }}><span><strong>{row.event_name}</strong><small>남은 수량 {won(row.stock)}개</small></span><span className="inventory-blocker-link">상품 관리 →</span></a>
+        }}><span><strong>{row.event_name}</strong><small>남은 수량 {won(row.stock)}개</small></span><span className="inventory-blocker-link">행사 판매 설정 →</span></a>
       </li>)}</ul>
       <button type="button" className="management-back inventory-dialog-dismiss" onClick={() => setDeleteBlockers(null)}>닫기</button>
     </dialog>}

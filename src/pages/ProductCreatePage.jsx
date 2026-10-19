@@ -104,7 +104,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
               <label className="management-field"><span>판매가 (원)</span><Input required type="number" min="0" max="2147483647" step="1" value={draft.price} onChange={value => change('price', value)} /></label>
               <label className="management-field"><span>최초 입고 수량</span><Input required type="number" min="0" max="2147483647" step="1" value={draft.stockQty} onChange={value => change('stockQty', value)} /></label>
             </div></fieldset>
-            <p className="management-note">최초 입고 수량을 재고 관리에 기록하고 전량을 현재 행사에 배정합니다. 판매가는 이 행사에만 적용됩니다.</p>
+            <p className="management-note">최초 입고 수량을 공통 상품·재고 관리에 기록하고 전량을 현재 행사에 배정합니다. 판매가는 이 행사에만 적용됩니다.</p>
             {uncertain && <p role="status" className="management-note">이전 등록의 완료 여부를 확인해야 합니다. 같은 내용으로 다시 시도하면 중복 없이 결과를 확인합니다.</p>}
             {imageError && <p role="alert" className="management-note">{imageError}</p>}
             <button data-guide="save" type="submit" className="management-add">{saving || busy ? '저장 중…' : registered ? (image ? '이미지 다시 저장' : '등록 완료') : uncertain ? '등록 결과 확인 · 다시 시도' : '상품 등록'}</button>

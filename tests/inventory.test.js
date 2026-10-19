@@ -158,7 +158,7 @@ test('legacy adoption preserves event IDs, separate products with matching names
     assert.equal(new Set(first.inventory.map(item => item.productNumber)).size, 2);
     const adopted = (await invoke(null, a)).body;
     assert.equal(adopted.products[0].inventoryId, first.inventory.find(item => item.allocations[0].project_id === a).id);
-    assert.deepEqual({ ...adopted, products: adopted.products.map(product => ({ ...product, inventoryId: null, productNumber: null })) }, before);
+    assert.deepEqual({ ...adopted, products: adopted.products.map(product => ({ ...product, inventoryId: null, productNumber: null, inventoryVersion: null })) }, before);
     assert.deepEqual((await invoke('listInventory')).body, first);
     const item = first.inventory.find(item => item.allocations[0].project_id === a);
     assert.equal((await invoke('transferInventory', null, { projectId: a, inventoryId: item.id, qty: 5, direction: 'return', requestId: 'legacy-return' })).status, 200);
@@ -399,7 +399,7 @@ test('inventory deletion rechecks all active events, includes zero stock, and ex
 });
 
 
-test('event genre inherits warehouse data, persists independent edits and clearing, and rejects invalid genres atomically', async () => {
+test('event genre edits share the common source, preserve clearing and backups, and reject invalid values atomically', async () => {
   const { db, invoke } = await fixture();
   try {
     const event = (await invoke('createProject', null, { name: '장르 행사' })).body.project.id;
@@ -408,10 +408,10 @@ test('event genre inherits warehouse data, persists independent edits and cleari
     let product = (await invoke(null, event)).body.products[0];
     assert.equal(product.genre, '공통 장르');
     assert.equal(product.productNumber, item.productNumber);
-    let saved = await invoke('replaceProducts', event, { products: [{ ...product, genre: '행사 장르' }] });
+    let saved = await invoke('saveEventProduct', null, { projectId: event, productId: product.id, inventoryVersion: product.inventoryVersion, product: { ...product, genre: '행사 장르' } });
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
     assert.equal(saved.body.products[0].genre, '행사 장르');
-    assert.equal((await invoke('listInventory')).body.inventory[0].genre, '공통 장르');
+    assert.equal((await invoke('listInventory')).body.inventory[0].genre, '행사 장르');
     const backup = (await invoke('backupProject', event, { password: 'test-password' })).body.backup;
     assert.equal(backup.products[0].genre, '행사 장르');
     const copied = await invoke('duplicateProject', event, { password: 'test-password', name: '장르 복제' });
@@ -419,11 +419,94 @@ test('event genre inherits warehouse data, persists independent edits and cleari
     const restored = await invoke('restoreProject', null, { password: 'test-password', name: '장르 복원', backup });
     assert.equal((await invoke(null, restored.body.project.id)).body.products[0].genre, '행사 장르');
     product = saved.body.products[0];
-    assert.equal((await invoke('replaceProducts', event, { products: [{ ...product, genre: {} }] })).status, 400);
+    assert.equal((await invoke('saveEventProduct', null, { projectId: event, productId: product.id, inventoryVersion: product.inventoryVersion, product: { ...product, genre: {} } })).status, 400);
     assert.equal((await invoke(null, event)).body.products[0].genre, '행사 장르');
-    saved = await invoke('replaceProducts', event, { products: [{ ...product, genre: '' }] });
+    saved = await invoke('saveEventProduct', null, { projectId: event, productId: product.id, inventoryVersion: product.inventoryVersion, product: { ...product, genre: '' } });
     assert.equal(saved.body.products[0].genre, '');
     await db.query('UPDATE pos_products SET genre=NULL WHERE project_id=$1', [event]);
-    assert.equal((await invoke(null, event)).body.products[0].genre, '공통 장르');
+    assert.equal((await invoke(null, event)).body.products[0].genre, '');
+  } finally { await db.close(); }
+});
+
+
+test('common edits from event and inventory propagate across events, preserve event prices and historical sales, and roll back failures', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const first = (await invoke('createProject', null, { name: '첫 행사' })).body.project.id;
+    const second = (await invoke('createProject', null, { name: '둘째 행사' })).body.project.id;
+    const original = (await invoke('saveInventory', null, { product: { id: 'shared-edit', version: -1, name: '원본', goodsType: '키링', genre: '게임', stock: 10 } })).body.inventory[0];
+    for (const [projectId,qty,requestId] of [[first,4,'shared-first'],[second,3,'shared-second']]) await invoke('transferInventory', null, { projectId, inventoryId: original.id, qty, requestId, direction: 'allocate' });
+    let p = (await invoke(null, first)).body.products[0];
+    const other = (await invoke(null, second)).body.products[0];
+    await invoke('replaceProducts', second, { products: [{ ...other, price: 2000 }] });
+    await invoke('finalizeSale', first, { localOrderId: 'shared-history', method: 'cash', total: 0, cart: [{ type: 'product', id: p.id, name: '과거 이름', unitPrice: 0, qty: 1 }] });
+    const history = (await invoke(null, first)).body.sales;
+    await db.query('UPDATE pos_projects SET archived_at=NOW() WHERE id=$1', [second]);
+    const metadata = { name: '공통 이름', goodsType: '아크릴', vtuberName: '캐릭터', creatorName: '제작자', genre: '음악', price: 1000 };
+    const request = { projectId: first, productId: p.id, inventoryVersion: p.inventoryVersion, product: metadata };
+    assert.equal((await invoke('saveEventProduct', null, request, 'b')).status, 404);
+    const saved = await invoke('saveEventProduct', null, request);
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.products[0].name, metadata.name);
+    assert.equal(saved.body.products[0].price, 1000);
+    const secondState = (await invoke(null, second)).body;
+    assert.equal(secondState.products[0].name, metadata.name);
+    assert.equal(secondState.products[0].genre, metadata.genre);
+    assert.equal(secondState.products[0].price, 2000);
+    assert.deepEqual((await invoke(null, first)).body.sales, history);
+    assert.equal((await invoke('saveEventProduct', null, request)).status, 409);
+    p = saved.body.products[0];
+    const imageUrl = `https://test.public.blob.vercel-storage.com/products/${first}/${p.id}/shared.webp`;
+    assert.equal((await invoke('updateProductImage', first, { productId: p.id, imageUrl })).status, 200);
+    assert.equal((await invoke(null, second)).body.products[0].imageUrl, imageUrl);
+    let source = (await invoke('listInventory')).body.inventory.find(row => row.id === original.id);
+    assert.equal(source.imageUrl, imageUrl); assert.equal(source.stock, 3);
+    assert.equal((await invoke('saveInventory', null, { product: { ...source, name: '창고에서 수정' } })).status, 200);
+    assert.equal((await invoke(null, first)).body.products[0].name, '창고에서 수정');
+    assert.equal((await invoke(null, second)).body.products[0].price, 2000);
+    source = (await invoke('listInventory')).body.inventory.find(row => row.id === original.id);
+    const query = db.query.bind(db); let fail = true;
+    db.query = (text, values) => { if (fail && text.startsWith('UPDATE pos_products p SET name=')) { fail = false; throw new Error('injected shared failure'); } return query(text,values); };
+    assert.equal((await invoke('saveEventProduct', null, { ...request, inventoryVersion: source.version, product: { ...metadata, price: 0 } })).status, 500);
+    assert.equal((await invoke('listInventory')).body.inventory.find(row => row.id === original.id).version, source.version);
+    assert.equal((await invoke(null, first)).body.products[0].price, 1000);
+    assert.equal((await invoke('saveEventProduct', null, { ...request, inventoryVersion: source.version, product: { ...metadata, price: -1 } })).status, 400);
+    assert.equal((await invoke('saveEventProduct', null, { ...request, inventoryVersion: source.version, product: { ...metadata, price: 0 } })).status, 200);
+    assert.deepEqual((await invoke(null, first)).body.sales, history);
+    const latest = (await invoke(null, first)).body.products[0];
+    const legacySave = await invoke('replaceProducts', first, { products: [{ ...latest, name: 'stale event metadata', genre: 'stale' }] });
+    assert.equal(legacySave.status, 200);
+    assert.equal(legacySave.body.products[0].name, metadata.name);
+    assert.equal(legacySave.body.products[0].genre, metadata.genre);
+  } finally { await db.close(); }
+});
+
+test('event common editing adopts unlinked legacy goods once and preserves stock', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const event = (await invoke('createProject', null, { name: '기존 행사' })).body.project.id;
+    await invoke('replaceProducts', event, { products: [{ id: 'old', name: '기존', goodsType: '키링', price: 0, stockQty: 5, initialStockQty: 5 }] });
+    const result = await invoke('saveEventProduct', null, { projectId: event, productId: 'old', inventoryVersion: null, product: { name: '수정', goodsType: '굿즈', vtuberName: '', creatorName: '', genre: '', price: 0 } });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.products[0].stockQty, 5);
+    assert.equal(result.body.products[0].inventoryVersion, 1);
+    assert.equal((await invoke('listInventory')).body.inventory[0].name, '수정');
+  } finally { await db.close(); }
+});
+
+
+test('inventory transfer validates separated-event revisions and replays an acknowledged move without changing stock', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const source = (await invoke('saveInventory', null, { product: { id: 'revision-source', version: -1, name: '원본', stock: 5 } })).body.inventory[0];
+    await db.query("INSERT INTO pos_projects (id,admin_id,name) VALUES ('pxwiu2t','a','분리 행사')");
+    await db.query("INSERT INTO pos_event_archives (project_id,revision,snapshot) VALUES ('pxwiu2t','move-revision','{}')");
+    const payload = { inventoryId: source.id, projectId: 'pxwiu2t', direction: 'allocate', qty: 2, requestId: 'revision-move' };
+    assert.equal((await invoke('transferInventory', null, payload)).status, 409);
+    assert.equal((await invoke('transferInventory', null, { ...payload, dataRevision: 'old' })).status, 409);
+    assert.equal((await invoke('transferInventory', null, { ...payload, dataRevision: 'move-revision' })).status, 200);
+    assert.equal((await invoke('transferInventory', null, { ...payload, dataRevision: 'move-revision' })).status, 200);
+    assert.equal((await invoke('listInventory')).body.inventory.find(row => row.id === source.id).stock, 3);
+    assert.equal((await invoke(null, 'pxwiu2t')).body.products[0].stockQty, 2);
   } finally { await db.close(); }
 });

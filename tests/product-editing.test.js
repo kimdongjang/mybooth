@@ -165,3 +165,15 @@ test('event product genre is editable, trimmed, and submitted by the external he
   await render().props.onSubmit({ preventDefault() {} });
   assert.equal(h.calls[0][0].genre, '게임');
 });
+
+
+test('shared event edits submit the baseline inventory version instead of silently overwriting external common changes', async () => {
+  const h = await harness(); h.props.product.inventoryVersion = 3;
+  const calls = [];
+  const onSave = async (patch, version) => { calls.push(version); return { ...patch, inventoryVersion: 4 }; };
+  await h.render({ onSave }).props.onSubmit({ preventDefault() {} });
+  assert.equal(calls[0], 3);
+  h.props.product = { ...h.props.product, name: '다른 곳에서 수정', inventoryVersion: 9 };
+  await h.render({ onSave }).props.onSubmit({ preventDefault() {} });
+  assert.equal(calls[1], 4);
+});
