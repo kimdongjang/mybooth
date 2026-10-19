@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PageIntro } from '../components/PageLayout';
-import ProductValueInput from '../components/ProductValueInput';
+import InventoryProductFields from '../components/InventoryProductFields';
 import { Input, Quantity, ProductImage } from '../components/PosUI';
 import { filterInventory } from '../utils/inventorySearch';
 import { won } from '../utils/productDisplay';
@@ -134,11 +134,7 @@ export default function InventoryPage({ adminId, api, routeHash, navigate }) {
         <div className="management-product-body">
           <div className="management-image"><ProductImage imageUrl={draft.imageUrl} name={draft.name} /></div>
           <form onSubmit={save} className="management-details">
-            <fieldset disabled={busy || uncertain || !ready}><legend>기본 정보</legend><div className="management-fields">
-              <label className="management-field product-name-field"><span>상품 이름</span><Input required maxLength={200} value={draft.name} onChange={value => changeDraft('name', value)} /></label>
-              {[['vtuberName','캐릭터'], ['goodsType','굿즈 종류'], ['creatorName','제작자'], ['genre','장르']].map(([key,label]) => <ProductValueInput key={key} field={key} label={label} products={items} value={draft[key]} onChange={value => changeDraft(key, value)} required={key === 'goodsType'} disabled={busy || uncertain || !ready} />)}
-
-            </div></fieldset>
+            <InventoryProductFields draft={draft} products={items} onChange={changeDraft} disabled={busy || uncertain || !ready} />
             <fieldset disabled={busy || uncertain || !ready}><legend>재고</legend><div className="product-stock-grid">
               <label className="management-field"><span>{view === 'new' ? '최초 입고 수량' : '창고 남은재고'}</span><Input aria-label="창고 남은재고" required type="number" min="0" max="2147483647" step="1" value={draft.stock} onChange={value => changeDraft('stock', value)} /></label>
               <Quantity label="총재고 (누적 입고)" value={Number(draft.totalReceived ?? savedItem?.totalReceived ?? 0) + (view === 'new' ? Number(draft.stock || 0) : stockDelta > 0 && stockChangeType === 'receipt' ? stockDelta : 0)} />
