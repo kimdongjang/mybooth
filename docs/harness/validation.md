@@ -1,3 +1,9 @@
+## 주문 마진·알림 제거·재고 재배치 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고). node --experimental-vm-modules --test tests/product-sale-number.test.js 관련5개 통과: 포인터 드롭/취소,터치 가장자리 이동,키보드,stale/읽기 전용 취소,실패 오류,blur/저장 중 중복 잡기 방지.
+- git diff --check 통과. diff에서 데스크톱 주문 외부20px/모바일 상단0,결제 안내 제거,빈 status/성공 멘트 제거와 오류 조건부 표시,재고 DOM 순서와 검색/추가 버튼 간격 및 AGENTS 지침을 확인했다.
+- 미실행: 전체 npm test(API/DB 변경 없음),실제 브라우저/실기기 주문 sticky·짧은 화면/큰 주문·재고 상세 조건 펼침과 결과 위치 시각 검증,배포 CACHE-01. 운영 DB 사용 없음.
+
 ## 재고 목록 여백 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 목록일 때만 전용 클래스 적용, 데스크톱/터치 분기별 브레드크럼 크기·헤더/검색/테이블 간격·44px 추가 버튼·줄바꿈을 diff로 확인했다.

@@ -118,7 +118,7 @@ function ProductSettingsPanel({ adminId, inventoryApi, dataRevision, projectName
     </section>}
     {!selectedId && <div className="management-summary"><span>등록 상품 <b>{products.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : ''}</span></div>}
     {!selectedId && <>
-      <p role="status" aria-live="polite" className="product-reorder-status">{reorder.message}</p>
+      {reorder.message && <p role="alert" className="product-reorder-error">{reorder.message}</p>}
       <div className="management-table-wrap event-product-table-wrap"><table className="management-table event-product-number-table" role="table">
         <caption className="sr-only">판매 번호, 상품 이름, 제작자, 판매가, 초기재고, 판매수량, 남은 재고, 등록일 목록</caption>
         <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">판매 번호</th><th scope="col" role="columnheader">상품 이름</th><th scope="col" role="columnheader" className="event-product-extra-column">제작자</th><th scope="col" role="columnheader">판매가</th><th scope="col" role="columnheader" className="event-product-extra-column">초기재고</th><th scope="col" role="columnheader">판매수량</th><th scope="col" role="columnheader">남은 재고</th><th scope="col" role="columnheader" className="event-product-extra-column">등록일</th></tr></thead>

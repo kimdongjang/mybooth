@@ -9,7 +9,7 @@ export function useProductReorder({ products, disabled, onSave }) {
     const current=drag.current;drag.current=null;stopFrame();setState(null);
     if(current?.button?.hasPointerCapture?.(current.pointerId))current.button.releasePointerCapture(current.pointerId);
   };
-  const cancel=()=>{if(drag.current){clear();setMessage('순서 변경을 취소했습니다.');}};
+  const cancel=()=>{if(drag.current){clear();setMessage('');}};
   useEffect(()=>{
     active.current=true;window.addEventListener('blur',cancel);
     return()=>{active.current=false;const current=drag.current;drag.current=null;stopFrame();if(current?.button?.hasPointerCapture?.(current.pointerId))current.button.releasePointerCapture(current.pointerId);window.removeEventListener('blur',cancel);};
@@ -18,7 +18,6 @@ export function useProductReorder({ products, disabled, onSave }) {
   const setTarget=index=>{
     const current=drag.current;if(!current||current.to===index)return;
     current.to=index;setState({...current});
-    if(index!==null)setMessage(`${current.name}: ${index+1}번 위치로 이동합니다.`);
   };
   const targetAt=(x,y)=>{
     const current=drag.current;
@@ -36,14 +35,14 @@ export function useProductReorder({ products, disabled, onSave }) {
     if(disabled||pending.current||drag.current)return false;
     const index=order.indexOf(product.id);if(index<0)return false;
     drag.current={id:product.id,name:product.name,from:index,to:index,order:[...order],signature,...extra};
-    setState({...drag.current});setMessage(`${product.name} 순서 변경 중. 위아래로 이동한 뒤 놓으세요.`);return true;
+    setState({...drag.current});setMessage('');return true;
   };
   const finish=async()=>{
     const current=drag.current;if(!current)return;
     clear();
     if(disabled||pending.current||current.to===null||current.to===current.from||current.signature!==signature)return;
-    pending.current=true;setBusy(true);setMessage('상품 순서를 저장하고 있습니다.');
-    try{const saved=await onSave({productId:current.id,saleNumber:current.to+1,expectedOrder:current.order});if(active.current)setMessage(saved?'상품 순서를 저장했습니다.':'순서를 저장하지 못했습니다. 최신 목록을 확인해주세요.');}
+    pending.current=true;setBusy(true);setMessage('');
+    try{const saved=await onSave({productId:current.id,saleNumber:current.to+1,expectedOrder:current.order});if(active.current)setMessage(saved?'':'순서를 저장하지 못했습니다. 최신 목록을 확인해주세요.');}
     catch(err){if(active.current)setMessage(err.message||'순서를 저장하지 못했습니다.');}
     finally{pending.current=false;if(active.current)setBusy(false);}
   };
