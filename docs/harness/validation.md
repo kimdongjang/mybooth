@@ -1,3 +1,9 @@
+## 판매 요약·재고 상세 후속 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고). 재고 화면/라우트 기존 테스트12개 재통과. git diff --check 통과.
+- diff에서 단품/세트 공통 sales-event-context 제거,상세·등록 breadcrumb의 재고 목록 링크 추가 및 native 수정 클릭/목록 이동 유지,모바일 범위 재고 이미지104px+버튼 우측/정보 폼 아래 전체 너비·1열·간격을 확인했다. 데스크톱 규칙/판매 readOnly·주문 동작은 유지한다.
+- 미실행: UI-01 실제 브라우저 모바일/태블릿/데스크톱 시각·이미지 유무·파일 선택·키보드/가로 스크롤 및 배포 CACHE-01. 운영 DB 사용 없음. API/주문 큐는 변경하지 않았다.
+
 ## 재고 페이지 헤더 통일 검증 (2026-10-20)
 
 - 최신 origin/main의 별도 작업 브랜치에서 npm run build 통과(기존500kB 청크 경고). node --experimental-vm-modules --test tests/inventory-route.test.js tests/inventory-deletion.test.js 12개 통과: 재고 목록/등록 breadcrumb,상세 저장·삭제·목록 복귀,인코딩된 상세 URL 및 뒤로/앞으로 라우트 유지 확인. git diff --check 통과.

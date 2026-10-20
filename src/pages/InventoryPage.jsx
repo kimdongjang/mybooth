@@ -161,6 +161,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
       <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol>
         <li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>공통 상품·재고 관리</a></li>
         <li aria-hidden="true">/</li>
+        {view !== 'list' && <><li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고 목록</a></li><li aria-hidden="true">/</li></>}
         <li><h1 aria-current="page" tabIndex={-1}>{view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상품 재고 상세'}</h1></li>
       </ol></nav>
       {view !== 'list' && <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
