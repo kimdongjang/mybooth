@@ -1,3 +1,8 @@
+## 총재고 표기·재고 표1pt 확대 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 목록 총재고 N개/별표·각주 제거와 목록 전용 데스크톱/모바일 본문·헤더·보조 각1pt 증가를 diff로 확인했다. totalStock/remainingStock과 서버 totalEstimated는 변경하지 않는다.
+- 표시/CSS만 변경해 npm test 미실행. 실제 브라우저320/412/980px 터치·1440px 데스크톱의 computed font/큰 재고 숫자·말줄임·테이블 배치와 배포 CACHE-01 미실행. 운영 DB 사용 없음.
+
 ## 정산 요약 접기·펼치기 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고), git diff --check 통과. native details 기본 open/summary 및 내부4열 grid 분리,상단16px/하단0,요청 안내2개 제거와 버튼명 변경을 diff로 확인했다. 기존 exportCsv/clearSalesWithPassword 호출은 보존한다.

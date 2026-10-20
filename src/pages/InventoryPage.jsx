@@ -167,12 +167,11 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
           <tbody>{filteredItems.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
             <td><a className="management-name-link inventory-cell-main" href={`#/inventory/${encodeURIComponent(item.id)}`} aria-label={`${item.name} 재고 상세보기`} title={item.name} onClick={event => open(event,item)}>{item.name}</a><small className="inventory-cell-sub" title={item.creatorName || '미지정'}>{item.creatorName || '미지정'}</small></td>
             <td><span className="inventory-cell-main" title={item.vtuberName || ''}>{item.vtuberName || '—'}</span><small className="inventory-cell-sub" title={item.genre || ''}>{item.genre || '—'}</small></td>
-            <td className="mono"><span className="inventory-cell-main" aria-label={`남은재고 ${won(item.remainingStock)}개`}>{won(item.remainingStock)}개</span><small className="inventory-cell-sub" title={item.totalEstimated ? '총재고: 기존 자료 기준' : '총재고'}>총 {won(item.totalStock)}{item.totalEstimated ? '*' : ''}</small></td>
+            <td className="mono"><span className="inventory-cell-main" aria-label={`남은재고 ${won(item.remainingStock)}개`}>{won(item.remainingStock)}개</span><small className="inventory-cell-sub">총재고 {won(item.totalStock)}개</small></td>
             <td>{dateLabel(item.createdAt)}</td>
           </tr>)}</tbody>
         </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}{ready && items.length > 0 && !filteredItems.length && <p className="catalog-empty">검색 조건에 맞는 재고가 없습니다.</p>}</div>
         <p className="settlement-result" role="status">검색 결과 {filteredItems.length}개 / 전체 {items.length}개</p>
-        {filteredItems.some(item => item.totalEstimated) && <p className="inventory-estimate-note">* 총재고는 기존 자료 기준입니다.</p>}
         <nav className="management-pagination" aria-label="재고 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
       </> : draft && <article className="management-product">
         <div className="management-product-header inventory-detail-header">

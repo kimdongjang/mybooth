@@ -851,3 +851,13 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .event-product-number-table .management-mobile-meta { margin-top: 2px; line-height: 1.4; }
 .bundle-management-table th:nth-child(3),
 .bundle-management-table .management-row-price { text-align: left; }
+
+/* Add one typographic point to each inventory-list text level. */
+.inventory-list-content .inventory-management-table td { font-size: calc(13px + 1pt); }
+.inventory-list-content .inventory-management-table th { font-size: calc(12px + 1pt); }
+.inventory-list-content .inventory-management-table .inventory-cell-sub { font-size: calc(11px + 1pt); }
+@media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
+  .inventory-list-content .inventory-management-table td { font-size: calc(11px + 1pt); }
+  .inventory-list-content .inventory-management-table th,
+  .inventory-list-content .inventory-management-table .inventory-cell-sub { font-size: calc(10px + 1pt); }
+}
