@@ -1,6 +1,8 @@
 import InventoryTransferRecovery from '../components/InventoryTransferRecovery';
 import { useEffect, useRef, useState } from 'react';
 import { PageIntro } from '../components/PageLayout';
+import { prepareProductImage } from '../utils/productImage';
+import { uploadInventoryImage } from '../utils/uploadProductImage';
 import InventoryProductFields from '../components/InventoryProductFields';
 import { Input, ProductImage } from '../components/PosUI';
 import { filterInventory } from '../utils/inventorySearch';
@@ -11,6 +13,21 @@ const dateLabel = value => value && !Number.isNaN(Date.parse(value)) ? new Date(
 const empty = () => ({ id: crypto.randomUUID(), version: -1, name: '', goodsType: '', vtuberName: '', creatorName: '', genre: '', stock: 0 });
 
 export default function InventoryPage({ projects = [], adminId, api, routeHash, navigate }) {
+  const [image, setImage] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [preparing, setPreparing] = useState(false);
+  const uploadedImage = useRef(null);
+  useEffect(() => {
+    if (!image) { setPreview(null); return; }
+    const url = URL.createObjectURL(image); setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
+  const chooseImage = async file => {
+    if (!file || busy || preparing) return;
+    setPreparing(true); setError('');
+    try { setImage(await prepareProductImage(file)); uploadedImage.current = null; }
+    catch (err) { setError(err.message); } finally { setPreparing(false); }
+  };
   const [allocationEvents, setAllocationEvents] = useState([]);
   const [pendingMoves, setPendingMoves] = useState(false);
   const [items, setItems] = useState([]);
@@ -60,7 +77,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     const path = routeHash.split('?')[0];
     let id = null;
     try { id = path.startsWith('#/inventory/') ? decodeURIComponent(path.slice('#/inventory/'.length)) : null; } catch { id = '__invalid__'; }
-    setError(''); setMessage('');
+    setError(''); setMessage(''); setImage(null); uploadedImage.current = null;
     if (!id) { setView('list'); setDraft(null); }
     else if (id === 'new') { setView('new'); setDraft(empty()); }
     else { setView('detail'); const item = items.find(item => item.id === id); setDraft(item ? { ...item } : null); }
@@ -91,13 +108,24 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
   };
   const save = async event => {
     event.preventDefault();
+    if (preparing) return;
     await run(async () => {
       const { price, ...product } = draft;
       if (pendingMoves || uncertain) throw new Error('이전 재고 이동 결과를 먼저 확인해주세요.');
       if (allocationError) throw new Error(allocationError);
       const allocationPlan = view === 'detail' ? { totalStock: Number(totalStock), allocations: allocationRows.map(row => ({ projectId: row.project_id, productId: row.product_id, quantity: Number(row.quantity), stock: Number(row.stock), initialStock: Number(row.initial_stock), dataRevision: row.data_revision ?? null })) } : undefined;
-      const data = await api('saveInventory', { product, ...(allocationPlan ? { allocationPlan } : {}) });
-      setItems(data.inventory); setAllocationEvents(data.inventoryEvents || []); setDraft({ ...data.inventory.find(item => item.id === draft.id) });
+      let data = await api('saveInventory', { product, ...(allocationPlan ? { allocationPlan } : {}) });
+      let saved = data.inventory.find(item => item.id === draft.id);
+      setItems(data.inventory); setAllocationEvents(data.inventoryEvents || []); setDraft({ ...saved });
+      if (image) {
+        try {
+          const blob = uploadedImage.current?.file === image ? uploadedImage.current : await uploadInventoryImage(adminId, saved.id, image);
+          uploadedImage.current = { file: image, url: blob.url };
+          data = await api('saveInventory', { product: { ...saved, imageUrl: blob.url } });
+          saved = data.inventory.find(item => item.id === saved.id);
+          setItems(data.inventory); setDraft({ ...saved }); setImage(null); uploadedImage.current = null;
+        } catch (err) { throw new Error(`상품은 저장되었지만 이미지 저장에 실패했습니다. 다시 저장해주세요. ${err.message || ''}`); }
+      }
       if (view === 'new') navigate(`/inventory/${encodeURIComponent(draft.id)}`, true);
       setView('detail'); alert('상품과 재고를 저장했습니다.');
     });
@@ -130,15 +158,15 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     });
   };
   return <main className="page-content inventory-page">
-    {view !== 'list' && <PageIntro title="공통 상품·재고 관리" />}
+    {view === 'detail' && <PageIntro title="공통 상품·재고 관리" />}
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
     {deletionNotice && <div role="status" className="inventory-card"><p>{deletionNotice}</p><button type="button" className="management-back" onClick={() => setDeletionNotice('')}>닫기</button></div>}
     {!ready && !error && <p role="status">재고를 불러오는 중…</p>}
     {uncertain && <div role="status" className="inventory-card"><p>이전에 요청한 재고 이동의 완료 여부를 확인해주세요.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(resolvePending)}>이전 이동 결과 확인</button></div>}
     <InventoryTransferRecovery adminId={adminId} api={api} onBlocked={setPendingMoves} onInventory={inventory => { setItems(inventory); setDraft(current => current ? inventory.find(row => row.id === current.id) || null : null); }} />
-    <section className={`product-management ${view === 'list' ? 'inventory-list-content' : ''}`}>
-      <header className={`management-heading ${view === 'list' ? 'inventory-list-heading' : ''}`}>{view === 'list' ? <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol><li><a href="#/inventory" onClick={event=>{if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||event.button!==0)return;event.preventDefault();navigate('inventory');}}>공통 상품·재고 관리</a></li><li aria-hidden="true">/</li><li><h1 aria-current="page">재고 목록</h1></li></ol></nav> : <h2>{view === 'new' ? '상품 등록' : '상품 재고 상세'}</h2>}
+    <section className={`product-management ${view !== 'detail' ? 'inventory-list-content' : ''}`}>
+      <header className={`management-heading ${view !== 'detail' ? 'inventory-list-heading' : ''}`}>{view !== 'detail' ? <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol><li><a href="#/inventory" onClick={event=>{if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||event.button!==0)return;event.preventDefault();navigate('inventory');}}>공통 상품·재고 관리</a></li><li aria-hidden="true">/</li><li><h1 aria-current="page">{view === 'new' ? '상품 등록' : '재고 목록'}</h1></li></ol></nav> : <h2>{view === 'new' ? '상품 등록' : '상품 재고 상세'}</h2>}
         {view !== 'list' && <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
       </header>
       {view === 'list' ? <>
@@ -160,7 +188,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
           </details>
           {(search.product || filterCount > 0 || query) && <button type="button" className="inventory-search-reset" onClick={() => { setQuery(''); changeSearch(emptySearch()); }}>검색 조건 초기화</button>}
         </form>
-        <div className="inventory-table-actions"><button type="button" className="management-add" disabled={busy || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
+        <div className="inventory-table-actions"><button type="button" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
           <caption className="sr-only">상품명과 제작자, 캐릭터와 장르, 남은재고와 총재고, 등록일</caption>
           <thead><tr>{['상품명 / 제작자', '캐릭터 / 장르', '재고', '등록일'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
@@ -175,17 +203,21 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         <nav className="management-pagination" aria-label="재고 목록 페이지"><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button><span aria-live="polite">{currentPage} / {pageCount} 페이지</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
       </> : draft && <article className="management-product">
         <div className="management-product-header inventory-detail-header">
-          <div className="inventory-detail-identity"><span className="inventory-product-code mono">{draft.productNumber || '번호 발급 전'}</span><h3>{draft.name || '새 상품'}</h3></div>
+          <div className="inventory-detail-identity">{draft.productNumber && <span className="inventory-product-code mono">{draft.productNumber}</span>}<h3>{draft.name || '새 상품'}</h3></div>
           <div className="inventory-detail-actions">
-            <button type="submit" form="inventory-product-form" className="management-add" disabled={busy || uncertain || pendingMoves || !ready}>{busy ? '저장 중…' : view === 'new' ? '상품 등록' : '수정'}</button>
-            {view === 'detail' && <button type="button" className="inventory-delete-button" disabled={busy || uncertain || pendingMoves || !ready} onClick={remove}>상품 삭제</button>}
+            <button type="submit" form="inventory-product-form" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready}>{busy ? '저장 중…' : view === 'new' ? '상품 등록' : '수정'}</button>
+            {view === 'detail' && <button type="button" className="inventory-delete-button" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={remove}>상품 삭제</button>}
           </div>
         </div>
         <div className="management-product-body">
-          <div className="management-image"><ProductImage imageUrl={draft.imageUrl} name={draft.name} /></div>
+          <div className="management-image">
+            <ProductImage imageUrl={preview || draft.imageUrl} name={draft.name} />
+            <label className="management-upload product-image-upload"><span>{preparing ? '이미지 축소 중…' : image || draft.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label="상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
+            {(image || draft.imageUrl) && <button type="button" className="product-image-remove" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => { setImage(null); uploadedImage.current = null; changeDraft('imageUrl', null); }}>이미지 제거</button>}
+          </div>
           <form id="inventory-product-form" onSubmit={save} className="management-details">
-            <InventoryProductFields draft={draft} products={items} onChange={changeDraft} disabled={busy || uncertain || pendingMoves || !ready} />
-            {view === 'new' && <label className="management-field"><span>최초 입고 수량</span><Input aria-label="최초 입고 수량" required type="number" min="0" max="2147483647" step="1" value={draft.stock} disabled={busy || uncertain || pendingMoves || !ready} onChange={value => changeDraft('stock', value)} /></label>}
+            <InventoryProductFields draft={draft} products={items} onChange={changeDraft} disabled={busy || preparing || uncertain || pendingMoves || !ready} />
+            {view === 'new' && <label className="management-field"><span>최초 입고 수량</span><Input aria-label="최초 입고 수량" required type="number" min="0" max="2147483647" step="1" value={draft.stock} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('stock', value)} /></label>}
           </form>
         </div>
         {view === 'detail' && <section className="inventory-history">

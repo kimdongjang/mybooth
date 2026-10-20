@@ -699,3 +699,32 @@ test('sale numbering rejects invalid/stale/archived/foreign changes and rolls ba
   assert.deepEqual((await f.invoke(null,event)).body.products,state.products);
  }finally{await f.db.close();}
 });
+
+
+test('inventory images validate account/item paths, propagate and preserve stock with version checks', async () => {
+ const {db,invoke}=await fixture();
+ try {
+  const event=(await invoke('createProject',null,{name:'image event'})).body.project.id;
+  const created=await invoke('createEventProduct',null,{projectId:event,product:{id:'image-item',name:'Image',goodsType:'Goods',vtuberName:'',creatorName:'',genre:'',price:1000,stockQty:5}});
+  assert.equal(created.status,200);
+  let item=(await invoke('listInventory')).body.inventory[0];
+  const url='https://test.public.blob.vercel-storage.com/inventory/a/image-item/photo.png';
+  for(const invalid of ['https://example.com/inventory/a/image-item/photo.png',url.replace('/a/','/b/'),url.replace('/image-item/','/other/'),'javascript:alert(1)']) {
+   assert.equal((await invoke('saveInventory',null,{product:{...item,imageUrl:invalid}})).status,400);
+  }
+  assert.notEqual((await invoke('saveInventory',null,{product:{...item,imageUrl:url}},'b')).status,200);
+  const saved=await invoke('saveInventory',null,{product:{...item,imageUrl:url}});
+  assert.equal(saved.status,200,JSON.stringify(saved.body));
+  assert.equal(saved.body.inventory[0].imageUrl,url);
+  assert.equal(saved.body.inventory[0].remainingStock,5);
+  assert.equal((await invoke(null,event)).body.products[0].imageUrl,url);
+  assert.equal((await invoke(null,event)).body.products[0].price,1000);
+  assert.equal((await invoke('saveInventory',null,{product:{...item,imageUrl:null}})).status,409);
+  item=saved.body.inventory[0];
+  const removed=await invoke('saveInventory',null,{product:{...item,imageUrl:null}});
+  assert.equal(removed.status,200);
+  assert.equal(removed.body.inventory[0].imageUrl,null);
+  assert.equal((await invoke(null,event)).body.products[0].imageUrl,null);
+  assert.equal(removed.body.inventory[0].remainingStock,5);
+ } finally {await db.close();}
+});

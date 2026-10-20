@@ -1,3 +1,11 @@
+## 공통 재고 등록 헤더·이미지 편집 (2026-10-20)
+
+/inventory/new는 목록과 같은 inventory-breadcrumb/목록 헤더 여백·글자 크기로 공통 상품·재고 관리 링크 / 상품 등록을 표시한다. 번호 미발급 배지는 표시하지 않는다. 재고 신규/상세 이미지에 기존 product-image-upload/remove 디자인과 prepareProductImage 축소,object URL 미리보기,선택 파일 제거를 적용한다. 이미지 제거는 저장 시 반영된다.
+
+uploadInventoryImage는 inventory/{adminId}/{inventoryId}/ 경로로 기존 토큰 업로드를 재사용한다. product-images API는 로그인 소유자의 미삭제 재고 행/경로를 확인하며 기존 행사 업로드 권한과5MB/이미지 형식 제한은 유지한다. saveInventory는 optional product.imageUrl을 받으며 미전달 시 기존 값 보존,null은 제거,변경 URL은 HTTPS Vercel Blob 및 계정/재고 경로를 검증한다. 기존 계정/행사 잠금·version 검사와 공통 메타데이터 전파를 사용하고 재고/가격/판매는 유지한다.
+
+신규 이미지는 먼저 재고 저장→Blob 업로드→반환된 재고/version으로 이미지 연결 저장한다. 실패 시 재고는 유지하고 선택 파일과 업로드 URL을 현재 화면에서 보존해 재시도한다. 새로고침/탭 종료 시 선택 파일은 다시 선택해야 하며,Blob 파일 물리 삭제는 수행하지 않는다. 캐시 v101.
+
 ## 재고 목록 헤더 마진 (2026-10-20)
 
 inventory-list-heading은 기존 하단 여백을 상단으로 옮겨 데스크톱 margin:24px 0 0,모바일/터치 태블릿 margin:20px 0 0으로 적용한다. 하단 마진은0이다. 다른 헤더/검색/표 동작은 유지한다. 캐시 v100.

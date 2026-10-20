@@ -17,7 +17,7 @@ test('upload tokens require authentication, owned product and matching path; res
       return { type: 'token' };
     } },
     '@vercel/postgres': { sql: async parts => {
-      assert.match(parts.join('?'), /project\.archived_at IS NULL/);
+      assert.match(parts.join('?'), /project\.archived_at IS NULL|product->>'removedAt' IS NULL/);
       return { rows: owned && !archived ? [{ id: 'P001' }] : [] };
     } },
     './lib/auth.js': { requireAuth: (req, res) => {
@@ -30,9 +30,9 @@ test('upload tokens require authentication, owned product and matching path; res
     for (const [name, value] of Object.entries(dependencies[specifier])) this.setExport(name, value);
   }, { context }));
   await module.evaluate();
-  const invoke = async (authenticated, pathname = 'products/project-a/P001/image.png') => {
+  const invoke = async (authenticated, pathname = 'products/project-a/P001/image.png', scope = { projectId: 'project-a', productId: 'P001' }) => {
     const res = { headersSent: false, status(code) { this.code = code; return this; }, json() { this.headersSent = true; return this; } };
-    await module.namespace.default({ method: 'POST', authenticated, body: { type: 'blob.generate-client-token', pathname, clientPayload: JSON.stringify({ projectId: 'project-a', productId: 'P001' }) } }, res);
+    await module.namespace.default({ method: 'POST', authenticated, body: { type: 'blob.generate-client-token', pathname, clientPayload: JSON.stringify(scope) } }, res);
     return res.code;
   };
   delete env.BLOB_READ_WRITE_TOKEN;
@@ -45,9 +45,13 @@ test('upload tokens require authentication, owned product and matching path; res
   assert.equal(tokenOptions.maximumSizeInBytes, 5 * 1024 * 1024);
   assert.equal(tokenOptions.allowOverwrite, false);
   assert.equal(await invoke(true, 'products/project-b/P001/image.png'), 400);
+  assert.equal(await invoke(true, 'inventory/admin-a/P001/image.png', { inventoryId: 'P001' }), 200);
+  assert.equal(await invoke(true, 'inventory/admin-b/P001/image.png', { inventoryId: 'P001' }), 400);
+  assert.equal(await invoke(true, 'inventory/admin-a/other/image.png', { inventoryId: 'P001' }), 400);
   archived = true;
   assert.equal(await invoke(true), 400);
   archived = false;
   owned = false;
+  assert.equal(await invoke(true, 'inventory/admin-a/P001/image.png', { inventoryId: 'P001' }), 400);
   assert.equal(await invoke(true), 400);
 });
