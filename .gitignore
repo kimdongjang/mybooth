@@ -25,3 +25,9 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Android signing and generated update releases
+mobile-release/
+*.jks
+*.keystore
+android/key.properties

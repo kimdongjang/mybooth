@@ -7,9 +7,18 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --experimental-vm-modules --test tests/*.test.js"
+    "test": "node --experimental-vm-modules --test tests/*.test.js",
+    "build:android": "vite build --mode android",
+    "android:sync": "npm run build:android && cap sync android",
+    "android:open": "cap open android",
+    "android:bundle": "node scripts/packageMobileUpdate.mjs",
+    "build:release": "node scripts/buildWebAndMobile.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capgo/capacitor-updater": "^8.53.0",
     "@tailwindcss/vite": "latest",
     "@vercel/blob": "^2.8.1",
     "@vercel/postgres": "^0.10.0",
@@ -21,10 +30,12 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@electric-sql/pglite": "^0.5.9",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "fake-indexeddb": "^6.2.5",
+    "fflate": "^0.8.3",
     "typescript": "^6.0.3"
   }
 }
