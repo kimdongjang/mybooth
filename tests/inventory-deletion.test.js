@@ -5,10 +5,10 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 const nodes = node => !node || typeof node !== 'object' ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
 async function harness(allocations = []) {
-  const states = [], refs = [], deps = [], effects = [], calls = [], navigations = [], confirmations = [], alerts = [];
+  const states = [], refs = [], deps = [], effects = [], calls = [], navigations = [], confirmations = [], alerts = [], uploads = [];
   let stateIndex, refIndex, effectIndex, confirmed = true, failure = false;
   const item = { id: 'original', name: '판매 이력 상품', version: 7, stock: 4, totalReceived: 10, remainingStock: 7, allocations, history: [] };
-  const context = vm.createContext({ alert: message => alerts.push(message), crypto: { randomUUID: () => 'new' }, sessionStorage: { getItem: () => null }, confirm: message => { confirmations.push(message); return confirmed; } });
+  const context = vm.createContext({ URL: { createObjectURL: () => 'blob:preview', revokeObjectURL() {} }, alert: message => alerts.push(message), crypto: { randomUUID: () => 'new' }, sessionStorage: { getItem: () => null }, confirm: message => { confirmations.push(message); return confirmed; } });
   const mocks = {
     react: {
       useState: initial => { const i = stateIndex++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === 'function' ? value(states[i]) : value; }]; },
@@ -16,6 +16,8 @@ async function harness(allocations = []) {
       useEffect: (effect, next) => { const i = effectIndex++; if (!deps[i] || next.some((v,j) => deps[i][j] !== v)) { deps[i] = next; effects.push(effect); } },
     },
     'react/jsx-runtime': { Fragment: 'fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
+    '../utils/productImage': { prepareProductImage: async file => file },
+    '../utils/uploadProductImage': { uploadInventoryImage: async (...args) => { uploads.push(args); return { url: 'https://test.public.blob.vercel-storage.com/inventory/a/original/image.png' }; } },
     '../utils/inventorySearch': { filterInventory: items => items },
     '../utils/productDisplay': { won: String },
   };
@@ -34,7 +36,7 @@ async function harness(allocations = []) {
   const render = () => { stateIndex = refIndex = effectIndex = 0; const tree = module.namespace.default(props); while (effects.length) effects.shift()(); return tree; };
   render(); await Promise.resolve(); render(); render();
   const remove = () => nodes(render()).find(node => node.props?.children === '상품 삭제').props.onClick();
-  return { render, remove, item, calls, alerts, navigations, confirmations, props, confirm: value => { confirmed = value; }, fail: value => { failure = value; } };
+  return { render, remove, item, calls, alerts, uploads, navigations, confirmations, props, confirm: value => { confirmed = value; }, fail: value => { failure = value; } };
 }
 
 test('inventory delete confirms its scope, sends the saved version and keeps success feedback after returning to the list', async () => {
@@ -162,4 +164,50 @@ test('inventory list uses a single breadcrumb row instead of separate page and s
  assert.equal(nodes(breadcrumb).find(node=>node.type==='a').props.children,'공통 상품·재고 관리');
  assert.equal(nodes(breadcrumb).find(node=>node.type==='h1').props.children,'재고 목록');
  assert.equal(nodes(tree).some(node=>node.type==='PageIntro'),false);
+});
+
+
+test('inventory image attachment failure retries the cached upload without changing allocation requests', async () => {
+ const h=await harness();
+ let failAttach=true;
+ const api=h.props.api;
+ h.props.api=async(action,payload)=>{
+  if(action==='saveInventory' && payload.product.imageUrl) {
+   h.calls.push({action,payload});
+   if(failAttach) throw new Error('attachment failed');
+   return {inventory:[{...h.item,imageUrl:payload.product.imageUrl}]};
+  }
+  return api(action,payload);
+ };
+ const input=()=>nodes(h.render()).find(n=>n.type==='input'&&n.props.type==='file');
+ const file={type:'image/webp'};
+ await input().props.onChange({target:{files:[file],value:'file'}});
+ await new Promise(setImmediate);h.render();
+ assert.equal(nodes(h.render()).find(n=>n.type==='ProductImage').props.imageUrl,'blob:preview');
+ const submit=()=>nodes(h.render()).find(n=>n.type==='form'&&n.props.id==='inventory-product-form').props.onSubmit({preventDefault(){}});
+ await submit();
+ assert.equal(h.uploads.length,1);
+ assert.equal(h.uploads[0][0],'a');
+ assert.equal(h.uploads[0][1],'original');
+ assert.equal(h.alerts.length,0);
+ assert.ok(nodes(h.render()).some(n=>n.props?.role==='alert'&&String(n.props.children).includes('attachment failed')));
+ failAttach=false;await submit();
+ assert.equal(h.uploads.length,1);
+ assert.equal(h.calls.filter(c=>c.action==='saveInventory').length,4);
+ assert.equal(h.calls.filter(c=>c.payload?.product?.imageUrl).every(c=>!c.payload.allocationPlan),true);
+ assert.equal(h.alerts.length,1);
+});
+
+test('new inventory header shares breadcrumb and omits unissued code; image removal clears draft', async () => {
+ const h=await harness();h.props.routeHash='#/inventory/new';h.render();
+ const tree=h.render();
+ assert.ok(nodes(tree).some(n=>n.type==='nav'&&n.props.className==='inventory-breadcrumb'));
+ assert.ok(nodes(tree).some(n=>n.type==='a'&&n.props.href==='#/inventory'));
+ assert.equal(nodes(tree).some(n=>String(n.props?.children).includes('번호 발급 전')),false);
+ const input=nodes(tree).find(n=>n.type==='input'&&n.props.type==='file');
+ await input.props.onChange({target:{files:[{type:'image/webp'}],value:'file'}});
+ await new Promise(setImmediate);h.render();
+ await nodes(h.render()).find(n=>n.type==='button'&&n.props.children==='이미지 제거').props.onClick();
+ h.render();assert.equal(nodes(h.render()).find(n=>n.type==='ProductImage').props.imageUrl,null);
+ assert.equal(h.uploads.length,0);
 });

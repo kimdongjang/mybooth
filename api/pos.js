@@ -365,7 +365,13 @@ async function inventoryAction(adminId, action, payload) {
     const price = submittedPrice ?? old?.product?.price ?? 0;
     if (input.genre != null && (typeof input.genre !== 'string' || input.genre.length > 200)) throw Object.assign(new Error('장르는 200자 이내로 입력해주세요.'), { status: 400 });
     const genre = (input.genre ?? old?.product?.genre ?? '').trim();
-    const product = { genre, createdAt: old ? old.product.createdAt || null : new Date().toISOString(), imageUrl: old?.product?.imageUrl || null, name: input.name.trim(), price, goodsType: String(input.goodsType || input.name).slice(0,200), creatorName: String(input.creatorName || '').slice(0,200), vtuberName: String(input.vtuberName || '').slice(0,200) };
+    const imageUrl = Object.hasOwn(input, 'imageUrl') ? input.imageUrl : old?.product?.imageUrl || null;
+    if (imageUrl != null && imageUrl !== old?.product?.imageUrl) {
+      let url;
+      try { url = new URL(imageUrl); } catch { throw Object.assign(new Error('올바른 상품 이미지 URL이 아닙니다.'), { status: 400 }); }
+      if (typeof imageUrl !== 'string' || url.protocol !== 'https:' || !url.hostname.endsWith('.public.blob.vercel-storage.com') || !url.pathname.startsWith(`/inventory/${encodeURIComponent(adminId)}/${encodeURIComponent(id)}/`)) throw Object.assign(new Error('올바른 상품 이미지 URL이 아닙니다.'), { status: 400 });
+    }
+    const product = { genre, createdAt: old ? old.product.createdAt || null : new Date().toISOString(), imageUrl, name: input.name.trim(), price, goodsType: String(input.goodsType || input.name).slice(0,200), creatorName: String(input.creatorName || '').slice(0,200), vtuberName: String(input.vtuberName || '').slice(0,200) };
     // Initialize old totals/numbers before applying a stock delta.
     await inventoryState(adminId);
     if (old) {

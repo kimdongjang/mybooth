@@ -1,13 +1,21 @@
 import { put } from '@vercel/blob/client';
 
 export async function uploadProductImage(projectId, productId, image) {
+  return uploadImage(`products/${encodeURIComponent(projectId)}/${encodeURIComponent(productId)}`, { projectId, productId }, image);
+}
+
+export function uploadInventoryImage(adminId, inventoryId, image) {
+  return uploadImage(`inventory/${encodeURIComponent(adminId)}/${encodeURIComponent(inventoryId)}`, { inventoryId }, image);
+}
+
+async function uploadImage(prefix, scope, image) {
   const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[image.type];
-  const pathname = `products/${encodeURIComponent(projectId)}/${encodeURIComponent(productId)}/${crypto.randomUUID()}.${extension}`;
+  const pathname = `${prefix}/${crypto.randomUUID()}.${extension}`;
   const response = await fetch('/api/product-images', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('pos_admin_token')}` },
     body: JSON.stringify({ type: 'blob.generate-client-token', payload: {
-      pathname, clientPayload: JSON.stringify({ projectId, productId }), multipart: false,
+      pathname, clientPayload: JSON.stringify(scope), multipart: false,
     } }),
   });
   const data = await response.json().catch(() => null);

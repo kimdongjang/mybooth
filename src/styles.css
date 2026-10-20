@@ -61,7 +61,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .mono { font-family: inherit; font-variant-numeric: tabular-nums; }
 /* App bar, content and checkout use a consistent service layout. */
 .app-shell { height: 100vh; height: 100dvh; min-width: 0; overflow: hidden; }
-.page-content { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; padding: 20px; }
+.page-content { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; padding: 0 20px 20px; }
 .page-body { width: 100%; }
 .event-picker { max-width: 1120px; margin-inline: auto; }
 .event-picker-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; padding: 24px; background: white; border: 1px solid #e2e8f0; border-radius: 12px; text-align: left; }
@@ -166,6 +166,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 }
 .page-intro { margin-bottom: 20px; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.page-heading:not(.sr-only) { margin-top: 20px; }
 .page-heading h1 { font-size: 24px; font-weight: 700; letter-spacing: -.03em; line-height: 1.35; }
 .page-heading h1:focus { outline: none; }
 .page-heading p { margin-top: 6px; color: #64748b; font-size: 14px; line-height: 1.6; }
@@ -178,8 +179,9 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .booth-navigation button:disabled { opacity: .45; }
 /* Touch browsers can expose a wide viewport; keep all compact layouts in sync. */
 @media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
-  .page-content { padding: 16px; }
+  .page-content { padding: 0 16px 16px; }
   .page-heading { align-items: flex-start; gap: 8px; }
+  .page-heading:not(.sr-only) { margin-top: 16px; }
   .page-heading h1 { font-size: 20px; }
   .page-heading p { font-size: 13px; }
   .page-heading-actions { padding-top: 4px; }
@@ -244,15 +246,20 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .settlement-tool:hover { background: #edf0f4; }
 .settlement-card .settlement-tool-danger { color: #dc2626; background: white; }
 .settlement-tool:disabled { opacity: .5; }
-.settlement-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 16px; margin-bottom: 16px; min-width: 0; border: 1px solid #e2e8f0; border-radius: 10px; background: white; padding: 20px; box-shadow: 0 4px 16px #17243b04; }
-.settlement-overview h2 { grid-column: 1 / -1; font-size: 16px; font-weight: 600; }
-.settlement-overview > p { grid-column: 1 / -1; color: #64748b; font-size: 12px; margin-top: 4px; margin-bottom: 16px; }
-.settlement-overview > div { border: 0; border-top: 1px solid #e2e8f0; border-radius: 0; padding: 14px 0; }
-.settlement-overview > div:first-of-type > div:last-child { color: #2563eb; font-size: 30px; }
+.settlement-overview { margin: 16px 0 0; min-width: 0; border: 1px solid #e2e8f0; border-radius: 10px; background: white; padding: 20px; box-shadow: 0 4px 16px #17243b04; }
+.settlement-overview-toggle { cursor: pointer; min-height: 44px; font-size: 16px; font-weight: 600; line-height: 44px; }
+.settlement-overview-toggle:focus-visible { outline: 3px solid #93c5fd; outline-offset: 3px; }
+.settlement-overview-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 16px; }
+.settlement-overview details > p { color: #64748b; font-size: 12px; margin-top: 4px; margin-bottom: 16px; }
+.settlement-overview-stats > div { min-width: 0; border: 0; border-top: 1px solid #e2e8f0; border-radius: 0; padding: 14px 0; }
+.settlement-overview-stats > div > div:last-child { font-size: 18px; line-height: 1.4; }
+.settlement-overview-stats > div:first-of-type > div:last-child { color: #2563eb; }
 .settlement-overview .mono { overflow-wrap: anywhere; }
 @media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
   .settlement-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .settlement-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px; }
+  .settlement-overview { padding: 12px; }
+  .settlement-overview-stats { gap: 0 8px; }
+  .settlement-overview-stats > div > div:last-child { font-size: 14px; }
   .settlement-card { padding: 12px; }
 }
 [role="tabpanel"]:focus-visible { outline: 2px solid #93c5fd; outline-offset: 4px; }
@@ -266,7 +273,8 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .product-price { font-size: 16px; font-weight: 700; }
 .product-stock, .product-creator { font-size: 12px; }
 .product-creator { color: #64748b; line-height: 1.5; }
-.order-panel { position: sticky; top: 0; width: 350px; max-height: 100%; border-radius: 10px; box-shadow: 0 4px 16px #17243b04; }
+.pos-layout { padding-top: 0; }
+.order-panel { margin-top: 20px; position: sticky; top: 20px; width: 350px; max-height: calc(100% - 20px); border-radius: 10px; box-shadow: 0 4px 16px #17243b04; }
 .order-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 20px; }
 .order-summary h2 { font-size: 16px; font-weight: 600; }
 .order-total { font-size: 30px; line-height: 1.3; letter-spacing: -.04em; overflow-wrap: anywhere; }
@@ -298,7 +306,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .nav-utilities { padding-top: 8px; border-top: 1px solid #e2e8f0; flex-wrap: wrap; }
   .nav-utilities :is(button, a) { font-size: 13px; }
   .pos-layout { flex-direction: column; padding: 0; gap: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
-  .pos-layout > .catalog { flex: 0 0 auto; min-height: 0; padding: 16px; overflow: visible; }
+  .pos-layout > .catalog { flex: 0 0 auto; min-height: 0; padding: 0 16px 16px; overflow: visible; }
   .settlement-page { overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
   .settlement-layout > .catalog { min-height: 0; padding: 0; overflow: visible; }
   .catalog-heading h2 { font-size: 20px; }
@@ -307,7 +315,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .filter-options button { min-height: 32px; }
   .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .product-card > div:last-child { padding: 12px; }
-  .order-panel { position: static; flex-shrink: 0; bottom: 0; top: auto; z-index: 10; width: 100%; max-height: none; border-radius: 12px 12px 0 0; border-bottom: 0; box-shadow: 0 -4px 16px #17243b08; padding-bottom: env(safe-area-inset-bottom); }
+  .order-panel { margin-top: 0; padding-top: 0; position: sticky; flex-shrink: 0; bottom: 0; top: auto; z-index: 10; width: 100%; max-height: none; border-radius: 12px 12px 0 0; border-bottom: 0; box-shadow: 0 -4px 16px #17243b08; padding-bottom: env(safe-area-inset-bottom); }
   .order-summary { padding: 12px 16px; }
   .order-summary h2 { font-size: 14px; }
   .order-total { font-size: 28px; }
@@ -802,11 +810,56 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .product-grab-handle{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex-shrink:0;color:#64748b;border:1px solid transparent;border-radius:7px;cursor:grab;touch-action:none;user-select:none}
 .product-grab-handle:hover,.product-grab-handle[aria-pressed=true]{color:#2563eb;background:#eff6ff;border-color:#bfdbfe}.product-grab-handle[aria-pressed=true]{cursor:grabbing}.product-grab-handle:focus-visible{outline:2px solid #2563eb;outline-offset:2px}.product-grab-handle:disabled{cursor:not-allowed;opacity:.4}
 .event-product-number-table tr[data-dragging=true]{opacity:.55}.event-product-number-table tr[data-drop-position=before] td{box-shadow:inset 0 3px #2563eb}.event-product-number-table tr[data-drop-position=after] td{box-shadow:inset 0 -3px #2563eb}
-.product-reorder-status{font-size:12px;color:#475569;min-height:18px;margin-bottom:8px}
+.product-reorder-error{font-size:12px;color:#b91c1c;margin-bottom:8px}
 .event-product-identity{display:flex;flex-direction:column;align-items:flex-start;gap:8px}.event-product-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .event-product-tag{display:inline-flex;align-items:center;min-height:28px;padding:4px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#475569;font-size:12px;font-weight:600;line-height:1.4}.event-product-code{overflow-wrap:anywhere;max-width:100%}.event-product-identity h3{font-size:18px;line-height:1.45;color:#17243b}
 @media(max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){
  .event-product-number-table{min-width:0;width:100%}.event-product-number-table .event-product-extra-column{display:none}
  .event-product-number-table th:first-child{width:72px}.event-product-number-table th:nth-child(2){width:auto}.event-product-number-table th:nth-child(4){width:58px}.event-product-number-table th:nth-child(6){width:38px}.event-product-number-table th:nth-child(7){width:42px}
  .event-product-number-table :is(th,td){padding:9px 4px;font-size:11px}.event-product-number-table .product-order-cell{gap:2px}.event-product-number-table .product-sale-number{font-size:12px}.event-product-number-table .management-mobile-meta{display:block;font-size:10px}.event-product-identity h3{font-size:16px}
+}
+
+/* Inventory list spacing stays separate from product detail forms. */
+.inventory-list-content .inventory-list-heading { gap: 16px 24px; margin: 24px 0 0; flex-wrap: wrap; }
+.inventory-list-content .inventory-breadcrumb ol { flex-wrap: wrap; gap: 8px 12px; white-space: normal; }
+.inventory-list-content .inventory-breadcrumb a,
+.inventory-list-content .inventory-breadcrumb h1 { font-size: 20px; line-height: 1.5; }
+.inventory-list-content .inventory-breadcrumb a { font-weight: 600; }
+.inventory-list-content .inventory-table-actions { display: flex; justify-content: flex-end; margin: 8px 0; }
+.inventory-list-content .inventory-table-actions > .management-add { min-height: 44px; padding: 8px 12px; font-size: 14px; }
+.inventory-list-content .inventory-search { margin-bottom: 8px; padding: 12px; }
+.inventory-list-content .inventory-search-bar { gap: 12px; }
+.inventory-list-content .inventory-query input { height: 44px; padding: 10px 12px; }
+.inventory-list-content .inventory-filters { margin-top: 0; }
+.inventory-list-content .inventory-filter-grid { gap: 8px 12px; padding: 0; }
+.inventory-list-content .settlement-result { margin: 12px 0 0; }
+.inventory-list-content > .management-table-wrap { border-radius: 12px; }
+.inventory-list-content .inventory-management-table :is(th,td) { padding: 16px; line-height: 1.5; }
+.inventory-list-content .management-pagination { margin-top: 24px; }
+@media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
+  .inventory-list-content .inventory-list-heading { gap: 12px; margin: 20px 0 0; }
+  .inventory-list-content .inventory-breadcrumb ol { gap: 6px 8px; }
+  .inventory-list-content .inventory-breadcrumb a,
+  .inventory-list-content .inventory-breadcrumb h1 { font-size: 16px; }
+  .inventory-list-content .inventory-search { padding: 12px; }
+  .inventory-list-content .inventory-search-bar { gap: 8px; }
+  .inventory-list-content .inventory-filter-grid { gap: 8px; }
+  .inventory-list-content .inventory-management-table :is(th,td) { padding: 12px 8px; }
+  .inventory-list-content .management-pagination { margin-top: 20px; }
+}
+
+/* Keep product names centered in the cell without an empty link height. */
+.event-product-number-table .management-name-link { min-height: 0; margin: 0; padding: 0; }
+.event-product-number-table .management-mobile-meta { margin-top: 2px; line-height: 1.4; }
+.bundle-management-table th:nth-child(3),
+.bundle-management-table .management-row-price { text-align: left; }
+
+/* Add one typographic point to each inventory-list text level. */
+.inventory-list-content .inventory-management-table td { font-size: calc(13px + 1pt); }
+.inventory-list-content .inventory-management-table th { font-size: calc(12px + 1pt); }
+.inventory-list-content .inventory-management-table .inventory-cell-sub { font-size: calc(11px + 1pt); }
+@media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
+  .inventory-list-content .inventory-management-table td { font-size: calc(11px + 1pt); }
+  .inventory-list-content .inventory-management-table th,
+  .inventory-list-content .inventory-management-table .inventory-cell-sub { font-size: calc(10px + 1pt); }
 }

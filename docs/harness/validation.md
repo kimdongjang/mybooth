@@ -1,3 +1,54 @@
+## 공통 페이지 헤더 상하 마진 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 표시 제목만 상단20px/모바일16px 추가·기존 하단16px 유지 및 sr-only 제외를 diff로 확인했다. CSS/캐시 변경으로 npm test 재실행 없음(직전 기능 변경 전체87개 통과). 실제 브라우저 시각과 배포 CACHE-01 미실행.
+
+## 재고 신규 헤더·이미지 편집 검증 (2026-10-20)
+
+- 최종 분리 사본 npm test87개 통과. 헤더 상세 PageIntro 보존 후 관련 JSX11개 재통과. npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 초기 JSX mock에 새 이미지 모듈 export가 없어 실패한 뒤 mock 갱신,사본 node_modules/dexie 경로 누락은 기존 설치 사본으로 보완 후 최종 전체 통과했다.
+- PGlite:계정/재고 경로 및 HTTPS/Blob URL 검증,타 계정 거절,stale version409,이미지 연결/제거의 행사 전파와 수량5개/판매가1000원 보존. 토큰 VM:인증/소유 미삭제 재고·계정/상품 경로 및 기존 행사 업로드 제한. JSX:신규 브레드크럼/미발급 배지 없음,이미지 미리보기·제거,연결 실패 시 완료 알림 없음/재시도 시 업로드 URL 재사용·배정 계획 중복 전달 없음. 기존 판매/취소/기본값/IndexedDB 회귀 포함.
+- 미실행:실제 Blob 저장소 토큰 발급/업로드·브라우저 파일 선택/축소 시각·모바일 헤더/버튼 배치,실제 PostgreSQL 다중 기기 경쟁,배포 CACHE-01. 운영 DB 사용 없음.
+
+## 재고 목록 헤더 마진 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. diff로 목록 헤더만 데스크톱 상단24px/모바일20px 및 하단0 적용 확인. CSS/캐시 변경으로 npm test 미실행. 실제 브라우저 시각 확인과 배포 CACHE-01 미실행.
+
+## 총재고 표기·재고 표1pt 확대 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 목록 총재고 N개/별표·각주 제거와 목록 전용 데스크톱/모바일 본문·헤더·보조 각1pt 증가를 diff로 확인했다. totalStock/remainingStock과 서버 totalEstimated는 변경하지 않는다.
+- 표시/CSS만 변경해 npm test 미실행. 실제 브라우저320/412/980px 터치·1440px 데스크톱의 computed font/큰 재고 숫자·말줄임·테이블 배치와 배포 CACHE-01 미실행. 운영 DB 사용 없음.
+
+## 정산 요약 접기·펼치기 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. native details 기본 open/summary 및 내부4열 grid 분리,상단16px/하단0,요청 안내2개 제거와 버튼명 변경을 diff로 확인했다. 기존 exportCsv/clearSalesWithPassword 호출은 보존한다.
+- 표시 구조/문구/CSS 변경으로 npm test 미실행. 실제 브라우저/실기기의 클릭·Enter/Space 접기,탭 전환 후 상태 유지,4열/마진 시각 및 배포 CACHE-01 미실행. API/DB/내보내기 범위 변경 없음.
+
+## 상품명 간격·세트 가격 정렬 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 수량 자동 계산/재고 공유 안내 문자열 제거 확인. 상품 표 이름 링크 min-height0/margin0/padding0,모바일 제작자2px 및 세트 판매가 헤더/본문 좌측 정렬을 diff로 확인했다.
+- 문구/CSS 변경으로 npm test 재실행 없음. 실제 브라우저/실기기에서 긴 이름·짧은 이름 세로 정렬,모바일 제작자 간격과 링크 터치,세트 가격 정렬 및 배포 CACHE-01 미실행. API/DB/계산 변경 없음.
+
+## 주문 마진·알림 제거·재고 재배치 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고). node --experimental-vm-modules --test tests/product-sale-number.test.js 관련5개 통과: 포인터 드롭/취소,터치 가장자리 이동,키보드,stale/읽기 전용 취소,실패 오류,blur/저장 중 중복 잡기 방지.
+- git diff --check 통과. diff에서 데스크톱 주문 외부20px/모바일 상단0,결제 안내 제거,빈 status/성공 멘트 제거와 오류 조건부 표시,재고 DOM 순서와 검색/추가 버튼 간격 및 AGENTS 지침을 확인했다.
+- 미실행: 전체 npm test(API/DB 변경 없음),실제 브라우저/실기기 주문 sticky·짧은 화면/큰 주문·재고 상세 조건 펼침과 결과 위치 시각 검증,배포 CACHE-01. 운영 DB 사용 없음.
+
+## 재고 목록 여백 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 목록일 때만 전용 클래스 적용, 데스크톱/터치 분기별 브레드크럼 크기·헤더/검색/테이블 간격·44px 추가 버튼·줄바꿈을 diff로 확인했다.
+- CSS와 범위 클래스 변경으로 npm test 미실행. 실제 브라우저 UI-02의320/412/980px 터치·1440px 마우스에서 긴 브레드크럼·추가 버튼 줄바꿈, 검색 상세 펼침·테이블 시각 검증 및 배포 CACHE-01은 미실행이다. 사용자 별도 작업 변경과 운영 DB는 사용하지 않았다.
+
+## 안내 제거·정산 요약4열 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 안내 문단만 제거하고 핸들/상태 알림/키보드 이벤트 보존을 diff로 확인했다.
+- 정산 요약 데스크톱18px/모바일14px 및 양쪽4열, 좁은 열 min-width:0·금액 줄바꿈을 확인했다. 문구/CSS 변경으로 npm test 미실행. 실제 브라우저/실기기320px·큰 금액 시각 확인과 배포 CACHE-01 미실행. 매출 계산/API 변경 없음.
+
+## 본문 패딩·모바일 sticky 주문 검증 (2026-10-20)
+
+- 최신 원격 main의 분리 사본에서 npm run build 통과(기존500kB 청크 경고). git diff --check 통과. 별도 사용자 미커밋 변경은 포함하지 않는다.
+- diff로 page-content 양쪽 분기의 상단0, 판매 catalog 상단0, order-panel 상단20px/16px 및 모바일 sticky/bottom:0, 주문 목록35dvh·safe-area 보존을 확인했다. CSS/캐시 변경으로 npm test는 미실행이다.
+- 미실행: UI-01/02/03 실제 브라우저320×568/412×915/900×412/980×900 터치·1440×900 마우스에서 패딩, 긴 상품 목록의 마지막 항목 접근, 주문 접기/펼치기 및 결제 버튼 접근. 실기기와 배포 후 CACHE-01도 미실행이다. API/DB/IndexedDB 변경과 운영 DB 사용 없음.
+
 ## 그랩 핸들·읽기 전용 번호 검증 (2026-10-19)
 
 - 사용자 별도 등록일 편집 작업을 제외한 PR 사본에서 Node24 관련 테스트11개 통과. npm run build 통과(기존500kB 청크 경고). API/DB 변경이 없어 이번에는 전체80개 API 회귀를 반복하지 않았다. 운영 DB 사용 없음.
