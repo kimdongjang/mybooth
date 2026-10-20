@@ -1,3 +1,7 @@
+## 본문 상단 여백·모바일 주문 고정 (2026-10-20)
+
+page-content의 상단 padding은 데스크톱/모바일 모두 0이다. 판매 pos-layout과 모바일 catalog도 상단 여백을 제거하며 우측 order-panel 자체에는 데스크톱20px/모바일16px의 상단 padding을 둔다. 모바일/터치 태블릿에서 주문 패널은 판매 스크롤 영역 하단(bottom:0)에 sticky로 유지한다. 펼친 주문 목록35dvh 제한과 safe-area 하단 여백은 보존한다. API/DB/IndexedDB 변경 없음. 캐시 v93. 아래 주문 패널 일반 흐름 기록은 이전 동작이다.
+
 ## 그랩 핸들 순서 변경·모바일 상품 표 (2026-10-19)
 
 행사 상품 목록은 페이지 나누기를 제거하고 전체 상품을 표시한다. 번호 입력/적용 폼을 제거하고 판매번호를 output으로 표시한다. useProductReorder의44px 그랩 핸들은 Pointer Events/캡처로 마우스·터치를 지원하고, 같은 표의 행에 놓을 때 기존 reorderProducts API로 대상ID/위치/드래그 시작 당시 전체 순서를1회 전달한다. 드래그 중에는 대상 위치선과 시작 행 강조만 표시하고 API 응답 후 실제 목록을 갱신한다. page-content 가장자리에서는 requestAnimationFrame으로 자동 스크롤한다. 키보드는 Enter/Space로 잡기→위/아래·Home/End로 위치 선택→Enter/Space로 저장,Escape/Tab/창 blur/포인터 취소/목록 변경/수정 잠금은 취소한다. 표 밖 놓기·동일 위치는 저장하지 않는다. 저장 중에는 새 드래그/목록 조작을 잠근다.
