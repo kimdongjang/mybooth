@@ -842,3 +842,9 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .inventory-list-content .inventory-management-table :is(th,td) { padding: 12px 8px; }
   .inventory-list-content .management-pagination { margin-top: 20px; }
 }
+
+/* Keep product names centered in the cell without an empty link height. */
+.event-product-number-table .management-name-link { min-height: 0; margin: 0; padding: 0; }
+.event-product-number-table .management-mobile-meta { margin-top: 2px; line-height: 1.4; }
+.bundle-management-table th:nth-child(3),
+.bundle-management-table .management-row-price { text-align: left; }

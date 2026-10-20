@@ -1,3 +1,8 @@
+## 상품명 간격·세트 가격 정렬 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 수량 자동 계산/재고 공유 안내 문자열 제거 확인. 상품 표 이름 링크 min-height0/margin0/padding0,모바일 제작자2px 및 세트 판매가 헤더/본문 좌측 정렬을 diff로 확인했다.
+- 문구/CSS 변경으로 npm test 재실행 없음. 실제 브라우저/실기기에서 긴 이름·짧은 이름 세로 정렬,모바일 제작자 간격과 링크 터치,세트 가격 정렬 및 배포 CACHE-01 미실행. API/DB/계산 변경 없음.
+
 ## 주문 마진·알림 제거·재고 재배치 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고). node --experimental-vm-modules --test tests/product-sale-number.test.js 관련5개 통과: 포인터 드롭/취소,터치 가장자리 이동,키보드,stale/읽기 전용 취소,실패 오류,blur/저장 중 중복 잡기 방지.
