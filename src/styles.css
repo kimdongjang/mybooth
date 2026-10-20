@@ -785,7 +785,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .inventory-allocation-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:10px}
 .inventory-allocation-heading h4{margin:0}.inventory-allocation-heading .management-field{display:flex;align-items:center;gap:10px}
 .inventory-quantity-input{display:flex;align-items:center;gap:8px}.inventory-quantity-input input{width:130px;min-height:42px;font-weight:700;text-align:right}
-.inventory-allocation-table input{width:110px;min-height:42px;text-align:right}
+.inventory-allocation-table input{display:block;width:100%;max-width:100%;min-width:0;min-height:42px;text-align:right}
 .inventory-readonly-quantity{display:inline-block;padding:8px 12px;border-radius:6px;background:#f1f5f9;color:#475569;font-variant-numeric:tabular-nums}
 
 .event-inventory-controls .event-inventory-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
