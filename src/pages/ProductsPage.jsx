@@ -118,7 +118,6 @@ function ProductSettingsPanel({ adminId, inventoryApi, dataRevision, projectName
     </section>}
     {!selectedId && <div className="management-summary"><span>등록 상품 <b>{products.length}개</b></span><span role="status">{saving ? '변경 사항 저장 중…' : ''}</span></div>}
     {!selectedId && <>
-      <p className="management-note">그랩 핸들을 위아래로 드래그하면 판매 순서가 바뀝니다. 키보드는 핸들에서 Enter → 방향키 → Enter로 변경할 수 있습니다.</p>
       <p role="status" aria-live="polite" className="product-reorder-status">{reorder.message}</p>
       <div className="management-table-wrap event-product-table-wrap"><table className="management-table event-product-number-table" role="table">
         <caption className="sr-only">판매 번호, 상품 이름, 제작자, 판매가, 초기재고, 판매수량, 남은 재고, 등록일 목록</caption>
