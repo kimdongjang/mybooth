@@ -1,3 +1,9 @@
+## 재고 페이지 헤더 통일 검증 (2026-10-20)
+
+- 최신 origin/main의 별도 작업 브랜치에서 npm run build 통과(기존500kB 청크 경고). node --experimental-vm-modules --test tests/inventory-route.test.js tests/inventory-deletion.test.js 12개 통과: 재고 목록/등록 breadcrumb,상세 저장·삭제·목록 복귀,인코딩된 상세 URL 및 뒤로/앞으로 라우트 유지 확인. git diff --check 통과.
+- diff에서 상세 PageIntro 제거,단일 h1 breadcrumb,기존 수정 클릭/native 링크 및 목록 복귀 버튼 유지,흰 배경/하단 선/최소56px/좁은 화면 한 줄 가로 스크롤을 확인했다. API/DB/주문 큐 변경 없음.
+- 미실행: UI-01 실제 브라우저 모바일·데스크톱 시각/스크롤/키보드 검증,실기기 및 배포 후 CACHE-01. 운영 DB 사용 없음. 전체 API 회귀 테스트는 이번 표시 변경에서 반복하지 않았다.
+
 ## 공통 페이지 헤더 상하 마진 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 표시 제목만 상단20px/모바일16px 추가·기존 하단16px 유지 및 sr-only 제외를 diff로 확인했다. CSS/캐시 변경으로 npm test 재실행 없음(직전 기능 변경 전체87개 통과). 실제 브라우저 시각과 배포 CACHE-01 미실행.

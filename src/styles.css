@@ -863,3 +863,15 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .inventory-list-content .inventory-management-table th,
   .inventory-list-content .inventory-management-table .inventory-cell-sub { font-size: calc(10px + 1pt); }
 }
+
+/* Inventory breadcrumbs share the event navigation bar's white background. */
+.inventory-page-header { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:56px; margin:0 -20px 20px; padding:6px 20px; background:#fff; border-bottom:1px solid #dce3ed; }
+.inventory-page-header .inventory-breadcrumb { overflow-x:auto; }
+.inventory-page-header .inventory-breadcrumb ol { flex-wrap:nowrap; white-space:nowrap; }
+.inventory-page-header .inventory-breadcrumb a,
+.inventory-page-header .inventory-breadcrumb h1 { font-size:14px; line-height:1.5; }
+.inventory-page-header .inventory-breadcrumb h1 { margin:0; }
+.inventory-page-header > .management-back { flex-shrink:0; min-height:44px; }
+@media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
+  .inventory-page-header { margin-inline:-16px; padding-inline:16px; gap:8px; }
+}
