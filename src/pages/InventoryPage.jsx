@@ -1,6 +1,5 @@
 import InventoryTransferRecovery from '../components/InventoryTransferRecovery';
 import { useEffect, useRef, useState } from 'react';
-import { PageIntro } from '../components/PageLayout';
 import { prepareProductImage } from '../utils/productImage';
 import { uploadInventoryImage } from '../utils/uploadProductImage';
 import InventoryProductFields from '../components/InventoryProductFields';
@@ -158,7 +157,15 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     });
   };
   return <main className="page-content inventory-page">
-    {view === 'detail' && <PageIntro title="공통 상품·재고 관리" />}
+    <header className="inventory-page-header">
+      <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol>
+        <li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>공통 상품·재고 관리</a></li>
+        <li aria-hidden="true">/</li>
+        {view !== 'list' && <><li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고 목록</a></li><li aria-hidden="true">/</li></>}
+        <li><h1 aria-current="page" tabIndex={-1}>{view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상품 재고 상세'}</h1></li>
+      </ol></nav>
+      {view !== 'list' && <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
+    </header>
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
     {deletionNotice && <div role="status" className="inventory-card"><p>{deletionNotice}</p><button type="button" className="management-back" onClick={() => setDeletionNotice('')}>닫기</button></div>}
@@ -166,9 +173,6 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     {uncertain && <div role="status" className="inventory-card"><p>이전에 요청한 재고 이동의 완료 여부를 확인해주세요.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(resolvePending)}>이전 이동 결과 확인</button></div>}
     <InventoryTransferRecovery adminId={adminId} api={api} onBlocked={setPendingMoves} onInventory={inventory => { setItems(inventory); setDraft(current => current ? inventory.find(row => row.id === current.id) || null : null); }} />
     <section className={`product-management ${view !== 'detail' ? 'inventory-list-content' : ''}`}>
-      <header className={`management-heading ${view !== 'detail' ? 'inventory-list-heading' : ''}`}>{view !== 'detail' ? <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol><li><a href="#/inventory" onClick={event=>{if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||event.button!==0)return;event.preventDefault();navigate('inventory');}}>공통 상품·재고 관리</a></li><li aria-hidden="true">/</li><li><h1 aria-current="page">{view === 'new' ? '상품 등록' : '재고 목록'}</h1></li></ol></nav> : <h2>{view === 'new' ? '상품 등록' : '상품 재고 상세'}</h2>}
-        {view !== 'list' && <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
-      </header>
       {view === 'list' ? <>
         <form className="inventory-search" role="search" aria-label="재고 검색" onSubmit={event => { event.preventDefault(); changeSearch({ ...search, product: query }); }}>
           <div className="inventory-search-bar">
@@ -190,12 +194,12 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         </form>
         <div className="inventory-table-actions"><button type="button" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
-          <caption className="sr-only">상품명과 제작자, 캐릭터와 장르, 남은재고와 총재고, 등록일</caption>
+          <caption className="sr-only">상품명과 제작자, 캐릭터와 장르, 판매 수량과 잔여 수량 및 총재고, 등록일</caption>
           <thead><tr>{['상품명 / 제작자', '캐릭터 / 장르', '재고', '등록일'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
           <tbody>{filteredItems.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
             <td><a className="management-name-link inventory-cell-main" href={`#/inventory/${encodeURIComponent(item.id)}`} aria-label={`${item.name} 재고 상세보기`} title={item.name} onClick={event => open(event,item)}>{item.name}</a><small className="inventory-cell-sub" title={item.creatorName || '미지정'}>{item.creatorName || '미지정'}</small></td>
             <td><span className="inventory-cell-main" title={item.vtuberName || ''}>{item.vtuberName || '—'}</span><small className="inventory-cell-sub" title={item.genre || ''}>{item.genre || '—'}</small></td>
-            <td className="mono"><span className="inventory-cell-main" aria-label={`남은재고 ${won(item.remainingStock)}개`}>{won(item.remainingStock)}개</span><small className="inventory-cell-sub">총재고 {won(item.totalStock)}개</small></td>
+            <td className="mono"><span className="inventory-cell-main">판매 {won((item.history || []).reduce((sum, row) => sum + Number(row.soldQty || 0), 0))}개 잔여 {won(item.remainingStock)}개</span><small className="inventory-cell-sub">총재고 {won(item.totalStock)}개</small></td>
             <td>{dateLabel(item.createdAt)}</td>
           </tr>)}</tbody>
         </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}{ready && items.length > 0 && !filteredItems.length && <p className="catalog-empty">검색 조건에 맞는 재고가 없습니다.</p>}</div>
@@ -221,8 +225,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
           </form>
         </div>
         {view === 'detail' && <section className="inventory-history">
-          <div className="inventory-allocation-heading"><h4>행사별 재고 배정 관리</h4><label className="management-field"><span>총재고</span><div className="inventory-quantity-input"><Input form="inventory-product-form" aria-label="총재고" required type="number" min="0" max="2147483647" step="1" value={totalStock} disabled={busy || uncertain || pendingMoves} onChange={value => changeDraft('totalStock', value === '' ? '' : Number(value))} /><span>개</span></div></label></div>
-          <p className="management-note">총재고에는 판매된 수량이 포함됩니다. 행사 배정 합계 {won(allocationSum)}개 · 창고 미배정 {won(Number(totalStock) - allocationSum)}개. 수정 버튼을 누르면 함께 저장됩니다.</p>
+          <div className="inventory-allocation-heading"><h4>행사별 재고 배정 관리</h4><div className="inventory-stock-summary"><label className="management-field"><span>총재고</span><div className="inventory-quantity-input"><Input form="inventory-product-form" aria-label="총재고" required type="number" min="0" max="2147483647" step="1" value={totalStock} disabled={busy || uncertain || pendingMoves} onChange={value => changeDraft('totalStock', value === '' ? '' : Number(value))} /><span>개</span></div></label><div className="management-field"><span>미배정재고</span><output className="inventory-readonly-quantity" aria-label="미배정재고">{won(Number(totalStock) - allocationSum)}개</output></div></div></div>
           {allocationError && <p role="alert" className="inventory-error">{allocationError}</p>}
           <div className="management-table-wrap"><table className="management-table inventory-allocation-table"><thead><tr><th>행사</th><th>행사 배정 수량</th><th>판매 수량</th><th>남은 수량</th></tr></thead><tbody>{allocationRows.map(row => {
             const sold = savedItem?.history.find(history => history.projectId === row.project_id && history.productId === row.product_id)?.soldQty || 0;

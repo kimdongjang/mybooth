@@ -1,3 +1,31 @@
+## 판매·잔여 및 미배정재고 표시 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), 기존 재고 화면·라우트 테스트12개 통과. git diff --check 통과.
+- diff로 판매 이력 soldQty 합계·기존 remainingStock/totalStock 표시,목록 수량 줄바꿈,장문 안내 제거 및 총재고 우측 읽기 전용 output(편집 중 총재고-배정 합계),기존 초과 배정 오류·수량 저장 경로 유지를 확인했다.
+- 미실행: UI-01 실제 모바일/데스크톱 목록·상세 시각/수량 편집 시 output 갱신/native 폼·배포 CACHE-01. 운영 DB 사용 없음. API/DB/IndexedDB 변경 없음.
+
+## 모바일 이미지·이름 동일 너비 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. CSS diff에서 모바일/터치 태블릿 범위2개 동일 너비 열,이미지/기존 이름 입력1행,등록·수정/제거2행,나머지 정보 전체 너비 및 데스크톱 범위 제외를 확인했다.
+- CSS/캐시 변경으로 테스트 재실행 없음. UI-01 실제 모바일/태블릿 브라우저 display:contents·fieldset/legend 배치·이미지 유무·긴 이름·포커스·파일 선택과 배포 CACHE-01은 미실행. 입력 DOM/폼 연결·수량/저장 계약 변경 없음.
+
+## 배정 수량 입력 너비 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. CSS diff에서110px 고정 너비 제거와 셀 내부100%·max-width100%·min-width0,기존 높이/우측 정렬 유지를 확인했다.
+- 표시 CSS/캐시 변경으로 npm test 재실행 없음(직전 관련12개 통과). UI-01 실제 모바일/데스크톱 입력칸 경계·스피너·큰 수량 표시,배포 CACHE-01 미실행. API/DB/입력 검증 및 저장 로직 변경 없음.
+
+## 판매 요약·재고 상세 후속 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고). 재고 화면/라우트 기존 테스트12개 재통과. git diff --check 통과.
+- diff에서 단품/세트 공통 sales-event-context 제거,상세·등록 breadcrumb의 재고 목록 링크 추가 및 native 수정 클릭/목록 이동 유지,모바일 범위 재고 이미지104px+버튼 우측/정보 폼 아래 전체 너비·1열·간격을 확인했다. 데스크톱 규칙/판매 readOnly·주문 동작은 유지한다.
+- 미실행: UI-01 실제 브라우저 모바일/태블릿/데스크톱 시각·이미지 유무·파일 선택·키보드/가로 스크롤 및 배포 CACHE-01. 운영 DB 사용 없음. API/주문 큐는 변경하지 않았다.
+
+## 재고 페이지 헤더 통일 검증 (2026-10-20)
+
+- 최신 origin/main의 별도 작업 브랜치에서 npm run build 통과(기존500kB 청크 경고). node --experimental-vm-modules --test tests/inventory-route.test.js tests/inventory-deletion.test.js 12개 통과: 재고 목록/등록 breadcrumb,상세 저장·삭제·목록 복귀,인코딩된 상세 URL 및 뒤로/앞으로 라우트 유지 확인. git diff --check 통과.
+- diff에서 상세 PageIntro 제거,단일 h1 breadcrumb,기존 수정 클릭/native 링크 및 목록 복귀 버튼 유지,흰 배경/하단 선/최소56px/좁은 화면 한 줄 가로 스크롤을 확인했다. API/DB/주문 큐 변경 없음.
+- 미실행: UI-01 실제 브라우저 모바일·데스크톱 시각/스크롤/키보드 검증,실기기 및 배포 후 CACHE-01. 운영 DB 사용 없음. 전체 API 회귀 테스트는 이번 표시 변경에서 반복하지 않았다.
+
 ## 공통 페이지 헤더 상하 마진 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 표시 제목만 상단20px/모바일16px 추가·기존 하단16px 유지 및 sr-only 제외를 diff로 확인했다. CSS/캐시 변경으로 npm test 재실행 없음(직전 기능 변경 전체87개 통과). 실제 브라우저 시각과 배포 CACHE-01 미실행.
