@@ -1,3 +1,8 @@
+## 정산 요약 접기·펼치기 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. native details 기본 open/summary 및 내부4열 grid 분리,상단16px/하단0,요청 안내2개 제거와 버튼명 변경을 diff로 확인했다. 기존 exportCsv/clearSalesWithPassword 호출은 보존한다.
+- 표시 구조/문구/CSS 변경으로 npm test 미실행. 실제 브라우저/실기기의 클릭·Enter/Space 접기,탭 전환 후 상태 유지,4열/마진 시각 및 배포 CACHE-01 미실행. API/DB/내보내기 범위 변경 없음.
+
 ## 상품명 간격·세트 가격 정렬 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 수량 자동 계산/재고 공유 안내 문자열 제거 확인. 상품 표 이름 링크 min-height0/margin0/padding0,모바일 제작자2px 및 세트 판매가 헤더/본문 좌측 정렬을 diff로 확인했다.
