@@ -888,3 +888,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .inventory-page .management-details > fieldset > legend { grid-column:1 / -1; grid-row:3; width:100%; margin:4px 0 0; padding-top:20px; border-top:1px solid #e2e8f0; }
   .inventory-page .management-details .management-field:not(.product-name-field) { grid-column:1 / -1; }
 }
+
+.inventory-stock-summary{display:flex;align-items:center;gap:16px;flex-wrap:wrap;min-width:0}
+.inventory-stock-summary .inventory-readonly-quantity{min-height:42px;display:inline-flex;align-items:center}
+.inventory-list-content .inventory-management-table td:nth-child(3) .inventory-cell-main{white-space:normal;overflow:visible;text-overflow:clip}
