@@ -726,3 +726,7 @@ npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공�
 - 실기기 오프라인 판매·취소/강제 종료 후 주문 복원/연결 복구 중복 방지, Web Locks·네이티브 HTTP·파일 업로드/백업, OTA 손상 ZIP·실패 복구·기존 데이터 보존 검증은 미실행. [Android 출시 전 시나리오](../android.md)를 따른다. 기존 UI-01/02/03 및 CACHE-01 브라우저 실측도 이번 작업에서 재실행하지 않았다.
 
 - npm audit 결과 기존 빌드 도구 계열 high 3건 및 추가 CLI의 iOS xcode/uuid 경로 moderate 3건이 남는다. 이번 변경에서 관련 없는 의존성 일괄 갱신은 하지 않았다. Android 런타임 취약점으로 판정한 결과는 아니다.
+
+- 사용자 변경을 제외한 PR 소스 사본에서도 npm test 88개 전체 통과, build:release 통과. ZIP 실제 SHA-256 일치·루트 index.html 존재·sw.js 제외 확인. 검증 사본의 첫 실행은 의존성 연결 준비 전 파일을 찾지 못해 실패했으며 연결 후 재실행해 통과했다.
+
+- GitHub Actions [39401431997](https://github.com/kimdongjang/mybooth/actions/runs/39401431997)에서 JDK21/SDK36으로 assembleDebug 및 APK 아티팩트 업로드 통과. 첫 CI는 setup-android 기본 tools 패키지가 제거되어 실패했고 platform-tools/platforms;android-36/build-tools;36.0.0을 명시해 수정했다. 로컬 SDK 부재와 실기기 미검증은 그대로다.
