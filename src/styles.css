@@ -166,6 +166,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 }
 .page-intro { margin-bottom: 20px; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.page-heading:not(.sr-only) { margin-top: 20px; }
 .page-heading h1 { font-size: 24px; font-weight: 700; letter-spacing: -.03em; line-height: 1.35; }
 .page-heading h1:focus { outline: none; }
 .page-heading p { margin-top: 6px; color: #64748b; font-size: 14px; line-height: 1.6; }
@@ -180,6 +181,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 @media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
   .page-content { padding: 0 16px 16px; }
   .page-heading { align-items: flex-start; gap: 8px; }
+  .page-heading:not(.sr-only) { margin-top: 16px; }
   .page-heading h1 { font-size: 20px; }
   .page-heading p { font-size: 13px; }
   .page-heading-actions { padding-top: 4px; }

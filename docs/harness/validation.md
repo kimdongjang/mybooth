@@ -1,3 +1,7 @@
+## 공통 페이지 헤더 상하 마진 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 표시 제목만 상단20px/모바일16px 추가·기존 하단16px 유지 및 sr-only 제외를 diff로 확인했다. CSS/캐시 변경으로 npm test 재실행 없음(직전 기능 변경 전체87개 통과). 실제 브라우저 시각과 배포 CACHE-01 미실행.
+
 ## 재고 신규 헤더·이미지 편집 검증 (2026-10-20)
 
 - 최종 분리 사본 npm test87개 통과. 헤더 상세 PageIntro 보존 후 관련 JSX11개 재통과. npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 초기 JSX mock에 새 이미지 모듈 export가 없어 실패한 뒤 mock 갱신,사본 node_modules/dexie 경로 누락은 기존 설치 사본으로 보완 후 최종 전체 통과했다.

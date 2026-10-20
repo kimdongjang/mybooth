@@ -1,3 +1,7 @@
+## 공통 페이지 제목 상단 여백 (2026-10-20)
+
+표시되는 page-heading은 상단 margin 데스크톱20px/모바일16px을 추가하고 기존 하단16px을 유지한다. sr-only 제목은 추가 마진에서 제외한다. 재고 목록의 별도 breadcrumb 헤더 규칙은 유지한다. 캐시 v102.
+
 ## 공통 재고 등록 헤더·이미지 편집 (2026-10-20)
 
 /inventory/new는 목록과 같은 inventory-breadcrumb/목록 헤더 여백·글자 크기로 공통 상품·재고 관리 링크 / 상품 등록을 표시한다. 번호 미발급 배지는 표시하지 않는다. 재고 신규/상세 이미지에 기존 product-image-upload/remove 디자인과 prepareProductImage 축소,object URL 미리보기,선택 파일 제거를 적용한다. 이미지 제거는 저장 시 반영된다.
