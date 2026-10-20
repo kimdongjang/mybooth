@@ -813,3 +813,31 @@ input, select { background: white; color: #17243b; min-height: 36px; }
  .event-product-number-table th:first-child{width:72px}.event-product-number-table th:nth-child(2){width:auto}.event-product-number-table th:nth-child(4){width:58px}.event-product-number-table th:nth-child(6){width:38px}.event-product-number-table th:nth-child(7){width:42px}
  .event-product-number-table :is(th,td){padding:9px 4px;font-size:11px}.event-product-number-table .product-order-cell{gap:2px}.event-product-number-table .product-sale-number{font-size:12px}.event-product-number-table .management-mobile-meta{display:block;font-size:10px}.event-product-identity h3{font-size:16px}
 }
+
+/* Inventory list spacing stays separate from product detail forms. */
+.inventory-list-content .inventory-list-heading { gap: 16px 24px; margin-bottom: 24px; flex-wrap: wrap; }
+.inventory-list-content .inventory-breadcrumb ol { flex-wrap: wrap; gap: 8px 12px; white-space: normal; }
+.inventory-list-content .inventory-breadcrumb a,
+.inventory-list-content .inventory-breadcrumb h1 { font-size: 20px; line-height: 1.5; }
+.inventory-list-content .inventory-breadcrumb a { font-weight: 600; }
+.inventory-list-content .inventory-list-heading > .management-add { min-height: 44px; padding: 10px 20px; font-size: 14px; margin-left: auto; }
+.inventory-list-content .inventory-search { margin-bottom: 16px; padding: 20px; }
+.inventory-list-content .inventory-search-bar { gap: 12px; }
+.inventory-list-content .inventory-query input { height: 44px; padding: 10px 12px; }
+.inventory-list-content .inventory-filters { margin-top: 8px; }
+.inventory-list-content .inventory-filter-grid { gap: 16px; padding: 8px 0; }
+.inventory-list-content .settlement-result { margin: 0 0 12px; }
+.inventory-list-content > .management-table-wrap { border-radius: 12px; }
+.inventory-list-content .inventory-management-table :is(th,td) { padding: 16px; line-height: 1.5; }
+.inventory-list-content .management-pagination { margin-top: 24px; }
+@media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
+  .inventory-list-content .inventory-list-heading { gap: 12px; margin-bottom: 20px; }
+  .inventory-list-content .inventory-breadcrumb ol { gap: 6px 8px; }
+  .inventory-list-content .inventory-breadcrumb a,
+  .inventory-list-content .inventory-breadcrumb h1 { font-size: 16px; }
+  .inventory-list-content .inventory-search { padding: 16px; }
+  .inventory-list-content .inventory-search-bar { gap: 8px; }
+  .inventory-list-content .inventory-filter-grid { gap: 12px; }
+  .inventory-list-content .inventory-management-table :is(th,td) { padding: 12px 8px; }
+  .inventory-list-content .management-pagination { margin-top: 20px; }
+}
