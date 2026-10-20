@@ -1,3 +1,7 @@
+## 재고 목록 헤더 마진 검증 (2026-10-20)
+
+- npm run build 통과(기존500kB 청크 경고), git diff --check 통과. diff로 목록 헤더만 데스크톱 상단24px/모바일20px 및 하단0 적용 확인. CSS/캐시 변경으로 npm test 미실행. 실제 브라우저 시각 확인과 배포 CACHE-01 미실행.
+
 ## 총재고 표기·재고 표1pt 확대 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고), git diff --check 통과. 목록 총재고 N개/별표·각주 제거와 목록 전용 데스크톱/모바일 본문·헤더·보조 각1pt 증가를 diff로 확인했다. totalStock/remainingStock과 서버 totalEstimated는 변경하지 않는다.

@@ -818,7 +818,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 }
 
 /* Inventory list spacing stays separate from product detail forms. */
-.inventory-list-content .inventory-list-heading { gap: 16px 24px; margin-bottom: 24px; flex-wrap: wrap; }
+.inventory-list-content .inventory-list-heading { gap: 16px 24px; margin: 24px 0 0; flex-wrap: wrap; }
 .inventory-list-content .inventory-breadcrumb ol { flex-wrap: wrap; gap: 8px 12px; white-space: normal; }
 .inventory-list-content .inventory-breadcrumb a,
 .inventory-list-content .inventory-breadcrumb h1 { font-size: 20px; line-height: 1.5; }
@@ -835,7 +835,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .inventory-list-content .inventory-management-table :is(th,td) { padding: 16px; line-height: 1.5; }
 .inventory-list-content .management-pagination { margin-top: 24px; }
 @media (max-width: 767px), (max-width: 1199px) and (hover: none) and (pointer: coarse) {
-  .inventory-list-content .inventory-list-heading { gap: 12px; margin-bottom: 20px; }
+  .inventory-list-content .inventory-list-heading { gap: 12px; margin: 20px 0 0; }
   .inventory-list-content .inventory-breadcrumb ol { gap: 6px 8px; }
   .inventory-list-content .inventory-breadcrumb a,
   .inventory-list-content .inventory-breadcrumb h1 { font-size: 16px; }
