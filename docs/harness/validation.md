@@ -831,3 +831,16 @@ npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공�
 - npm run build, git diff --check 통과. 소스 diff에서 정산 중복16px 여백 제거, 모바일 판매/정산 본문 단일 세로 스크롤, 주문 패널 일반 흐름 및 펼친 항목35dvh 제한, 탭 overflow-y:hidden/가로 이동 유지 확인.
 - UI-01/02/03 브라우저 검증 미실행: 320×568/412×915/900×412/980×900 터치 및 1440×900 마우스에서 판매와 정산 제목·탭·목록 외곽 좌표, 긴 목록 끝까지 터치/휠 이동, 펼친 주문·결제 버튼 접근, 정산 표 가로 이동 중 세로 이동, 탭 클릭/방향키와 가로 넘침 확인 필요.
 - 실기기 Samsung Internet/Chrome, 배포 후 CACHE-01 미실행. npm test 미실행(CSS/정적 캐시만 변경). API/DB/IndexedDB 판매·취소·동기화 통합은 이번 변경에서 재실행하지 않았다.
+
+## Android 앱 검증 (2026-10-20)
+
+- npm run build 통과. npm run android:sync 통과(프로젝트 생성·웹 번들 복사·플러그인 연결이며 APK 컴파일이 아님). npm run build:release 통과(웹 및 앱 OTA ZIP/manifest 생성). 500kB 청크 경고 존재.
+- npm test 88개 통과(기존 사용자 변경을 포함한 작업 트리). 이후 추가한 모바일 런타임 테스트 2개와 설정 테스트 2개 통과: 세션·행사 캐시 복원/계정 분리/로그아웃, 요청 대상 보존, 앱 복귀 동기화 이벤트, 다운로드 실패 시 미적용 및 kill 지연 예약, 업데이트 origin/checksum 형식/호환성 검사. 네이티브 동작은 mock 기반이며 실기기 통과를 뜻하지 않는다.
+- Android SDK가 이 PC에 없어 APK/AAB 컴파일 미실행. GitHub Actions에 JDK21/SDK 환경의 debug APK 빌드를 추가했으나 원격 결과는 별도로 확인한다. 운영 API/DB 요청은 실행하지 않았다.
+- 실기기 오프라인 판매·취소/강제 종료 후 주문 복원/연결 복구 중복 방지, Web Locks·네이티브 HTTP·파일 업로드/백업, OTA 손상 ZIP·실패 복구·기존 데이터 보존 검증은 미실행. [Android 출시 전 시나리오](../android.md)를 따른다. 기존 UI-01/02/03 및 CACHE-01 브라우저 실측도 이번 작업에서 재실행하지 않았다.
+
+- npm audit 결과 기존 빌드 도구 계열 high 3건 및 추가 CLI의 iOS xcode/uuid 경로 moderate 3건이 남는다. 이번 변경에서 관련 없는 의존성 일괄 갱신은 하지 않았다. Android 런타임 취약점으로 판정한 결과는 아니다.
+
+- 사용자 변경을 제외한 PR 소스 사본에서도 npm test 88개 전체 통과, build:release 통과. ZIP 실제 SHA-256 일치·루트 index.html 존재·sw.js 제외 확인. 검증 사본의 첫 실행은 의존성 연결 준비 전 파일을 찾지 못해 실패했으며 연결 후 재실행해 통과했다.
+
+- GitHub Actions [39401431997](https://github.com/kimdongjang/mybooth/actions/runs/39401431997)에서 JDK21/SDK36으로 assembleDebug 및 APK 아티팩트 업로드 통과. 첫 CI는 setup-android 기본 tools 패키지가 제거되어 실패했고 platform-tools/platforms;android-36/build-tools;36.0.0을 명시해 수정했다. 로컬 SDK 부재와 실기기 미검증은 그대로다.

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">마이 부스</string>
+    <string name="title_activity_main">마이 부스</string>
+    <string name="package_name">com.mybooth.pos</string>
+    <string name="custom_url_scheme">com.mybooth.pos</string>
+</resources>

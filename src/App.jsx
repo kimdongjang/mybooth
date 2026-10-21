@@ -1,3 +1,4 @@
+import { sessionStore, saveProjectList, readProjectList, isNative } from './platform/mobile';
 import InventoryPage from './pages/InventoryPage';
 import GettingStarted from './components/GettingStarted';
 import LoginPage from './pages/LoginPage';
@@ -23,7 +24,7 @@ const AUTH_ADMIN_KEY = 'pos_admin_id';
 const SELECTED_PROJECT_KEY = 'pos_selected_project_id';
 
 async function requestJson(url, options = {}) {
-  const token = sessionStorage.getItem(AUTH_TOKEN_KEY);
+  const token = sessionStore.getItem(AUTH_TOKEN_KEY);
   const res = await fetch(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) },
@@ -34,8 +35,8 @@ async function requestJson(url, options = {}) {
 }
 
 export default function App() {
-  const [token, setToken] = useState(() => sessionStorage.getItem(AUTH_TOKEN_KEY));
-  const [adminId, setAdminId] = useState(() => sessionStorage.getItem(AUTH_ADMIN_KEY) || '');
+  const [token, setToken] = useState(() => sessionStore.getItem(AUTH_TOKEN_KEY));
+  const [adminId, setAdminId] = useState(() => sessionStore.getItem(AUTH_ADMIN_KEY) || '');
   const [loading, setLoading] = useState(Boolean(token));
   const [projectLoading, setProjectLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
@@ -130,9 +131,9 @@ export default function App() {
 
   const logout = () => {
     setScreen('login', true);
-    sessionStorage.removeItem(AUTH_TOKEN_KEY);
-    sessionStorage.removeItem(AUTH_ADMIN_KEY);
-    sessionStorage.removeItem(SELECTED_PROJECT_KEY);
+    sessionStore.removeItem(AUTH_TOKEN_KEY);
+    sessionStore.removeItem(AUTH_ADMIN_KEY);
+    sessionStore.removeItem(SELECTED_PROJECT_KEY);
     setToken(null);
     setAdminId('');
     setProjects([]);
@@ -194,14 +195,23 @@ export default function App() {
       const data = await requestJson('/api/pos');
       if (activeToken.current !== token) return;
       const nextProjects = data.projects || [];
+      saveProjectList(adminId, nextProjects);
       setProjects(nextProjects);
-      const rememberedId = sessionStorage.getItem(SELECTED_PROJECT_KEY);
+      const rememberedId = sessionStore.getItem(SELECTED_PROJECT_KEY);
       const remembered = nextProjects.find((project) => project.id === rememberedId);
       setSelectedProject((current) => nextProjects.find((project) => project.id === current?.id) || remembered || null);
     } catch (err) {
       if (activeToken.current !== token) return;
-      if (String(err.message).includes('인증')) logout();
-      else setError(err.message);
+      if (err.status === 401 || String(err.message).includes('인증')) logout();
+      else {
+        const cached = isNative && !err.status ? readProjectList(adminId) : null;
+        if (cached) {
+          setProjects(cached);
+          const remembered = cached.find(project => project.id === sessionStore.getItem(SELECTED_PROJECT_KEY));
+          setSelectedProject(remembered || null);
+          setError('오프라인 상태입니다. 저장된 행사 목록을 사용합니다.');
+        } else setError(err.message);
+      }
     } finally {
       setProjectLoading(false);
       setLoading(false);
@@ -243,7 +253,7 @@ export default function App() {
     if (action === 'deleteProject') {
       if (selectedProject?.id === project.id) {
         setSelectedProject(null);
-        sessionStorage.removeItem(SELECTED_PROJECT_KEY);
+        sessionStore.removeItem(SELECTED_PROJECT_KEY);
         setProducts([]); setBundles([]); setSales([]); setCart([]);
         setScreen('projects');
       }
@@ -267,7 +277,7 @@ export default function App() {
   const releaseProject = () => {
     if (saving || loading || projectLoading) return;
     activeScope.current = `${token || ''}:`;
-    sessionStorage.removeItem(SELECTED_PROJECT_KEY);
+    sessionStore.removeItem(SELECTED_PROJECT_KEY);
     setSelectedProject(null);
     setReadyScope(null);
     setDataRevision(null);
@@ -281,7 +291,7 @@ export default function App() {
     if (project.id === selectedProject?.id) { setScreen(options.destination || 'pos'); return; }
     setError('');
     setSelectedProject(project);
-    sessionStorage.setItem(SELECTED_PROJECT_KEY, project.id);
+    sessionStore.setItem(SELECTED_PROJECT_KEY, project.id);
     setProducts([]);
     setBundles([]);
     setSales([]);
@@ -301,8 +311,8 @@ export default function App() {
 
   const login = async (credentials) => {
     const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify(credentials) });
-    sessionStorage.setItem(AUTH_TOKEN_KEY, data.token);
-    sessionStorage.setItem(AUTH_ADMIN_KEY, data.admin?.id || credentials.id);
+    sessionStore.setItem(AUTH_TOKEN_KEY, data.token);
+    sessionStore.setItem(AUTH_ADMIN_KEY, data.admin?.id || credentials.id);
     setToken(data.token);
     setAdminId(data.admin?.id || credentials.id);
     setScreen('pos', true);

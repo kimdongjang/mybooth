@@ -1,0 +1,17 @@
+{
+  "appId": "com.mybooth.pos",
+  "appName": "마이 부스",
+  "webDir": "dist",
+  "server": { "hostname": "localhost", "androidScheme": "https" },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "autoDeleteFailed": false,
+      "autoDeletePrevious": false,
+      "statsUrl": "",
+      "channelUrl": "",
+      "appReadyTimeout": 30000
+    }
+  }
+}

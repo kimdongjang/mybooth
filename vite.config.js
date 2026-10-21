@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { httpsOrigin } from './src/platform/mobileConfig.js';
 
 function createVercelApiDevPlugin() {
   return {
@@ -65,10 +66,19 @@ function createResponseAdapter(res) {
   };
 }
 
-export default defineConfig({
-  plugins: [createVercelApiDevPlugin(), react(), tailwindcss()],
+export default defineConfig(({ mode }) => ({
+  build: { target: 'es2022' },
+  plugins: [createVercelApiDevPlugin(), react(), tailwindcss(), {
+    name: 'validate-mobile-origin',
+    configResolved(config) {
+      if (mode === 'android') {
+        const value = config.env.VITE_MOBILE_API_ORIGIN;
+        if (!value || new URL(httpsOrigin(value)).hostname === 'localhost') throw new Error('Set VITE_MOBILE_API_ORIGIN to the public HTTPS API origin before building Android.');
+      }
+    },
+  }],
   server: {
     port: 5173,
     strictPort: true,
   },
-});
+}));
