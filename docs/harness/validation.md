@@ -1,3 +1,9 @@
+## 모바일 재고 헤더·정보2열·표 너비 검증 (2026-10-21)
+
+- npm run build 통과(기존500kB 청크 경고). git diff --check 통과.
+- CSS diff로 모바일 헤더 nowrap/코드·버튼 flex:none/상품명 min-width0 및2줄 clamp,버튼 py4px·최소30px,공통 필드 grid-column:auto의2열,행사46%/수량 각18% 및 좌우 여백 축소 확인.
+- CSS/캐시 변경으로 npm test 미실행. UI-01 실제320/375/767px·터치 태블릿의 긴 상품명/코드·버튼 고정/2열 자동완성/긴 행사명/큰 수량 및 CACHE-01 배포 갱신 미실행. API/DB/IndexedDB 변경 없음.
+
 ## 재고 상세 여백·모바일 이미지 버튼 검증 (2026-10-21)
 
 - 최신 origin/main 기반 별도 작업 트리에서 npm run build 통과(기존500kB 청크 경고). git diff --check 통과.

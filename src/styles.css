@@ -888,9 +888,24 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .inventory-page .management-image > .product-image-upload { grid-column:2; grid-row:2; }
   .inventory-page .management-image > .product-image-remove { grid-column:2; grid-row:3; }
   .inventory-page .management-details > fieldset > legend { grid-column:1 / -1; grid-row:4; width:100%; margin:4px 0 0; padding-top:20px; border-top:1px solid #e2e8f0; }
-  .inventory-page .management-details .management-field:not(.product-name-field) { grid-column:1 / -1; }
+  .inventory-page .management-details .management-field:not(.product-name-field) { grid-column:auto; }
 }
 
 .inventory-stock-summary{display:flex;align-items:center;gap:16px;flex-wrap:wrap;min-width:0}
 .inventory-stock-summary .inventory-readonly-quantity{min-height:42px;display:inline-flex;align-items:center}
 .inventory-list-content .inventory-management-table td:nth-child(3) .inventory-cell-main{white-space:normal;overflow:visible;text-overflow:clip}
+
+/* Keep the mobile inventory identity and actions on one line. */
+@media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
+  .inventory-page .inventory-detail-header { flex-wrap:nowrap; gap:6px; padding:10px; }
+  .inventory-page .inventory-detail-identity { flex:1 1 0; gap:6px; }
+  .inventory-page .inventory-product-code { flex:none; max-width:none; white-space:nowrap; font-size:10px; padding:4px; }
+  .inventory-page .inventory-detail-identity h3 { flex:1; font-size:13px; line-height:1.4; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
+  .inventory-page .inventory-detail-actions { flex:none; gap:4px; }
+  .inventory-page .inventory-detail-actions button { min-height:30px; padding:4px 6px; font-size:12px; line-height:1.4; white-space:nowrap; }
+  .inventory-page .inventory-allocation-table th:first-child { width:46%; }
+  .inventory-page .inventory-allocation-table th:not(:first-child) { width:18%; }
+  .inventory-page .inventory-allocation-table :is(th,td) { padding-inline:4px; overflow-wrap:anywhere; }
+  .inventory-page .inventory-allocation-table input { padding-inline:4px; }
+  .inventory-page .inventory-allocation-table .inventory-readonly-quantity { max-width:100%; padding-inline:4px; }
+}
