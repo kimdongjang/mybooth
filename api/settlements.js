@@ -1,0 +1,100 @@
+import { sql as pool } from '@vercel/postgres';
+import { assertPostgresConnectionString, requireAuth } from './lib/auth.js';
+import { settlementMoneyEntries } from '../src/utils/settlementEntries.js';
+
+const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
+const integer = value => Number.isSafeInteger(value) && value >= 0 && value <= 2147483647;
+const date = value => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value < '0001-01-01') fail('올바른 지급 날짜를 입력해주세요.');
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) fail('올바른 지급 날짜를 입력해주세요.');
+  return value;
+};
+const record = row => ({ projectId: row.project_id, creator: row.creator, version: row.version, deductions: row.deductions, payments: row.payments });
+
+export function createHandler(pool) {
+  return async (req, res) => {
+    const admin = requireAuth(req, res);
+    if (!admin) return;
+    let client;
+    try {
+      assertPostgresConnectionString();
+      client = await pool.connect();
+      const sql = client.sql;
+      await client.query('BEGIN');
+      await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+      if (!(await sql`SELECT id FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows.length) fail('인증이 필요합니다.', 401);
+      await sql`CREATE TABLE IF NOT EXISTS pos_settlements (
+        admin_id TEXT NOT NULL REFERENCES pos_admins(id), project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
+        creator TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, deductions JSONB NOT NULL DEFAULT '[]', payments JSONB NOT NULL DEFAULT '[]',
+        PRIMARY KEY(admin_id,project_id,creator))`;
+      await sql`CREATE TABLE IF NOT EXISTS pos_settlement_commands (
+        admin_id TEXT NOT NULL REFERENCES pos_admins(id), id TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
+        fingerprint TEXT NOT NULL, PRIMARY KEY(admin_id,id))`;
+      if (req.method === 'GET') {
+        const rows = await sql`SELECT s.* FROM pos_settlements s JOIN pos_projects p ON p.id=s.project_id AND p.admin_id=s.admin_id WHERE s.admin_id=${admin.id}`;
+        await client.query('COMMIT');
+        return res.status(200).json({ settlements: rows.rows.map(record) });
+      }
+      if (req.method !== 'POST') fail('Method not allowed', 405);
+      const { action, projectId, creator, version, requestId, deductions, amount, paidAt, memo = '', paymentId } = req.body || {};
+      if (!['saveDeductions', 'addPayment', 'reversePayment'].includes(action) || typeof projectId !== 'string' || typeof creator !== 'string' || !creator.trim() || creator !== creator.trim() || creator.length > 200 || !integer(version) || typeof requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(requestId)) fail('올바른 정산 요청이 아닙니다.');
+      if (!(await sql`SELECT id FROM pos_projects WHERE id=${projectId} AND admin_id=${admin.id} FOR UPDATE`).rows.length) fail('행사를 찾을 수 없습니다.', 404);
+      const fingerprint = JSON.stringify({ action, projectId, creator, version, deductions, amount, paidAt, memo, paymentId });
+      const replay = (await sql`SELECT fingerprint FROM pos_settlement_commands WHERE admin_id=${admin.id} AND id=${requestId}`).rows[0];
+      const current = (await sql`SELECT * FROM pos_settlements WHERE admin_id=${admin.id} AND project_id=${projectId} AND creator=${creator} FOR UPDATE`).rows[0];
+      if (replay) {
+        if (replay.fingerprint !== fingerprint) fail('같은 요청 ID의 내용이 다릅니다.', 409);
+        await client.query('COMMIT');
+        return res.status(200).json({ settlement: record(current) });
+      }
+      if ((current?.version || 0) !== version) fail('정산 내역이 변경되었습니다. 새로고침 후 다시 시도해주세요.', 409);
+      const products = (await sql`SELECT p.*,CASE WHEN i.id IS NOT NULL THEN i.product->>'creatorName' ELSE p.creator_name END AS creator_name
+        FROM pos_products p LEFT JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id AND l.admin_id=${admin.id}
+        LEFT JOIN pos_inventory i ON i.admin_id=l.admin_id AND i.id=l.inventory_id WHERE p.project_id=${projectId} AND COALESCE(p.is_active,TRUE)`).rows;
+      const byId = Object.fromEntries(products.map(product => [product.id, { ...product, creatorName: product.creator_name }]));
+      const bundles = (await sql`SELECT * FROM pos_bundles WHERE project_id=${projectId}`).rows;
+      const sales = (await sql`SELECT lines FROM pos_sales WHERE project_id=${projectId}`).rows;
+      let gross = 0, found = false;
+      for (const sale of sales) for (const line of sale.lines || []) for (const entry of settlementMoneyEntries(line, byId, bundles)) {
+        if ((String(entry.creator || '').trim() || '미지정') === creator) { gross += entry.amount; found = true; }
+      }
+      if (!found && !current) fail('판매 내역에 없는 작가입니다.', 404);
+      gross = Math.round(gross);
+      let nextDeductions = current?.deductions || [];
+      const payments = [...(current?.payments || [])];
+      const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+      if (action === 'saveDeductions') {
+        if (!Array.isArray(deductions) || deductions.length > 50) fail('차감 항목은 최대 50개입니다.');
+        nextDeductions = deductions.map(item => {
+          if (!item || typeof item.label !== 'string' || !item.label.trim() || item.label.trim().length > 80 || !integer(item.amount)) fail('차감 항목명과 0 이상의 원 단위 금액을 입력해주세요.');
+          return { label: item.label.trim(), amount: item.amount };
+        });
+        const fees = nextDeductions.reduce((sum, item) => sum + item.amount, 0);
+        if (fees > gross) fail('차감 합계는 판매액보다 클 수 없습니다.');
+        const oldFees = (current?.deductions || []).reduce((sum, item) => sum + item.amount, 0);
+        if (gross - fees < paid && fees > oldFees) fail('이미 지급한 금액보다 정산 예정액을 줄일 수 없습니다.');
+      } else if (action === 'addPayment') {
+        if (!integer(amount) || amount === 0 || typeof memo !== 'string' || memo.length > 500) fail('지급 금액과 메모를 확인해주세요.');
+        const net = gross - nextDeductions.reduce((sum, item) => sum + item.amount, 0);
+        if (amount > net - paid) fail('지급 금액은 남은 정산금보다 클 수 없습니다.');
+        payments.push({ id: requestId, amount, paidAt: date(paidAt), memo: memo.trim() });
+      } else {
+        const original = payments.find(payment => payment.id === paymentId && payment.amount > 0);
+        if (!original || payments.some(payment => payment.reversalOf === paymentId)) fail('취소할 수 없는 지급 기록입니다.', 409);
+        if (typeof memo !== 'string' || memo.length > 500) fail('메모는 500자 이내로 입력해주세요.');
+        payments.push({ id: requestId, amount: -original.amount, paidAt: date(paidAt), memo: memo.trim(), reversalOf: paymentId });
+      }
+      const saved = await sql`INSERT INTO pos_settlements (admin_id,project_id,creator,version,deductions,payments)
+        VALUES (${admin.id},${projectId},${creator},${version + 1},${JSON.stringify(nextDeductions)}::jsonb,${JSON.stringify(payments)}::jsonb)
+        ON CONFLICT(admin_id,project_id,creator) DO UPDATE SET version=EXCLUDED.version,deductions=EXCLUDED.deductions,payments=EXCLUDED.payments RETURNING *`;
+      await sql`INSERT INTO pos_settlement_commands (admin_id,id,project_id,fingerprint) VALUES (${admin.id},${requestId},${projectId},${fingerprint})`;
+      await client.query('COMMIT');
+      return res.status(200).json({ settlement: record(saved.rows[0]) });
+    } catch (error) {
+      if (client) await client.query('ROLLBACK').catch(() => {});
+      return res.status(error.status || 500).json({ error: error.message || '정산 저장에 실패했습니다.' });
+    } finally { client?.release(); }
+  };
+}
+export default createHandler(pool);

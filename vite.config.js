@@ -13,6 +13,9 @@ function createVercelApiDevPlugin() {
       server.middlewares.use('/api/product-images', async (req, res) => {
         await runApiHandler(req, res, () => import('./api/product-images.js'));
       });
+      server.middlewares.use('/api/settlements', async (req, res) => {
+        await runApiHandler(req, res, () => import('./api/settlements.js'));
+      });
       server.middlewares.use('/api/pos', async (req, res) => {
         await runApiHandler(req, res, () => import('./api/pos.js'));
       });
