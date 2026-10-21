@@ -20,7 +20,7 @@ export function createHandler(pool) {
     try {
       assertPostgresConnectionString();
       client = await pool.connect();
-      const sql = client.sql;
+      const sql = client.sql.bind(client);
       await client.query('BEGIN');
       await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       if (!(await sql`SELECT id FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows.length) fail('인증이 필요합니다.', 401);

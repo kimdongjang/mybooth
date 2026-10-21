@@ -18,7 +18,7 @@ async function fixture() {
     CREATE TABLE pos_sales(project_id TEXT,lines JSONB);
     INSERT INTO pos_sales VALUES('event','[{"type":"product","id":"p","name":"키링","creatorName":"작가","unitPrice":1000,"qty":10}]');`);
   let connects=0,tail=Promise.resolve();
-  const pool={connect:async()=>{connects++;const prior=tail;let release;tail=new Promise(resolve=>release=resolve);await prior;return {sql:(parts,...values)=>db.query(parts.reduce((s,p,i)=>s+(i?`$${i}`:'')+p,''),values),query:query=>db.query(query),release};}};
+  const pool={connect:async()=>{connects++;const prior=tail;let release;tail=new Promise(resolve=>release=resolve);await prior;return {sql(parts,...values){return this.query(parts.reduce((s,p,i)=>s+(i?`$${i}`:'')+p,''),values);},query(query,values){return db.query(query,values);},release};}};
   const context=vm.createContext({});
   const module=new vm.SourceTextModule(await readFile(new URL('../api/settlements.js',import.meta.url),'utf8'),{context});
   await module.link(name=>{const exports=name==='@vercel/postgres'?{sql:pool}:name.endsWith('auth.js')?{assertPostgresConnectionString(){},requireAuth(req,res){if(req.adminId)return{id:req.adminId};res.status(401).json({error:'Unauthorized'});return null;}}:{settlementMoneyEntries};return new vm.SyntheticModule(Object.keys(exports),function(){for(const[key,value]of Object.entries(exports))this.setExport(key,value);},{context});});
