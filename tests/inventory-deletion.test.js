@@ -211,3 +211,14 @@ test('new inventory header shares breadcrumb and omits unissued code; image remo
  h.render();assert.equal(nodes(h.render()).find(n=>n.type==='ProductImage').props.imageUrl,null);
  assert.equal(h.uploads.length,0);
 });
+
+test('registration date save sends inventory version and preserves unsaved product edits',async()=>{
+ const h=await harness();const seen=[];
+ h.props.api=async(action,payload)=>{seen.push({action,payload});return{inventory:[{...h.item,createdAt:'2024-02-29T00:00:00.000Z',version:8}]};};
+ nodes(h.render()).find(n=>String(n.type).endsWith('/InventoryProductFields')).props.onChange('name','미저장 이름');
+ const form=nodes(h.render()).find(n=>String(n.type).endsWith('/RegistrationDateForm'));
+ assert.equal(await form.props.onSave('2024-02-29'),true);
+ assert.equal(seen[0].action,'updateInventoryRegistrationDate');assert.equal(seen[0].payload.version,7);assert.equal(seen[0].payload.inventoryId,h.item.id);
+ const fields=nodes(h.render()).find(n=>String(n.type).endsWith('/InventoryProductFields'));
+ assert.equal(fields.props.draft.name,'미저장 이름');assert.equal(fields.props.draft.version,8);
+});

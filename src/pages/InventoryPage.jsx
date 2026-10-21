@@ -1,3 +1,4 @@
+import RegistrationDateForm from '../components/RegistrationDateForm';
 import InventoryTransferRecovery from '../components/InventoryTransferRecovery';
 import { useEffect, useRef, useState } from 'react';
 import { prepareProductImage } from '../utils/productImage';
@@ -156,6 +157,21 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
       navigate('inventory');
     });
   };
+  const dateScope = useRef(null);
+  dateScope.current = `${adminId}:${routeHash}`;
+  const saveDate = async date => {
+    const scope = dateScope.current;
+    const inventoryId = draft.id;
+    if (busy) return false;
+    setBusy(true);
+    try {
+      const data = await api('updateInventoryRegistrationDate', { inventoryId: draft.id, version: draft.version, date });
+      if (dateScope.current !== scope) return false;
+      const latest = data.inventory.find(item => item.id === inventoryId);
+      setItems(data.inventory); setDraft(current => current?.id === inventoryId ? { ...current, createdAt: latest.createdAt, version: latest.version } : current);
+      return true;
+    } finally { setBusy(false); }
+  };
   return <main className="page-content inventory-page">
     <header className="inventory-page-header">
       <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol>
@@ -216,17 +232,16 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         </div>
         <div className="management-product-body">
           <div className="management-image">
-            <label className="management-field product-name-field"><span>상품 이름</span><Input form="inventory-product-form" required maxLength={200} value={draft.name} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('name', value)} /></label>
             <ProductImage imageUrl={preview || draft.imageUrl} name={draft.name} />
             <label className="management-upload product-image-upload"><span>{preparing ? '이미지 축소 중…' : image || draft.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label="상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
             {(image || draft.imageUrl) && <button type="button" className="product-image-remove" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => { setImage(null); uploadedImage.current = null; changeDraft('imageUrl', null); }}>이미지 제거</button>}
           </div>
           <form id="inventory-product-form" onSubmit={save} className="management-details">
             <InventoryProductFields draft={draft} products={items} onChange={changeDraft} disabled={busy || preparing || uncertain || pendingMoves || !ready} />
-            {view === 'detail' && <div className="management-field inventory-registration-date"><span>상품 등록 일자</span><output>{dateLabel(draft.createdAt)}</output></div>}
             {view === 'new' && <label className="management-field"><span>최초 입고 수량</span><Input aria-label="최초 입고 수량" required type="number" min="0" max="2147483647" step="1" value={draft.stock} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('stock', value)} /></label>}
           </form>
         </div>
+        {view === 'detail' && <RegistrationDateForm createdAt={draft.createdAt} onSave={saveDate} disabled={busy || uncertain || pendingMoves || !ready} />}
         {view === 'detail' && <section className="inventory-history">
           <div className="inventory-allocation-heading"><h4>행사별 재고 배정 관리</h4><div className="inventory-stock-summary"><div className="management-field"><span>총재고</span><output className="inventory-readonly-quantity" aria-label="총재고">{won(totalStock)}개</output></div><div className="management-field"><span>미배정재고</span><output className="inventory-readonly-quantity" aria-label="미배정재고">{won(Number(totalStock) - allocationSum)}개</output></div></div></div>
           {allocationError && <p role="alert" className="inventory-error">{allocationError}</p>}
