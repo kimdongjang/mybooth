@@ -6,6 +6,7 @@
 
 여기서 하네스는 다음 개발자가 같은 맥락으로 작업하고 검증할 수 있도록 만든 작업 지침·시스템 계약·운영 절차·검증 시나리오 묶음이다. 자동 테스트 프레임워크가 구축된 상태를 의미하지 않는다.
 
+- [하네스 전용 디렉터리·읽는 순서](docs/harness/README.md)
 - [에이전트 작업 지침](AGENTS.md)
 - [구조·데이터·API 계약](docs/harness/architecture.md)
 - [위험 분석과 개선 순서](docs/harness/risks.md)

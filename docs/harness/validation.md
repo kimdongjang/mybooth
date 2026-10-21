@@ -4,6 +4,15 @@
 
 색상·글꼴·여백·크기·정렬·반응형 배치 등 표현 변경에 적용하며, 기능·데이터 계약이 함께 변경되면 해당 기능의 기존 검증 기준을 적용한다. 결과에는 변경 내용과 검증 생략 사실을 짧게 기록한다. 아래 과거 검증 이력은 보존하되 디자인·레이아웃 작업에서 반복 실행할 의무를 뜻하지 않는다.
 
+## 저장소·하네스 정리 검증 (2026-10-21)
+
+- 로컬 main을 원격 main `5ab473d`로 fast-forward했다. 작업 전 소스 미커밋 변경은 없었으며, 과거 PR 본문 초안과 검증용 사본은 Git 제외 경로 `.local-archive/cleanup-2026-10-21/`에 보존했다. 환경변수 파일은 기존 위치에 유지했다.
+- 브랜치 삭제 전 전체 refs의 Git bundle 생성과 verify를 통과했다. 종료된 PR과 이름·원격 tip이 일치하는 브랜치만 정리 대상으로 확인했다. 로컬 작업 브랜치 71개와 추가 worktree 11개를 정리했다.
+- 원격 종료 PR 브랜치 72개 삭제 후 fetch/prune와 원격 heads 조회로 main 하나만 남은 것을 확인했다. 로컬도 main 및 기본 worktree 하나만 유지한다. 하네스 상대 링크와 `git diff --check` 통과. 앱 소스·설정·lockfile은 원격 main과 동일하다.
+- `docs/harness/README.md`를 하네스 진입점으로 추가하고 루트 AGENTS/README에서 연결했다. 기존 계약·위험·검증 기록은 보존했다.
+- 첫 빌드는 worktree의 Windows junction 제거 과정에서 빌드 도구가 누락되어 실패했다. `npm ci`로 lockfile 기준 의존성을 복구한 뒤 `npm run build` 통과. 기존 500kB 청크 경고가 남는다.
+- 앱 기능 변경이 없어 API/DB·브라우저·Android 시나리오와 `npm test`는 미실행. 운영 DB 접근 및 코드 커밋·PR 생성 없음.
+
 ## 로컬 서버 환경변수·기본 포트 검증 (2026-10-21)
 
 - Vite serve에서 .env.local의 서버 전용 허용 목록을 Node process.env에 로드한다. 기존 프로세스 환경변수가 우선하며 클라이언트 envPrefix/define은 변경하지 않는다.

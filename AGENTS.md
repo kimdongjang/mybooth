@@ -4,7 +4,7 @@
 
 ## 작업 시작
 
-1. [구조와 계약](docs/harness/architecture.md), [위험과 개선 순서](docs/harness/risks.md), [검증 절차](docs/harness/validation.md)를 읽는다.
+1. [하네스 안내](docs/harness/README.md)에서 읽는 순서를 확인하고 [구조와 계약](docs/harness/architecture.md), [위험과 개선 순서](docs/harness/risks.md), [검증 절차](docs/harness/validation.md)를 읽는다.
 2. 현재 파일과 `git diff`를 확인한다. 문서는 2026-10-14 작업 트리 기준이며 코드가 최종 근거다. 기존 사용자 변경을 덮어쓰지 않는다.
 3. 바꿀 경로를 결정한다. UI/로컬 판매는 `src/App.jsx`, 서버 재고·판매는 `api/pos.js`, 인증은 `api/lib/auth.js`, 동기화는 `src/sync`와 `src/database`, 캐시는 `public/sw.js`에 있다.
 
