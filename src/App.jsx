@@ -59,7 +59,7 @@ export default function App() {
   useEffect(() => {
     if (!token) {
       if (!['login', 'signup'].includes(routePage)) setScreen('login', true);
-      document.title = `${routePage === 'signup' ? '회원가입' : '로그인'} · 마이 부스`;
+      document.title = `${routePage === 'signup' ? '회원가입' : '로그인'} · WithBooth`;
       return;
     }
     if (loading || projectLoading) return;
@@ -67,7 +67,7 @@ export default function App() {
     if (selectedProject && ['projects', 'projectNew'].includes(routePage)) { setScreen('pos', true); return; }
     if (!selectedProject && !linkedProjectId && !['projects', 'projectNew', 'restore', 'inventory', 'account'].includes(routePage)) setScreen('projects', true);
     else if (!pageForHash(routeHash)) setScreen(screen, true);
-    document.title = `${pageTitles[screen]} · 마이 부스`;
+    document.title = `${pageTitles[screen]} · WithBooth`;
     document.querySelector('.page-heading h1')?.focus();
   }, [screen, routePage, routeHash, token, loading, projectLoading, selectedProject?.id, setScreen]);
   const [settingsTab, setSettingsTab] = useState('products');

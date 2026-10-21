@@ -65,7 +65,7 @@ export default function GettingStarted({ scope }) {
   return <>
     <button type="button" className="guide-launcher" onClick={() => { setSeen([]); setEnabled(!enabled); }}>{enabled ? '가이드 끄기' : '시작 가이드'}</button>
     {anchor && tips[id] && createPortal(<aside ref={panel} className="getting-started" style={position || { visibility: 'hidden' }} aria-label="시작 가이드" aria-live="polite">
-      <div className="guide-eyebrow">처음 시작하는 MyBooth <span>전체 사용자 테스트</span></div>
+      <div className="guide-eyebrow">처음 시작하는 WithBooth <span>전체 사용자 테스트</span></div>
       <strong>{tips[id][0]}</strong><p>{tips[id][1]}</p>
       <div className="guide-actions"><button type="button" onClick={() => setEnabled(false)}>가이드 닫기</button><button type="button" onClick={() => setSeen(previous => [...previous, id])}>확인했어요</button></div>
     </aside>, document.body)}

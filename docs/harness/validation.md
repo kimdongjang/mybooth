@@ -873,3 +873,12 @@ npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공�
 - 사용자 변경을 제외한 PR 소스 사본에서도 npm test 88개 전체 통과, build:release 통과. ZIP 실제 SHA-256 일치·루트 index.html 존재·sw.js 제외 확인. 검증 사본의 첫 실행은 의존성 연결 준비 전 파일을 찾지 못해 실패했으며 연결 후 재실행해 통과했다.
 
 - GitHub Actions [39401431997](https://github.com/kimdongjang/mybooth/actions/runs/39401431997)에서 JDK21/SDK36으로 assembleDebug 및 APK 아티팩트 업로드 통과. 첫 CI는 setup-android 기본 tools 패키지가 제거되어 실패했고 platform-tools/platforms;android-36/build-tools;36.0.0을 명시해 수정했다. 로컬 SDK 부재와 실기기 미검증은 그대로다.
+
+## WithBooth 브랜드 PR 검증 (2026-10-21)
+
+- 최신 원격 main(12bd237)을 기반으로 최종 브랜드 변경만 분리했다. 미커밋 등록일 편집/모바일 스타일과 로컬 API 프록시, 중간 로고 시안/폰트는 포함하지 않았다.
+- 최종 사용자 첨부 PNG와 SHA-256 일치, 파비콘 SVG XML, 현재 화면의 표시 이름, SW 선캐시 자산 경로, Android 앱 ID 보존 검사 통과. 최신 main의 공유 설명과 favicon 경로를 유지하며 표시 이름/공유 도메인만 갱신했다. SW v120.
+- npm run build 통과. 기존 500kB 초과 청크 경고 존재.
+- 실제 로그인·판매/DB/Blob 및 미동기화 주문 이전, Android APK 컴파일/실기기, 배포 후 CACHE-01은 미실행. 운영 데이터 변경과 main 병합은 수행하지 않는다.
+
+- PR 전용 작업 트리에서 npm test 96개 전체 통과, npm run android:sync 및 git diff --check 통과. Android sync는 APK 컴파일이 아닌 웹 빌드/네이티브 자산 복사다.
