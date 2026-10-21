@@ -1,3 +1,9 @@
+## WithBooth 브랜드와 최종 로고 (2026-10-21)
+
+표시 이름을 WithBooth(위드부스)로 통일한다. 공통/인증 헤더는 /brand/withbooth-final-logo.png의 파란 원 안 흰 W·파란 ithBooth를 표시한다. /favicon.svg와 Android 런처/스플래시는 파란 배경 흰 Wb다. 웹 메타데이터·Android API origin은 https://withbooth.vercel.app으로 변경하고 기존 공유 설명은 보존한다. SW v120으로 새 로고를 선캐시한다.
+
+Android 앱 ID com.mybooth.pos, IndexedDB 이름, 인증 저장 키, 백업 format my-booth-project는 데이터 호환성을 위해 보존한다. DB/Blob 이전이나 서버 판매/동기화 계약 변경은 없다. 별도 pos.html도 표시 이름만 변경한다.
+
 ## PR #70 충돌 해결 (2026-10-21)
 
 최신 main의 모바일 상세/등록일 변경과 SNS 공유 메타를 함께 보존한다. 서비스 워커 캐시는 v119로 통합한다.

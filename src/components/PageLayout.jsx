@@ -50,7 +50,7 @@ export function AppHeader({ page, navigate, project, saving, sync, onReleaseProj
       {project && <button type="button" className="release-project" aria-label="행사 선택 해제" disabled={releaseDisabled} onClick={() => { setOpen(false); onReleaseProject(); }}><Icon name="logout" /><span className="release-label">선택 해제</span></button>}
     </div>);
   return <header className={`app-header ${showEventNav ? 'has-event-nav' : ''} border-b border-line bg-white text-ink`}>
-    <div className="header-brand"><a href="#/sales" className="display-font brand-title font-bold" onClick={follow('pos')}><img className="brand-logo" src="/images/mybooth-rounded-logo.png" alt="MyBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
+    <div className="header-brand"><a href="#/sales" className="display-font brand-title font-bold" onClick={follow('pos')}><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
     <div className="header-event-desktop">{eventContext}</div>
     {project && <div className="header-sync"><SyncStatus sync={sync} /></div>}
     <div className="header-controls"><button data-guide={project && page === 'pos' && !open ? 'menu' : undefined} ref={toggle} type="button" className={`menu-toggle ${open ? 'is-open' : ''}`} aria-label={open ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={open} aria-controls="booth-navigation" onClick={() => setOpen(!open)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>

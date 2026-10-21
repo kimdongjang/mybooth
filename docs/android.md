@@ -12,7 +12,7 @@ npm run android:sync
 npm run android:open
 ```
 
-`.env.android`의 공개 API origin은 `https://pos-system-black-xi.vercel.app`이다. 테스트 서버로 바꾸려면 `.env.android.local`을 사용한다. DB 비밀번호·AUTH_SECRET을 VITE 변수에 넣지 않는다. 웹 빌드는 `npm run build` 그대로다. Android Studio에서 기기를 선택해 실행하거나 `android/gradlew assembleDebug`로 테스트 APK를 만든다. GitHub Actions의 Android debug build도 APK 아티팩트를 생성한다. 디버그 APK는 Play 출시용이 아니다. 런처 아이콘·스플래시는 현재 Capacitor 기본 자산이며 출시 전 브랜드 자산으로 교체한다. Play 출시는 별도 업로드 키로 서명한 AAB, 개발자 계정·스토어 정보·심사가 필요하다. 키는 커밋하지 않는다.
+`.env.android`의 공개 API origin은 `https://withbooth.vercel.app`이다. 테스트 서버로 바꾸려면 `.env.android.local`을 사용한다. DB 비밀번호·AUTH_SECRET을 VITE 변수에 넣지 않는다. 웹 빌드는 `npm run build` 그대로다. Android Studio에서 기기를 선택해 실행하거나 `android/gradlew assembleDebug`로 테스트 APK를 만든다. GitHub Actions의 Android debug build도 APK 아티팩트를 생성한다. 디버그 APK는 Play 출시용이 아니다. 앱 표시 이름은 WithBooth이며 런처 아이콘·스플래시는 파란색 배경의 흰 Wb 심볼이다. 앱 ID com.mybooth.pos는 기존 설치/데이터 호환성을 위해 보존한다. Play 출시는 별도 업로드 키로 서명한 AAB, 개발자 계정·스토어 정보·심사가 필요하다. 키는 커밋하지 않는다.
 
 ## 웹 배포로 앱 화면 업데이트
 
@@ -23,7 +23,7 @@ Vercel의 Build Command를 **`npm run build:release`**로 설정하면 동일 �
 수동 준비도 가능하다.
 
 ```sh
-npm run android:bundle -- 2026.10.20-1 https://pos-system-black-xi.vercel.app
+npm run android:bundle -- 2026.10.20-1 https://withbooth.vercel.app
 ```
 
 `mobile-release/mobile-updates/`의 ZIP을 서버 `/mobile-updates/`에 먼저 올리고 `latest.json`을 마지막에 공개한다. 버전은 매번 고유해야 하며 ZIP 내용을 같은 버전으로 덮어쓰지 않는다. SHA-256 checksum과 같은 HTTPS origin을 검증하고, `nativeContract`와 Android `versionName`이 일치하는 앱에만 전달한다. 네이티브 플러그인·권한·호스트·계약이 바뀌면 스토어 업데이트가 필요하다. 배포자 계정과 HTTPS 서버가 신뢰 경계이며 별도 서명키 기반 OTA 서명은 아직 구성하지 않았다.
