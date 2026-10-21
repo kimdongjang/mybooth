@@ -1,6 +1,9 @@
 # dependencies
 node_modules/
 
+# local recovery archives
+.local-archive/
+
 # build output
 dist/
 build/
