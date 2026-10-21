@@ -1,3 +1,9 @@
+## PR #68 충돌 해결·favicon 통합 검증 (2026-10-21)
+
+- origin/main의 결제 확인 모달과 재고 변경을 모두 유지해 CSS/문서 충돌을 해결하고 캐시를 v114로 통합. npm run build 통과(기존500kB 청크 경고). git diff --check 및 충돌 마커 검사 통과.
+- npm test 첫 실행88개 통과·1개 테스트 파일 실패: 별도 작업 트리 node_modules/dexie 경로 부재. 기존 의존성을 junction으로 연결한 뒤 해당 offline-storage 회귀2개 통과(원자 저장/취소/경쟁/동기화 복구). 다른88개 통과 결과는 첫 실행 기준이다. 운영 DB 사용 없음.
+- PR #67 favicon과 SHA-256 동일,SVG XML 구조,dist/favicon.svg 복사,빌드 HTML icon 링크와 sw.js 캐시 목록 확인 통과. 실제 브라우저 탭/모바일 시각·배포 CACHE-01 미실행.
+
 ## 재고 등록 날짜 검색 검증 (2026-10-21)
 
 - npm run build 통과(기존500kB 청크 경고),검색·재고 상세 회귀15개 통과. 한국 날짜 시작/끝 경계,날짜 누락/손상,메타데이터 결합,빈 날짜 조건 해제 확인. git diff --check 통과.
@@ -21,6 +27,11 @@
 - 최신 origin/main 기반 별도 작업 트리에서 npm run build 통과(기존500kB 청크 경고). git diff --check 통과.
 - CSS diff로 inventory-history padding10px,모바일 배정 헤더 row-gap0 및 총재고 요약 margin/padding/border 제거,이미지 왼쪽3행·이름/등록수정/제거 오른쪽1~3행과44px 버튼을 확인했다. 데스크톱 이미지 배치는 유지한다.
 - 정적 CSS/캐시 변경으로 npm test 미실행. UI-01 실제 브라우저320/375/767px 및 터치 태블릿·이미지 유무/긴 상품명/파일 선택과 제거,배포 CACHE-01 미실행. API/DB/IndexedDB 변경 없음.
+
+## 결제 전 확인 검증 (2026-10-21)
+
+- npm run build 통과(기존500kB 청크 경고). 결제 확인 VM 회귀2개로 현금/이체 확인 전 미저장,취소/Escape 미저장,확인 시 수단 전달,연타1회,장바구니/행사/읽기 전용 변경 후 무효화를 확인한다. git diff --check 통과.
+- 실제 브라우저 native dialog 초점 제한/취소 초점/모바일 시각/주문 저장·실패 복구와 SALE-01/OFF-01/CACHE-01 배포 검증은 미실행. 전체 npm test 미실행. 운영 DB 사용 없음.
 
 ## 판매·잔여 및 미배정재고 표시 검증 (2026-10-20)
 
