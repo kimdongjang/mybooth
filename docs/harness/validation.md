@@ -904,3 +904,11 @@ npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공�
 - 실제 로그인·판매/DB/Blob 및 미동기화 주문 이전, Android APK 컴파일/실기기, 배포 후 CACHE-01은 미실행. 운영 데이터 변경과 main 병합은 수행하지 않는다.
 
 - PR 전용 작업 트리에서 npm test 96개 전체 통과, npm run android:sync 및 git diff --check 통과. Android sync는 APK 컴파일이 아닌 웹 빌드/네이티브 자산 복사다.
+
+
+## 계정 대시보드·수익 정산 PR 검증 (2026-10-21)
+
+- 원격 main 기반으로 대시보드/수익현황과 필요한 공통 경로/미저장 보호만 추린 소스를 .local-archive/pr-account-revenue에 구성해 검증했다. 기존 로컬 DB·계정·Android·재고 수정은 PR에 포함하지 않고 작업 폴더에 보존한다.
+- 분리 소스 npm run build 통과(기존500kB 청크 경고). 전체 테스트는 의존성 경로 문제로 offline-storage 파일만 처음 실패했으며 기존 node_modules 연결 후 재검증했다. 최종 전체104개 테스트 통과.
+- 정산 API 테스트는 소유권/삭제 계정/작가 스냅샷, 항목별 차감·부분 지급·취소 보정, 같은 요청 재전송·내용 충돌·stale version, 과지급/잘못된 날짜/음수·소수 거절, 영수증 실패 시 전체 롤백을 격리 PGlite로 확인했다. 한국 날짜 경계, 기간 필터와 전체 정산 잔액 분리, 원 단위 세트 배분 합계 보존 및 CSV escape/수식 방어도 통과했다.
+- AUTH-01/SWITCH-01의 자동화 소유권 경계와 기존 판매/취소·IndexedDB 회귀는 테스트 범위에 포함한다. UI-01/02/03 실제 모바일/데스크톱/입력/키보드, OFF-03 실제 다기기 미동기화, 실 PostgreSQL 다중 연결 경쟁, CACHE-01 배포 검증은 미실행이다. 운영 DB·실송금은 사용하지 않았다. 공개 정산 공유 링크·XLSX 대신 작가별/전체 CSV를 제공한다.

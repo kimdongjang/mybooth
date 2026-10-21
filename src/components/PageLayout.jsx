@@ -42,7 +42,7 @@ export function AppHeader({ page, navigate, project, saving, sync, onReleaseProj
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
     event.preventDefault(); go(key);
   };
-  const showEventNav = project && !['projects', 'projectNew', 'inventory', 'account'].includes(page);
+  const showEventNav = project && !['projects', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue'].includes(page);
   const eventContext = (<div className="header-event">
       <a className="event-context-link" href={`#${pagePaths[project ? 'pos' : 'projects']}`} onClick={follow(project ? 'pos' : 'projects')}>
         <Icon name="project" /><span className="event-context-name" title={project?.name}>{project?.name || '행사 선택'}</span>
@@ -55,7 +55,7 @@ export function AppHeader({ page, navigate, project, saving, sync, onReleaseProj
     {project && <div className="header-sync"><SyncStatus sync={sync} /></div>}
     <div className="header-controls"><button data-guide={project && page === 'pos' && !open ? 'menu' : undefined} ref={toggle} type="button" className={`menu-toggle ${open ? 'is-open' : ''}`} aria-label={open ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={open} aria-controls="booth-navigation" onClick={() => setOpen(!open)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>
     <nav id="booth-navigation" aria-label="부스 메뉴" className={`booth-navigation ${open ? 'is-open' : ''}`}>
-      <div className="nav-screens">{[['inventory', '공통 상품·재고 관리'], ['account', '내 계정']].map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key ? 'page' : undefined} className={page === key ? 'is-active' : ''} onClick={follow(key)}><Icon name={key === 'inventory' ? 'settings' : 'account'} />{label}</a>)}</div>
+      <div className="nav-screens">{[['dashboard', '대시보드'], ['inventory', '재고관리'], ['revenue', '수익현황'], ['account', '내 계정']].map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key ? 'page' : undefined} className={page === key ? 'is-active' : ''} onClick={follow(key)}><Icon name={key === 'inventory' ? 'settings' : key === 'revenue' ? 'log' : key} />{label}</a>)}</div>
     </nav>
     {showEventNav && <div className="header-secondary">
       <nav className="event-subnav" aria-label="행사 메뉴">{[['pos', '상품 판매'], ['settings', '행사 판매 설정'], ['log', '정산'], ['project', '행사 관리']].map(([key, label]) => <button key={key} type="button" data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={page === key ? 'page' : undefined} onClick={() => go(key)}>{label}</button>)}</nav>

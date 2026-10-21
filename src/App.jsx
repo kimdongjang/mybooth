@@ -1,3 +1,7 @@
+import DashboardPage from './pages/DashboardPage';
+import RevenuePage from './pages/RevenuePage';
+import { settlementEntries } from './utils/settlementEntries';
+import { allowNavigation } from './hooks/useUnsavedChanges';
 import { sessionStore, saveProjectList, readProjectList, isNative } from './platform/mobile';
 import InventoryPage from './pages/InventoryPage';
 import GettingStarted from './components/GettingStarted';
@@ -51,7 +55,7 @@ export default function App() {
   const routeParams = new URLSearchParams(routeHash.split('?')[1] || '');
   const linkedProjectId = ['log', 'settings'].includes(routePage) ? routeParams.get('projectId') : null;
   const routeProductId = routePage === 'settings' ? productIdForHash(routeHash) || routeParams.get('productId') || '' : '';
-  const screen = selectedProject || linkedProjectId || ['restore', 'projectNew', 'inventory', 'account'].includes(routePage) ? routePage : 'projects';
+  const screen = selectedProject || linkedProjectId || ['restore', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue'].includes(routePage) ? routePage : 'projects';
   const [orderExpanded, setOrderExpanded] = useState(false);
 
 
@@ -65,7 +69,7 @@ export default function App() {
     if (loading || projectLoading) return;
     if (['login', 'signup'].includes(routePage)) { setScreen(selectedProject ? 'pos' : 'projects', true); return; }
     if (selectedProject && ['projects', 'projectNew'].includes(routePage)) { setScreen('pos', true); return; }
-    if (!selectedProject && !linkedProjectId && !['projects', 'projectNew', 'restore', 'inventory', 'account'].includes(routePage)) setScreen('projects', true);
+    if (!selectedProject && !linkedProjectId && !['projects', 'projectNew', 'restore', 'inventory', 'account', 'dashboard', 'revenue'].includes(routePage)) setScreen('projects', true);
     else if (!pageForHash(routeHash)) setScreen(screen, true);
     document.title = `${pageTitles[screen]} · WithBooth`;
     document.querySelector('.page-heading h1')?.focus();
@@ -274,7 +278,8 @@ export default function App() {
     return { ...data, project: data.projects?.find(item => item.id === data.project?.id) || data.project };
   };
 
-  const releaseProject = () => {
+  const releaseProject = async () => {
+    if (!await allowNavigation()) return;
     if (saving || loading || projectLoading) return;
     activeScope.current = `${token || ''}:`;
     sessionStore.removeItem(SELECTED_PROJECT_KEY);
@@ -286,7 +291,8 @@ export default function App() {
     setScreen('projects');
   };
 
-  const selectProject = (project, options = {}) => {
+  const selectProject = async (project, options = {}) => {
+    if (!await allowNavigation()) return;
     if (selectedProject && selectedProject.id !== project.id && !options.fromInventory) { setScreen('pos'); return; }
     if (project.id === selectedProject?.id) { setScreen(options.destination || 'pos'); return; }
     setError('');
@@ -603,41 +609,7 @@ export default function App() {
     }
     return ['미지정'];
   }, [bundles, productsById]);
-  const saleLineProductEntries = useCallback((line) => {
-    if (line.type === 'product') {
-      const product = productsById[line.id];
-      return [{
-        productId: line.id,
-        name: line.name || productNameWithoutCreator(product),
-        creator: line.creatorName || creatorNameOf(product),
-        qty: Number(line.qty || 0),
-        amount: Number(line.unitPrice || 0) * Number(line.qty || 0),
-      }];
-    }
-    if (line.type === 'bundle') {
-      const bundle = bundles.find((b) => b.id === line.id);
-      const items = line.subItems || bundle?.items || [];
-      const lineQty = Number(line.qty || 0);
-      const lineTotal = Number(line.unitPrice || 0) * lineQty;
-      const weights = items.map((item) => {
-        const product = productsById[item.productId];
-        const itemQty = Number(item.qty || 0);
-        return Math.max(0, Number(item.unitPrice ?? product?.price ?? 0) * itemQty) || itemQty;
-      });
-      const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
-      return items.map((item, index) => {
-        const product = productsById[item.productId];
-        return {
-          productId: item.productId,
-          name: item.name || productNameWithoutCreator(product) || product?.name || '알 수 없는 굿즈',
-          creator: item.creatorName || creatorNameOf(product),
-          qty: Number(item.qty || 0) * lineQty,
-          amount: lineTotal * (weights[index] / totalWeight),
-        };
-      });
-    }
-    return [];
-  }, [bundles, productsById]);
+  const saleLineProductEntries = useCallback(line => settlementEntries(line, productsById, bundles), [bundles, productsById]);
   const visibleProducts = useMemo(() => {
     const filtered = creatorFilter === 'all' ? products : products.filter((p) => creatorNameOf(p) === creatorFilter);
     return [...filtered].sort(compareProductSaleNumber);
@@ -679,9 +651,11 @@ export default function App() {
     <GettingStarted key={token} scope={`${screen}:${selectedProject?.id || ""}`} />
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onReleaseProject={releaseProject} releaseDisabled={saving || loading || projectLoading} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
-    {readOnly && !['inventory', 'account'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
+    {readOnly && !['inventory', 'account', 'dashboard', 'revenue'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
     {loading || projectLoading || (linkedProjectId && selectedProject?.id !== linkedProjectId) || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
 
+    {screen === 'dashboard' && <DashboardPage key={adminId} request={requestJson} />}
+    {screen === 'revenue' && <RevenuePage key={adminId} request={requestJson} />}
     {screen === 'inventory' && <InventoryPage projects={projects} key={adminId} adminId={adminId} api={inventoryApi} routeHash={routeHash} navigate={setScreen} />}
     {screen === 'account' && <main className="page-content"><h1>내 계정 정보</h1><section className="inventory-card"><p>아이디: <strong>{adminId}</strong></p><p>상품과 창고 재고는 이 계정에 저장되며, 행사별 판매·정산은 각각 보관됩니다.</p><button type="button" className="management-back" onClick={logout}>로그아웃</button></section></main>}
     {['projects', 'projectNew'].includes(screen) && <ProjectsPage creating={screen === 'projectNew'} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} navigate={setScreen} />}
@@ -694,7 +668,7 @@ export default function App() {
 
     {['settings', 'bundleNew', 'productNew'].includes(screen) && <ProductsPage adminId={adminId} inventoryApi={inventoryApi} dataRevision={dataRevision} projectName={selectedProject.name} initialProductId={routeProductId} registerProduct={product => inventoryApi('createEventProduct', { projectId: selectedProject.id, dataRevision, product })} creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={(page, tab = 'bundles') => { setSettingsTab(tab); setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
-    {screen === 'log' && selectedProject && <SettlementPage key={`${selectedProject.id}:${routeParams.get('productId') || ''}`} initialProductId={linkedProjectId ? routeParams.get('productId') || '' : ''} initialProductSearch={linkedProjectId ? routeParams.get('productName') || '' : ''} initialTab={linkedProjectId ? 'history' : 'summary'} readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} saleLineProductEntries={saleLineProductEntries} voidSale={voidSale} />}
+    {screen === 'log' && selectedProject && <SettlementPage key={`${selectedProject.id}:${routeParams.get('productId') || ''}`} initialProductId={linkedProjectId ? routeParams.get('productId') || '' : ''} initialProductSearch={linkedProjectId ? routeParams.get('productName') || '' : ''} initialTab={routeParams.get('productId') ? 'history' : 'summary'} readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} saleLineProductEntries={saleLineProductEntries} voidSale={voidSale} />}
     </>}
 
   </div>;
