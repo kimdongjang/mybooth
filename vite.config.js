@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { httpsOrigin } from './src/platform/mobileConfig.js';
@@ -66,7 +66,15 @@ function createResponseAdapter(res) {
   };
 }
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode, command }) => {
+  if (command === 'serve') {
+    const env = loadEnv(mode, process.cwd(), '');
+    // Pass only server credentials to Node; Vite's client env prefix stays unchanged.
+    for (const key of ['ADMIN_ID', 'ADMIN_USERNAME', 'ADMIN_PASSWORD', 'AUTH_SECRET', 'POSTGRES_URL', 'POSTGRES_PRISMA_URL', 'POSTGRES_URL_NON_POOLING', 'DATABASE_URL', 'BLOB_READ_WRITE_TOKEN']) {
+      if (process.env[key] === undefined && env[key] !== undefined) process.env[key] = env[key];
+    }
+  }
+  return ({
   build: { target: 'es2022' },
   plugins: [createVercelApiDevPlugin(), react(), tailwindcss(), {
     name: 'validate-mobile-origin',
@@ -78,7 +86,9 @@ export default defineConfig(({ mode }) => ({
     },
   }],
   server: {
-    port: 5173,
+    port: 4173,
+    host: '127.0.0.1',
     strictPort: true,
   },
-}));
+});
+});

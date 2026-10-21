@@ -1,3 +1,10 @@
+## 로컬 서버 환경변수·기본 포트 검증 (2026-10-21)
+
+- Vite serve에서 .env.local의 서버 전용 허용 목록을 Node process.env에 로드한다. 기존 프로세스 환경변수가 우선하며 클라이언트 envPrefix/define은 변경하지 않는다.
+- npm run dev로 127.0.0.1:4173 실행, 화면 HTTP 200과 미인증 POS API 401 확인. 설정 조회로 로컬 API 플러그인 활성화·서버 설정 존재·클라이언트 env에 서버 비밀값 키 미포함 확인.
+- npm run build 및 git diff --check 통과. 기존 청크 크기·플러그인 시간 경고 존재. 전체 기능 테스트와 실제 데이터 판매/삭제/DB 초기화 요청은 실행하지 않았다.
+- 동일 런타임 소스의 Vercel 운영 배포 dpl_9ZQ8tKScA4oLNbs2f5Vt3hbJVC5Y Ready 확인. withbooth.vercel.app 화면·서비스워커 HTTP 200/v120, 미인증 API 401 확인. 운영 DB·Blob 환경변수는 변경하지 않았다.
+
 ## PR #70 충돌 해결 검증 (2026-10-21)
 
 - npm run build 통과. 기존 500kB 초과 청크 경고가 남는다.
