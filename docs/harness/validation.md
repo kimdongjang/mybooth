@@ -1,3 +1,9 @@
+## 로고 favicon 검증 (2026-10-21)
+
+- 최신 origin/main 기반 별도 작업 트리에서 npm run build 통과(기존 500kB 청크 경고). git diff --check 통과.
+- 빌드 dist/index.html의 SVG icon 링크, dist/favicon.svg 복사, 서비스 워커 v108 앱 셸 포함 및 SVG XML 구조를 확인했다.
+- 정적 자산 변경으로 npm test 미실행. 실제 브라우저 탭의 16/32px 시각 확인, 배포 후 CACHE-01 온라인 갱신/오프라인 재방문은 미실행.
+
 ## 판매·잔여 및 미배정재고 표시 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고), 기존 재고 화면·라우트 테스트12개 통과. git diff --check 통과.
