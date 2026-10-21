@@ -942,3 +942,48 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .payment-confirm-actions .payment-confirm-ok:hover{border-color:#4096ff;background:#4096ff;color:#fff}
 .payment-confirm-actions button:focus-visible{outline:2px solid #91caff;outline-offset:2px}
 .payment-confirm-actions button:disabled{opacity:.5;cursor:not-allowed}
+
+/* Mobile event product details: compact image beside common product fields. */
+@media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
+  .event-product-detail .event-product-identity { flex-direction:row; align-items:center; flex-wrap:nowrap; gap:6px; flex-basis:100%; width:100%; }
+  .event-product-detail .event-product-meta { display:contents; }
+  .event-product-detail .event-product-tag { flex:none; padding:4px 5px; font-size:10px; white-space:nowrap; }
+  .event-product-detail .event-product-identity h3 { flex:1; min-width:0; font-size:14px; overflow-wrap:anywhere; }
+  .event-product-detail .management-product-body { grid-template-columns:88px minmax(0,1fr); align-items:start; gap:16px 12px; padding:12px; }
+  .event-product-detail .management-image { grid-column:1; grid-row:1; width:88px; justify-self:start; }
+  .event-product-detail .management-image .product-image { width:88px; max-width:100%; margin-inline:0; }
+  .event-product-detail .management-image :is(.product-image-upload,.product-image-remove) { min-height:32px; padding:4px; font-size:11px; line-height:1.5; }
+  .event-product-detail .management-product-body > .management-details { display:contents; }
+  .event-product-detail .management-product-body > .management-details > form { grid-column:2; grid-row:1; }
+  .event-product-detail .management-fields { grid-template-columns:minmax(0,1fr); }
+  .event-product-detail .event-inventory-controls { grid-column:1 / -1; grid-row:2; margin-top:0; }
+}
+
+/* Match mobile event and shared inventory product editing. */
+@media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
+  .event-product-detail .management-fields input,
+  .inventory-page .management-details .management-fields input { font-size:10pt; }
+  .event-product-detail .inventory-detail-actions :is(button,a.management-back),
+  .inventory-page .inventory-detail-actions :is(button,a.management-back) { padding-top:4px; padding-bottom:4px; min-height:32px; }
+  .inventory-page .management-product-body { grid-template-columns:88px minmax(0,1fr); align-items:start; gap:16px 12px; padding:12px; }
+  .inventory-page .management-image { display:block; grid-column:1; grid-row:1; width:88px; justify-self:start; }
+  .inventory-page .management-image .product-image { width:88px; max-width:100%; margin-inline:0; }
+  .inventory-page .management-image :is(.product-image-upload,.product-image-remove) { min-height:32px; padding:4px; font-size:11px; line-height:1.5; }
+  .inventory-page .management-image .product-image-upload { margin-top:10px; }
+  .inventory-page .management-image .product-image-remove { margin-top:8px; }
+  .inventory-page .management-product-body > .management-details { display:grid; grid-column:2; grid-row:1; }
+  .inventory-page .management-details .management-fields { grid-template-columns:minmax(0,1fr); }
+}
+
+@media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
+  .event-product-detail .event-inventory-grid .management-field { grid-template-rows:minmax(32px,auto) auto; align-content:start; }
+  .event-product-detail .event-inventory-grid .management-field > span,
+  .event-product-detail .event-inventory-grid .management-quantity { padding-left:8px; text-align:left; }
+  .inventory-page .inventory-detail-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .inventory-page .inventory-detail-actions button { width:100%; }
+}
+.registration-date-form{padding:10px;border-top:1px solid #e2e8f0}
+.registration-date-form legend{font-size:14px;font-weight:600;margin-bottom:8px}
+.registration-date-controls{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+.registration-date-controls input{width:100%;min-width:0;border:1px solid #cbd5e1;padding:6px;border-radius:6px}
+.registration-date-controls button{min-height:36px;padding:4px 10px}

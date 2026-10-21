@@ -728,3 +728,16 @@ test('inventory images validate account/item paths, propagate and preserve stock
   assert.equal(removed.body.inventory[0].remainingStock,5);
  } finally {await db.close();}
 });
+
+test('inventory registration date edits validate ownership, version and calendar while preserving stock',async()=>{
+ const {db,invoke}=await fixture();try{
+ const event=(await invoke('createProject',null,{name:'날짜'})).body.project.id;
+ await invoke('createEventProduct',null,{projectId:event,product:{id:'date',name:'날짜상품',goodsType:'키링',vtuberName:'',creatorName:'',genre:'',price:0,stockQty:10}});
+ const before=(await invoke('listInventory')).body.inventory[0];const body={inventoryId:before.id,version:before.version,date:'2024-02-29'};
+ assert.equal((await invoke('updateInventoryRegistrationDate',null,body,'b')).status,404);
+ for(const date of ['2025-02-29','2026-04-31','','0000-01-01'])assert.equal((await invoke('updateInventoryRegistrationDate',null,{...body,date})).status,400);
+ const result=await invoke('updateInventoryRegistrationDate',null,body);assert.equal(result.status,200);
+ const after=result.body.inventory[0];assert.equal(after.createdAt,'2024-02-29T00:00:00.000Z');assert.equal(after.version,before.version+1);assert.equal(after.remainingStock,before.remainingStock);assert.equal(after.totalReceived,before.totalReceived);assert.deepEqual(after.allocations,before.allocations);assert.deepEqual(after.history,before.history);
+ assert.equal((await invoke('updateInventoryRegistrationDate',null,body)).status,409);
+ }finally{await db.close();}
+});

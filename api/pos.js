@@ -261,6 +261,13 @@ function inventoryInteger(value, minimum = 0) {
   return value;
 }
 
+function registrationDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value < '0001-01-01') throw Object.assign(new Error('올바른 등록일을 입력해주세요.'), { status: 400 });
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw Object.assign(new Error('올바른 등록일을 입력해주세요.'), { status: 400 });
+  return date.toISOString();
+}
+
 async function syncCommonProduct(adminId, inventoryId, product) {
   await sql`UPDATE pos_products p SET name=${product.name},goods_type=${product.goodsType || product.name},vtuber_name=${product.vtuberName || ''},creator_name=${product.creatorName || ''},genre=${product.genre || ''},image_url=${product.imageUrl || null},updated_at=NOW()
     FROM pos_inventory_links l WHERE l.admin_id=${adminId} AND l.inventory_id=${inventoryId} AND p.project_id=l.project_id AND p.id=l.product_id`;
@@ -273,11 +280,12 @@ async function inventoryAction(adminId, action, payload) {
   // also take their existing project lock. Serialization failures return 409.
   await sql`SELECT id FROM pos_admins WHERE id = ${adminId} FOR UPDATE`;
   await sql`SELECT id FROM pos_projects WHERE admin_id=${adminId} ORDER BY id FOR UPDATE`;
-  if (action === 'removeInventory') {
+  if (['removeInventory', 'updateInventoryRegistrationDate'].includes(action)) {
     if (typeof payload.inventoryId !== 'string' || !payload.inventoryId || payload.inventoryId.length > 500) throw Object.assign(new Error('올바른 재고 상품을 선택해주세요.'), { status: 400 });
     const row = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${payload.inventoryId}`).rows[0];
     if (!row) throw Object.assign(new Error('재고를 찾을 수 없습니다.'), { status: 404 });
-    if (row.product.removedAt) return inventoryState(adminId);
+    if (action === 'removeInventory' && row.product.removedAt) return inventoryState(adminId);
+    if (row.product.removedAt) throw Object.assign(new Error('제거된 재고입니다.'), { status: 409 });
     if (row.version !== payload.version) throw Object.assign(new Error('재고가 변경되었습니다. 최신 정보를 불러와주세요.'), { status: 409 });
     if (action === 'removeInventory') {
       const active = await sql`SELECT p.id FROM pos_inventory_links l
@@ -287,7 +295,7 @@ async function inventoryAction(adminId, action, payload) {
           AND e.archived_at IS NULL AND COALESCE(p.is_active, TRUE)=TRUE`;
       if (active.rows.length) throw Object.assign(new Error('활성 행사에 등록된 상품이 있습니다. 아래 행사 상품 관리에서 먼저 제거한 뒤 재고 상품을 삭제해주세요.'), { status: 409 });
     }
-    const product = { ...row.product, removedAt: new Date().toISOString() };
+    const product = { ...row.product, ...(action === 'removeInventory' ? { removedAt: new Date().toISOString() } : { createdAt: registrationDate(payload.date) }) };
     await sql`UPDATE pos_inventory SET product=${JSON.stringify(product)}::jsonb,version=version+1 WHERE admin_id=${adminId} AND id=${payload.inventoryId}`;
     return inventoryState(adminId);
   }
@@ -767,7 +775,7 @@ async function handler(req, res) {
       const linked = (await sql`SELECT inventory_id FROM pos_inventory_links WHERE admin_id=${admin.id} AND project_id=${req.body.projectId || payload.projectId} AND product_id=${payload.productId}`).rows[0];
       if (linked) return res.status(200).json(await inventoryAction(admin.id, 'saveCommonProductImage', { ...payload, projectId: req.body.projectId || payload.projectId, dataRevision: req.body.dataRevision ?? payload.dataRevision }));
     }
-    if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct', 'saveEventProduct', 'removeInventory'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
+    if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct', 'saveEventProduct', 'removeInventory', 'updateInventoryRegistrationDate'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
     if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
     if (action === 'restoreProject') {
       if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });

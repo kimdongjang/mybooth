@@ -133,7 +133,7 @@ function ProductSettingsPanel({ adminId, inventoryApi, dataRevision, projectName
 
     </>}
     {selectedProduct && <fieldset disabled={readOnly} className="min-w-0"><div className="management-products">
-      {[selectedProduct].map((p) => <article className="management-product" key={p.id}>
+      {[selectedProduct].map((p) => <article className="management-product event-product-detail" key={p.id}>
         <div className="management-product-header inventory-detail-header">
           <div className="inventory-detail-identity event-product-identity"><div className="event-product-meta"><span className="event-product-tag">{p.saleNumber || sortedProducts.findIndex(product=>product.id===p.id)+1}번 상품</span><span className="event-product-tag event-product-code mono">{p.productNumber || p.productCode || p.id}</span></div><h3 ref={detailHeading} tabIndex={-1}>{productNameWithoutCreator(p)}</h3></div>
           <div className="inventory-detail-actions">{p.inventoryId && <a className="management-back" href={`#/inventory/${encodeURIComponent(p.inventoryId)}`}>공통 재고 상세에서 수량 관리 →</a>}<button type="submit" form="event-product-edit-form" className="management-add" disabled={readOnly || saving || uploadingId !== null}>수정</button><button type="button" className="inventory-delete-button" disabled={readOnly || saving || uploadingId !== null} aria-label={`${p.name} 상품 제거`} onClick={() => deleteProduct(p.id)}>상품 삭제</button></div>
