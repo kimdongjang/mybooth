@@ -916,3 +916,14 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .inventory-page .inventory-allocation-table th:not(:first-child) { width:15%; }
   .inventory-page .inventory-allocation-table input { width:80px; max-width:100%; padding-inline:6px; }
 }
+
+/* Reset stays beside the disclosure, outside its interactive summary. */
+.inventory-filter-section { position:relative; }
+.inventory-filter-section .inventory-filters > summary { padding-right:150px; max-width:100%; }
+.inventory-filter-section .inventory-search-reset { position:absolute; right:0; top:0; min-height:40px; }
+.inventory-list-content .inventory-search :is(label,summary,select,input,button) { font-size:calc(13px + 1pt); }
+.inventory-filter-grid input[type=date] { width:100%; min-width:0; min-height:40px; border:1px solid #cbd5e1; border-radius:8px; background:white; padding:6px; }
+@media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
+  .inventory-list-content .inventory-search :is(label,summary,select,input,button) { font-size:calc(11px + 1pt); }
+  .inventory-filter-section .inventory-search-reset, .inventory-filter-grid input[type=date] { min-height:44px; }
+}

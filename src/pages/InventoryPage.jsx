@@ -7,7 +7,7 @@ import { Input, ProductImage } from '../components/PosUI';
 import { filterInventory } from '../utils/inventorySearch';
 import { won } from '../utils/productDisplay';
 
-const emptySearch = () => ({ stock: 'all', product: '', creatorExact: '', goodsType: '', genre: '', event: '' });
+const emptySearch = () => ({ registeredDate: '', product: '', creatorExact: '', goodsType: '', genre: '', event: '' });
 const dateLabel = value => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\s/g, '') : '—';
 const empty = () => ({ id: crypto.randomUUID(), version: -1, name: '', goodsType: '', vtuberName: '', creatorName: '', genre: '', stock: 0 });
 
@@ -37,7 +37,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
   const [query, setQuery] = useState('');
   const optionsFor = key => [...new Set(items.map(item => item[key] || '미지정'))].sort((a, b) => a.localeCompare(b, 'ko'));
   const events = [...new Map(items.flatMap(item => (item.allocations || []).map(row => [String(row.project_id), row.event_name]))).entries()].sort((a, b) => a[1].localeCompare(b[1], 'ko'));
-  const filterCount = ['stock', 'event', 'creatorExact', 'goodsType', 'genre'].filter(key => search[key] && search[key] !== 'all').length;
+  const filterCount = ['registeredDate', 'event', 'creatorExact', 'goodsType', 'genre'].filter(key => search[key] && search[key] !== 'all').length;
   const filteredItems = filterInventory(items, search);
   const changeSearch = next => { setSearch(next); setPage(1); };
   const changeDraft = (key, value) => setDraft(current => ({ ...current, [key]: key === 'stock' ? (value === '' ? '' : Number(value)) : value }));
@@ -179,10 +179,10 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
             <label className="inventory-query"><span className="sr-only">상품명·캐릭터·장르·굿즈 종류 통합 검색</span><input type="search" placeholder="상품명·캐릭터·장르·굿즈 종류" value={query} onChange={event => setQuery(event.target.value)} /></label>
             <button className="inventory-search-button" type="submit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>검색</button>
           </div>
-          <details className="inventory-filters"><summary>상세 조건 추가{filterCount > 0 && <span className="inventory-filter-count">{filterCount}</span>}</summary>
+          <div className="inventory-filter-section"><details className="inventory-filters"><summary>상세 조건 추가{filterCount > 0 && <span className="inventory-filter-count">{filterCount}</span>}</summary>
             <div className="inventory-filter-grid">
+              <label><span>등록 날짜</span><input type="date" aria-label="등록 날짜" value={search.registeredDate} onChange={event => changeSearch({ ...search, registeredDate: event.target.value })} /></label>
               {[
-                ['stock', '재고 상태', [['available', '남은재고 있음'], ['empty', '남은재고 없음']]],
                 ['event', '등록된 행사', events],
                 ['creatorExact', '제작자', optionsFor('creatorName').map(value => [value, value])],
                 ['goodsType', '굿즈 종류', optionsFor('goodsType').map(value => [value, value])],
@@ -191,6 +191,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
             </div>
           </details>
           {(search.product || filterCount > 0 || query) && <button type="button" className="inventory-search-reset" onClick={() => { setQuery(''); changeSearch(emptySearch()); }}>검색 조건 초기화</button>}
+          </div>
         </form>
         <div className="inventory-table-actions"><button type="button" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
