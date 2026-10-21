@@ -1,3 +1,7 @@
+## SNS 공유 소개 문구 (2026-10-21)
+
+Vite index.html의 정적 head에 description/Open Graph/Twitter summary 메타 태그를 추가한다. 공유 제목은 함께 만드는 부스, 판매 관리는 가볍게.,설명은 행사별 상품과 판매 내역을 한곳에서 관리하세요.로 구성한다. og:url은 운영 루트 https://my-booths.vercel.app/이다. 해시 경로는 크롤러 HTTP 요청에 전달되지 않으므로 로그인 포함 앱 링크에 동일한 기본 소개를 사용한다. 공유 이미지 추가는 범위 밖이며 줄바꿈/노출 형식은 SNS가 결정한다. 캐시 v115.
+
 ## PR #68 통합·favicon (2026-10-21)
 
 최신 main의 결제 확인 모달과 재고 검색/상세 스타일·문서를 모두 보존하여 통합한다. PR #67의 파란 원/흰색 My SVG favicon을 public/favicon.svg에 동일하게 포함하고 Vite index.html에서 참조한다. 서비스 워커 v114의 앱 셸에 추가해 오프라인 재방문을 지원한다. 별도 pos.html/Android 런처 아이콘은 범위 밖이다.

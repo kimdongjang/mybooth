@@ -1,3 +1,8 @@
+## SNS 공유 소개 메타 검증 (2026-10-21)
+
+- npm run build 통과(기존500kB 청크 경고). 빌드 HTML 파싱으로 description/OG/Twitter 제목·설명·운영 URL과 중복 메타 없음 확인. git diff --check 통과.
+- 정적 head/캐시만 변경하여 npm test 미실행. 운영 URL은 조회 도구에서 접근 실패. 실제 SNS 공유 미리보기·기존 SNS 캐시 갱신 및 배포 CACHE-01 미실행. 배포 후 플랫폼 캐시 갱신이 필요할 수 있다.
+
 ## PR #68 충돌 해결·favicon 통합 검증 (2026-10-21)
 
 - origin/main의 결제 확인 모달과 재고 변경을 모두 유지해 CSS/문서 충돌을 해결하고 캐시를 v114로 통합. npm run build 통과(기존500kB 청크 경고). git diff --check 및 충돌 마커 검사 통과.
