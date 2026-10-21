@@ -216,7 +216,6 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         </div>
         <div className="management-product-body">
           <div className="management-image">
-            <label className="management-field product-name-field"><span>상품 이름</span><Input form="inventory-product-form" required maxLength={200} value={draft.name} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('name', value)} /></label>
             <ProductImage imageUrl={preview || draft.imageUrl} name={draft.name} />
             <label className="management-upload product-image-upload"><span>{preparing ? '이미지 축소 중…' : image || draft.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label="상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
             {(image || draft.imageUrl) && <button type="button" className="product-image-remove" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => { setImage(null); uploadedImage.current = null; changeDraft('imageUrl', null); }}>이미지 제거</button>}
