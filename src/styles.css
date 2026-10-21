@@ -690,7 +690,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 
 .inventory-management-table th:first-child{width:40%}.inventory-management-table th:not(:first-child){width:20%}
 .inventory-creator{display:block;margin-top:4px;font-size:12px;color:#64748b;font-weight:400}
-.inventory-stock-summary{margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:14px}
+.inventory-stock-summary{margin:0;padding:0;border:0;font-size:14px}
 @media (max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){.inventory-management-table :is(th,td){padding:10px 6px;font-size:12px}.inventory-creator{font-size:11px}}
 
 /* Compact four-column inventory list; keep all columns visible on narrow phones. */
@@ -732,7 +732,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
  .inventory-filter-grid select{min-height:44px;font-size:16px}
  .inventory-filters summary{min-height:44px}
 }
-.inventory-history{padding:20px;border-top:1px solid #e2e8f0}.inventory-history h4{font-size:15px;font-weight:700;margin-bottom:8px}
+.inventory-history{padding:10px;border-top:1px solid #e2e8f0}.inventory-history h4{font-size:15px;font-weight:700;margin-bottom:8px}
 
 .product-removal-notice{margin:16px 0;padding:16px;border:1px solid #93c5fd;border-radius:12px;background:#eff6ff;color:#1e3a8a;overflow-wrap:anywhere}
 .product-removal-notice h3{font-weight:700;margin-bottom:8px}
@@ -873,25 +873,60 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .inventory-page-header { margin-inline:-16px; padding-inline:16px; gap:8px; }
 }
 
-/* Mobile inventory: image/name halves, followed by equal image action buttons. */
+/* Mobile inventory: image left, name and stacked image actions right. */
 @media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
-  .inventory-page .management-product-body { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:16px 12px; }
-  .inventory-page .management-image,
-  .inventory-page .management-product-body > .management-details,
-  .inventory-page .management-details > fieldset,
-  .inventory-page .management-details > fieldset > .management-fields { display:contents; }
-  .inventory-page .management-image > .product-image { grid-column:1; grid-row:1; align-self:start; }
-  .inventory-page .management-details .product-name-field { grid-column:2; grid-row:1; align-self:center; }
+  .inventory-page .inventory-allocation-heading { row-gap:0; }
+  .inventory-page .inventory-allocation-heading .inventory-stock-summary { margin-top:0; padding-top:0; border-top:0; }
+  .inventory-page .management-product-body { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:12px; }
+  .inventory-page .management-image { display:contents; }
+  .inventory-page .management-image > .product-image { grid-column:1; grid-row:1 / span 3; align-self:start; }
+  .inventory-page .management-image .product-name-field { grid-column:2; grid-row:1; align-self:start; }
   .inventory-page .management-image > :is(.product-image-upload,.product-image-remove) { width:100%; min-width:0; margin:0; min-height:44px; text-align:center; }
-  .inventory-page .management-image > .product-image-upload { grid-column:1; grid-row:2; }
-  .inventory-page .management-image > .product-image-remove { grid-column:2; grid-row:2; }
-  .inventory-page .management-details > fieldset > legend { grid-column:1 / -1; grid-row:3; width:100%; margin:4px 0 0; padding-top:20px; border-top:1px solid #e2e8f0; }
-  .inventory-page .management-details .management-field:not(.product-name-field) { grid-column:1 / -1; }
+  .inventory-page .management-image > .product-image-upload { grid-column:2; grid-row:2; }
+  .inventory-page .management-image > .product-image-remove { grid-column:2; grid-row:3; }
+  .inventory-page .management-product-body > .management-details { grid-column:1 / -1; }
+  .inventory-page .management-details .management-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+
 }
 
 .inventory-stock-summary{display:flex;align-items:center;gap:16px;flex-wrap:wrap;min-width:0}
 .inventory-stock-summary .inventory-readonly-quantity{min-height:42px;display:inline-flex;align-items:center}
 .inventory-list-content .inventory-management-table td:nth-child(3) .inventory-cell-main{white-space:normal;overflow:visible;text-overflow:clip}
+
+/* Keep the mobile inventory identity and actions on one line. */
+@media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
+  .inventory-page .inventory-detail-header { flex-wrap:nowrap; gap:6px; padding:10px; }
+  .inventory-page .inventory-detail-identity { flex:1 1 0; gap:6px; }
+  .inventory-page .inventory-product-code { flex:none; max-width:none; white-space:nowrap; font-size:10px; padding:4px; }
+  .inventory-page .inventory-detail-identity h3 { flex:1; font-size:13px; line-height:1.4; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
+  .inventory-page .inventory-detail-actions { flex:none; gap:4px; }
+  .inventory-page .inventory-detail-actions button { min-height:30px; padding:4px 6px; font-size:12px; line-height:1.4; white-space:nowrap; }
+  .inventory-page .inventory-allocation-table th:first-child { width:46%; }
+  .inventory-page .inventory-allocation-table th:not(:first-child) { width:18%; }
+  .inventory-page .inventory-allocation-table :is(th,td) { padding-inline:4px; overflow-wrap:anywhere; }
+  .inventory-page .inventory-allocation-table input { padding-inline:4px; }
+  .inventory-page .inventory-allocation-table .inventory-readonly-quantity { max-width:100%; padding-inline:4px; }
+}
+.inventory-page .management-image > .product-name-field { margin-bottom:10px; }
+.inventory-page .inventory-registration-date output { font-size:14px; }
+.inventory-page .inventory-allocation-heading { justify-content:space-between; width:100%; }
+.inventory-page .inventory-allocation-heading > .inventory-stock-summary { margin-left:auto; }
+@media (min-width:768px) and (hover:hover), (min-width:1200px) {
+  .inventory-page .inventory-allocation-table th:first-child { width:55%; }
+  .inventory-page .inventory-allocation-table th:not(:first-child) { width:15%; }
+  .inventory-page .inventory-allocation-table input { width:80px; max-width:100%; padding-inline:6px; }
+}
+
+/* Reset stays beside the disclosure, outside its interactive summary. */
+.inventory-filter-section { position:relative; }
+.inventory-filter-section .inventory-filters > summary { padding-right:150px; max-width:100%; }
+.inventory-filter-section .inventory-search-reset { position:absolute; right:0; top:0; min-height:40px; }
+.inventory-list-content .inventory-search :is(label,summary,select,input,button) { font-size:calc(13px + 1pt); }
+.inventory-filter-grid input[type=date] { width:100%; min-width:0; min-height:40px; border:1px solid #cbd5e1; border-radius:8px; background:white; padding:6px; }
+@media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
+  .inventory-list-content .inventory-search :is(label,summary,select,input,button) { font-size:calc(11px + 1pt); }
+  .inventory-filter-section .inventory-search-reset, .inventory-filter-grid input[type=date] { min-height:44px; }
+}
 
 /* Ant Design confirmation dialog appearance with native modal focus handling. */
 .payment-confirm-dialog{width:min(416px,calc(100vw - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:24px;border:0;border-radius:8px;background:#fff;color:#000000e0;box-shadow:0 6px 16px #00000014,0 3px 6px -4px #0000001f,0 9px 28px 8px #0000000d;overflow:auto}

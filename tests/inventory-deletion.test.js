@@ -125,11 +125,11 @@ test('inventory saves common fields and the allocation plan together, with alert
   assert.equal(nodes(tree).some(node => node.props?.label === '누적 입고 수량'), false);
   assert.equal(nodes(tree).some(node => node.props?.['aria-label'] === '창고 보관 수량'), false);
   assert.equal(nodes(tree).some(node => node.props?.children === '배정·회수할 행사'), false);
-  nodes(tree).find(node => node.props?.['aria-label'] === '총재고').props.onChange('12');
+  assert.equal(nodes(tree).find(node => node.props?.['aria-label'] === '총재고').type, 'output');
   nodes(h.render()).find(node => node.props?.['aria-label'] === '행사 배정 수량').props.onChange('7');
   await nodes(h.render()).find(node => node.type === 'form' && node.props.id === 'inventory-product-form').props.onSubmit({ preventDefault() {} });
   const plan = h.calls.find(call => call.action === 'saveInventory').payload.allocationPlan;
-  assert.equal(plan.totalStock, 12);
+  assert.equal(plan.totalStock, 10);
   assert.equal(plan.allocations[0].quantity, 7);
   assert.equal(plan.allocations[0].stock, 6);
   assert.equal(plan.allocations[0].initialStock, 6);
@@ -140,7 +140,7 @@ test('inventory saves common fields and the allocation plan together, with alert
 
 test('allocation total overflow blocks saving before sending a mutation', async () => {
   const h = await harness([{ project_id: 'event', product_id: 'goods', event_name: '행사', initial_stock: 6, stock: 6 }]);
-  nodes(h.render()).find(node => node.props?.['aria-label'] === '총재고').props.onChange('5');
+  nodes(h.render()).find(node => node.props?.['aria-label'] === '행사 배정 수량').props.onChange('2147483647');
   await nodes(h.render()).find(node => node.type === 'form' && node.props.id === 'inventory-product-form').props.onSubmit({ preventDefault() {} });
   assert.equal(h.calls.some(call => call.action === 'saveInventory'), false);
   assert.ok(nodes(h.render()).find(node => node.props?.role === 'alert'));

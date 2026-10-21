@@ -7,7 +7,7 @@ import { Input, ProductImage } from '../components/PosUI';
 import { filterInventory } from '../utils/inventorySearch';
 import { won } from '../utils/productDisplay';
 
-const emptySearch = () => ({ stock: 'all', product: '', creatorExact: '', goodsType: '', genre: '', event: '' });
+const emptySearch = () => ({ registeredDate: '', product: '', creatorExact: '', goodsType: '', genre: '', event: '' });
 const dateLabel = value => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\s/g, '') : '—';
 const empty = () => ({ id: crypto.randomUUID(), version: -1, name: '', goodsType: '', vtuberName: '', creatorName: '', genre: '', stock: 0 });
 
@@ -37,7 +37,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
   const [query, setQuery] = useState('');
   const optionsFor = key => [...new Set(items.map(item => item[key] || '미지정'))].sort((a, b) => a.localeCompare(b, 'ko'));
   const events = [...new Map(items.flatMap(item => (item.allocations || []).map(row => [String(row.project_id), row.event_name]))).entries()].sort((a, b) => a[1].localeCompare(b[1], 'ko'));
-  const filterCount = ['stock', 'event', 'creatorExact', 'goodsType', 'genre'].filter(key => search[key] && search[key] !== 'all').length;
+  const filterCount = ['registeredDate', 'event', 'creatorExact', 'goodsType', 'genre'].filter(key => search[key] && search[key] !== 'all').length;
   const filteredItems = filterInventory(items, search);
   const changeSearch = next => { setSearch(next); setPage(1); };
   const changeDraft = (key, value) => setDraft(current => ({ ...current, [key]: key === 'stock' ? (value === '' ? '' : Number(value)) : value }));
@@ -179,10 +179,10 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
             <label className="inventory-query"><span className="sr-only">상품명·캐릭터·장르·굿즈 종류 통합 검색</span><input type="search" placeholder="상품명·캐릭터·장르·굿즈 종류" value={query} onChange={event => setQuery(event.target.value)} /></label>
             <button className="inventory-search-button" type="submit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>검색</button>
           </div>
-          <details className="inventory-filters"><summary>상세 조건 추가{filterCount > 0 && <span className="inventory-filter-count">{filterCount}</span>}</summary>
+          <div className="inventory-filter-section"><details className="inventory-filters"><summary>상세 조건 추가{filterCount > 0 && <span className="inventory-filter-count">{filterCount}</span>}</summary>
             <div className="inventory-filter-grid">
+              <label><span>등록 날짜</span><input type="date" aria-label="등록 날짜" value={search.registeredDate} onChange={event => changeSearch({ ...search, registeredDate: event.target.value })} /></label>
               {[
-                ['stock', '재고 상태', [['available', '남은재고 있음'], ['empty', '남은재고 없음']]],
                 ['event', '등록된 행사', events],
                 ['creatorExact', '제작자', optionsFor('creatorName').map(value => [value, value])],
                 ['goodsType', '굿즈 종류', optionsFor('goodsType').map(value => [value, value])],
@@ -191,6 +191,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
             </div>
           </details>
           {(search.product || filterCount > 0 || query) && <button type="button" className="inventory-search-reset" onClick={() => { setQuery(''); changeSearch(emptySearch()); }}>검색 조건 초기화</button>}
+          </div>
         </form>
         <div className="inventory-table-actions"><button type="button" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
@@ -199,7 +200,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
           <tbody>{filteredItems.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
             <td><a className="management-name-link inventory-cell-main" href={`#/inventory/${encodeURIComponent(item.id)}`} aria-label={`${item.name} 재고 상세보기`} title={item.name} onClick={event => open(event,item)}>{item.name}</a><small className="inventory-cell-sub" title={item.creatorName || '미지정'}>{item.creatorName || '미지정'}</small></td>
             <td><span className="inventory-cell-main" title={item.vtuberName || ''}>{item.vtuberName || '—'}</span><small className="inventory-cell-sub" title={item.genre || ''}>{item.genre || '—'}</small></td>
-            <td className="mono"><span className="inventory-cell-main">판매 {won((item.history || []).reduce((sum, row) => sum + Number(row.soldQty || 0), 0))}개 잔여 {won(item.remainingStock)}개</span><small className="inventory-cell-sub">총재고 {won(item.totalStock)}개</small></td>
+            <td className="mono"><span className="inventory-cell-main">판매 {won((item.history || []).reduce((sum, row) => sum + Number(row.soldQty || 0), 0))}개 / 잔여 {won(item.remainingStock)}개</span><small className="inventory-cell-sub">총재고 {won(item.totalStock)}개</small></td>
             <td>{dateLabel(item.createdAt)}</td>
           </tr>)}</tbody>
         </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}{ready && items.length > 0 && !filteredItems.length && <p className="catalog-empty">검색 조건에 맞는 재고가 없습니다.</p>}</div>
@@ -215,17 +216,19 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         </div>
         <div className="management-product-body">
           <div className="management-image">
+            <label className="management-field product-name-field"><span>상품 이름</span><Input form="inventory-product-form" required maxLength={200} value={draft.name} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('name', value)} /></label>
             <ProductImage imageUrl={preview || draft.imageUrl} name={draft.name} />
             <label className="management-upload product-image-upload"><span>{preparing ? '이미지 축소 중…' : image || draft.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label="상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
             {(image || draft.imageUrl) && <button type="button" className="product-image-remove" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => { setImage(null); uploadedImage.current = null; changeDraft('imageUrl', null); }}>이미지 제거</button>}
           </div>
           <form id="inventory-product-form" onSubmit={save} className="management-details">
             <InventoryProductFields draft={draft} products={items} onChange={changeDraft} disabled={busy || preparing || uncertain || pendingMoves || !ready} />
+            {view === 'detail' && <div className="management-field inventory-registration-date"><span>상품 등록 일자</span><output>{dateLabel(draft.createdAt)}</output></div>}
             {view === 'new' && <label className="management-field"><span>최초 입고 수량</span><Input aria-label="최초 입고 수량" required type="number" min="0" max="2147483647" step="1" value={draft.stock} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('stock', value)} /></label>}
           </form>
         </div>
         {view === 'detail' && <section className="inventory-history">
-          <div className="inventory-allocation-heading"><h4>행사별 재고 배정 관리</h4><div className="inventory-stock-summary"><label className="management-field"><span>총재고</span><div className="inventory-quantity-input"><Input form="inventory-product-form" aria-label="총재고" required type="number" min="0" max="2147483647" step="1" value={totalStock} disabled={busy || uncertain || pendingMoves} onChange={value => changeDraft('totalStock', value === '' ? '' : Number(value))} /><span>개</span></div></label><div className="management-field"><span>미배정재고</span><output className="inventory-readonly-quantity" aria-label="미배정재고">{won(Number(totalStock) - allocationSum)}개</output></div></div></div>
+          <div className="inventory-allocation-heading"><h4>행사별 재고 배정 관리</h4><div className="inventory-stock-summary"><div className="management-field"><span>총재고</span><output className="inventory-readonly-quantity" aria-label="총재고">{won(totalStock)}개</output></div><div className="management-field"><span>미배정재고</span><output className="inventory-readonly-quantity" aria-label="미배정재고">{won(Number(totalStock) - allocationSum)}개</output></div></div></div>
           {allocationError && <p role="alert" className="inventory-error">{allocationError}</p>}
           <div className="management-table-wrap"><table className="management-table inventory-allocation-table"><thead><tr><th>행사</th><th>행사 배정 수량</th><th>판매 수량</th><th>남은 수량</th></tr></thead><tbody>{allocationRows.map(row => {
             const sold = savedItem?.history.find(history => history.projectId === row.project_id && history.productId === row.product_id)?.soldQty || 0;

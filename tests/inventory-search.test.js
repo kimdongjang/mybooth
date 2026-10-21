@@ -43,3 +43,10 @@ test('blank searches restore all inventory and missing creator can be searched w
   assert.equal(filterInventory(linked, { product: '동방' }).length, 1);
   assert.equal(filterInventory(linked, { stock: 'empty' }).length, 0);
 });
+
+test('registration date filter uses Korean calendar days and combines with metadata', () => {
+ const rows=[{id:'a',createdAt:'2026-10-20T15:00:00Z',genre:'게임'},{id:'b',createdAt:'2026-10-21T14:59:59Z',genre:'음악'},{id:'c',createdAt:'2026-10-21T15:00:00Z'},{id:'d'},{id:'e',createdAt:'invalid'}];
+ assert.deepEqual(filterInventory(rows,{registeredDate:'2026-10-21'}).map(row=>row.id),['a','b']);
+ assert.deepEqual(filterInventory(rows,{registeredDate:'2026-10-21',genre:'게임'}).map(row=>row.id),['a']);
+ assert.equal(filterInventory(rows,{registeredDate:''}).length,5);
+});
