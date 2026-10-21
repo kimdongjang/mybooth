@@ -1,3 +1,9 @@
+## 재고 상세 여백·모바일 이미지 버튼 검증 (2026-10-21)
+
+- 최신 origin/main 기반 별도 작업 트리에서 npm run build 통과(기존500kB 청크 경고). git diff --check 통과.
+- CSS diff로 inventory-history padding10px,모바일 배정 헤더 row-gap0 및 총재고 요약 margin/padding/border 제거,이미지 왼쪽3행·이름/등록수정/제거 오른쪽1~3행과44px 버튼을 확인했다. 데스크톱 이미지 배치는 유지한다.
+- 정적 CSS/캐시 변경으로 npm test 미실행. UI-01 실제 브라우저320/375/767px 및 터치 태블릿·이미지 유무/긴 상품명/파일 선택과 제거,배포 CACHE-01 미실행. API/DB/IndexedDB 변경 없음.
+
 ## 판매·잔여 및 미배정재고 표시 검증 (2026-10-20)
 
 - npm run build 통과(기존500kB 청크 경고), 기존 재고 화면·라우트 테스트12개 통과. git diff --check 통과.

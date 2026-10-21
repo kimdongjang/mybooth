@@ -732,7 +732,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
  .inventory-filter-grid select{min-height:44px;font-size:16px}
  .inventory-filters summary{min-height:44px}
 }
-.inventory-history{padding:20px;border-top:1px solid #e2e8f0}.inventory-history h4{font-size:15px;font-weight:700;margin-bottom:8px}
+.inventory-history{padding:10px;border-top:1px solid #e2e8f0}.inventory-history h4{font-size:15px;font-weight:700;margin-bottom:8px}
 
 .product-removal-notice{margin:16px 0;padding:16px;border:1px solid #93c5fd;border-radius:12px;background:#eff6ff;color:#1e3a8a;overflow-wrap:anywhere}
 .product-removal-notice h3{font-weight:700;margin-bottom:8px}
@@ -873,19 +873,21 @@ input, select { background: white; color: #17243b; min-height: 36px; }
   .inventory-page-header { margin-inline:-16px; padding-inline:16px; gap:8px; }
 }
 
-/* Mobile inventory: image/name halves, followed by equal image action buttons. */
+/* Mobile inventory: image left, name and stacked image actions right. */
 @media (max-width:767px), (max-width:1199px) and (hover:none) and (pointer:coarse) {
-  .inventory-page .management-product-body { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:16px 12px; }
+  .inventory-page .inventory-allocation-heading { row-gap:0; }
+  .inventory-page .inventory-allocation-heading .inventory-stock-summary { margin-top:0; padding-top:0; border-top:0; }
+  .inventory-page .management-product-body { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:12px; }
   .inventory-page .management-image,
   .inventory-page .management-product-body > .management-details,
   .inventory-page .management-details > fieldset,
   .inventory-page .management-details > fieldset > .management-fields { display:contents; }
-  .inventory-page .management-image > .product-image { grid-column:1; grid-row:1; align-self:start; }
-  .inventory-page .management-details .product-name-field { grid-column:2; grid-row:1; align-self:center; }
+  .inventory-page .management-image > .product-image { grid-column:1; grid-row:1 / span 3; align-self:start; }
+  .inventory-page .management-details .product-name-field { grid-column:2; grid-row:1; align-self:start; }
   .inventory-page .management-image > :is(.product-image-upload,.product-image-remove) { width:100%; min-width:0; margin:0; min-height:44px; text-align:center; }
-  .inventory-page .management-image > .product-image-upload { grid-column:1; grid-row:2; }
-  .inventory-page .management-image > .product-image-remove { grid-column:2; grid-row:2; }
-  .inventory-page .management-details > fieldset > legend { grid-column:1 / -1; grid-row:3; width:100%; margin:4px 0 0; padding-top:20px; border-top:1px solid #e2e8f0; }
+  .inventory-page .management-image > .product-image-upload { grid-column:2; grid-row:2; }
+  .inventory-page .management-image > .product-image-remove { grid-column:2; grid-row:3; }
+  .inventory-page .management-details > fieldset > legend { grid-column:1 / -1; grid-row:4; width:100%; margin:4px 0 0; padding-top:20px; border-top:1px solid #e2e8f0; }
   .inventory-page .management-details .management-field:not(.product-name-field) { grid-column:1 / -1; }
 }
 
