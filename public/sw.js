@@ -1,4 +1,4 @@
-const CACHE_NAME = 'booth-pos-app-v126';
+const CACHE_NAME = 'booth-pos-app-v129';
 const APP_SHELL_URLS = ['/', '/index.html', '/favicon.svg', '/fonts/PretendardVariable.woff2', '/images/default-product.svg', '/brand/withbooth-final-logo.png'];
 
 self.addEventListener('install', (event) => {
@@ -22,6 +22,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+
+  if (url.pathname.startsWith('/src/') || url.pathname.startsWith('/node_modules/') || url.pathname.startsWith('/@') || url.searchParams.has('t') || url.searchParams.has('import')) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirstWithAppShellFallback(request));

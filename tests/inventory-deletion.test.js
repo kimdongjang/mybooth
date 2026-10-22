@@ -10,12 +10,15 @@ async function harness(allocations = []) {
   const item = { id: 'original', name: '판매 이력 상품', version: 7, stock: 4, totalReceived: 10, remainingStock: 7, allocations, history: [] };
   const context = vm.createContext({ URL: { createObjectURL: () => 'blob:preview', revokeObjectURL() {} }, alert: message => alerts.push(message), crypto: { randomUUID: () => 'new' }, sessionStorage: { getItem: () => null }, confirm: message => { confirmations.push(message); return confirmed; } });
   const mocks = {
+    '../hooks/useUnsavedChanges': { useUnsavedChanges: () => () => {} },
+    '../utils/confirmAction': { confirmAction: async message => { confirmations.push(message); return confirmed; } },
     react: {
       useState: initial => { const i = stateIndex++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === 'function' ? value(states[i]) : value; }]; },
       useRef: initial => refs[refIndex++] ||= { current: initial },
       useEffect: (effect, next) => { const i = effectIndex++; if (!deps[i] || next.some((v,j) => deps[i][j] !== v)) { deps[i] = next; effects.push(effect); } },
     },
     'react/jsx-runtime': { Fragment: 'fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
+    '../components/RegistrationDateForm': { default:'../components/RegistrationDateForm', dateValue: value => value ? value.slice(0,10) : '' },
     '../utils/productImage': { prepareProductImage: async file => file },
     '../utils/uploadProductImage': { uploadInventoryImage: async (...args) => { uploads.push(args); return { url: 'https://test.public.blob.vercel-storage.com/inventory/a/original/image.png' }; } },
     '../utils/inventorySearch': { filterInventory: items => items },
@@ -161,7 +164,7 @@ test('inventory list uses a single breadcrumb row instead of separate page and s
  const tree=h.render();
  const breadcrumb=nodes(tree).find(node=>node.props?.className==='inventory-breadcrumb');
  assert.ok(breadcrumb);
- assert.equal(nodes(breadcrumb).find(node=>node.type==='a').props.children,'공통 상품·재고 관리');
+ assert.equal(nodes(breadcrumb).find(node=>node.type==='a').props.children,'재고관리');
  assert.equal(nodes(breadcrumb).find(node=>node.type==='h1').props.children,'재고 목록');
  assert.equal(nodes(tree).some(node=>node.type==='PageIntro'),false);
 });

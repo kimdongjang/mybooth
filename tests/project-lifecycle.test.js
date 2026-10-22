@@ -1,3 +1,6 @@
+import * as eventSettlement from '../api/lib/eventSettlement.js';
+import * as accountInventory from '../api/lib/accountInventory.js';
+import { hashPassword } from '../api/lib/auth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -19,10 +22,11 @@ async function fixture() {
   await module.link(specifier => {
     const exports = specifier === '@vercel/postgres' ? { sql: { connect: async () => ({ sql, query: query => { statements.push(query); return db.query(query); }, release() {} }) } }
       : specifier === './lib/auth.js' ? {
+        hashPassword,
         assertPostgresConnectionString() {},
         requireAuth(req, res) { if (req.adminId) return { id: req.adminId }; res.status(401).json({ error: 'Unauthorized' }); return null; },
         validateAdminPassword: async (_id, password) => password === 'test-password',
-      } : defaults;
+      } : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
     }, { context });
@@ -68,7 +72,7 @@ test('custom product name survives catalog saves and stock edits while historica
 test('password-protected archive/unarchive locks every mutation and preserves settlement', async () => {
   const { db, id, invoke, statements } = await fixture();
   try {
-    for (const action of ['archiveProject', 'unarchiveProject', 'duplicateProject', 'backupProject', 'renameProject']) {
+    for (const action of ['archiveProject', 'unarchiveProject', 'duplicateProject', 'renameProject']) {
       assert.equal((await invoke(action, id, { name: 'copy' })).status, 403, action);
       assert.equal((await invoke(action, id, { password: 'test-password', name: 'copy' }, 'b')).status, 404, action);
     }
@@ -94,75 +98,45 @@ test('password-protected archive/unarchive locks every mutation and preserves se
   } finally { await db.close(); }
 });
 
-test('duplicate resets stock/sales; full backup restores isolated archived project including inactive products', async () => {
-  const { db, id, invoke } = await fixture();
-  try {
-    const password = 'test-password';
-    const backupResult = await invoke('backupProject', id, { password });
-    assert.equal(backupResult.status, 200);
-    const backup = backupResult.body.backup;
-    assert.equal(backup.format, 'my-booth-project');
-    assert.equal(backup.products.length, 2);
-    assert.equal(backup.sales.length, 1);
-    assert.equal(JSON.stringify(backup).includes('test-password'), false);
-    const copy = await invoke('duplicateProject', id, { password, name: 'next event' });
-    assert.equal(copy.status, 201, JSON.stringify(copy.body));
-    assert.notEqual(copy.body.project.id, id);
-    assert.equal(copy.body.project.archivedAt, null);
-    const copied = (await db.query('SELECT * FROM pos_products WHERE project_id = $1 ORDER BY id', [copy.body.project.id])).rows;
-    assert.equal(copied.length, 2);
-    assert.ok(copied.every(p => p.stock === 0 && p.stock_qty === 0 && p.initial_stock_qty === 0));
-    assert.equal(copied[0].price, 0);
-    assert.equal(copied[0].image_url, backup.products[0].image_url);
-    assert.equal((await invoke(null, copy.body.project.id)).body.sales.length, 0);
-    assert.equal((await invoke(null, copy.body.project.id)).body.bundles[0].items[0].qty, 2);
-    assert.equal((await invoke('restoreProject', null, { name: 'restored', backup })).status, 403);
-    // A file cannot choose an existing project or a different owner.
-    backup.project.id = id; backup.project.admin_id = 'a';
-    const restored = await invoke('restoreProject', null, { password, name: 'restored', backup }, 'b');
-    assert.equal(restored.status, 201, JSON.stringify(restored.body));
-    const restoredId = restored.body.project.id;
-    assert.notEqual(restoredId, id);
-    assert.ok(restored.body.project.archivedAt);
-    assert.equal((await db.query('SELECT admin_id FROM pos_projects WHERE id = $1', [restoredId])).rows[0].admin_id, 'b');
-    const reexport = (await invoke('backupProject', restoredId, { password }, 'b')).body.backup;
-    for (const key of ['products', 'bundles', 'sales']) {
-      const withoutScope = rows => rows.map(({ project_id, ...row }) => row);
-      assert.deepEqual(withoutScope(reexport[key]), withoutScope(backup[key]));
-    }
-    assert.equal((await invoke('unarchiveProject', restoredId, { password }, 'a')).status, 404);
-    assert.equal((await invoke('unarchiveProject', restoredId, { password }, 'b')).status, 200);
-    assert.equal((await invoke(null, id)).body.products[0].stock, 7);
-  } finally { await db.close(); }
+test('account snapshot restores all data, keeps other owners and rejects tampering; duplicate resets stock', async () => {
+ const {db,id,invoke}=await fixture();
+ try {
+  const other=(await invoke('createProject',null,{name:'other'},'b')).body.project.id;
+  const result=await invoke('backupAccount');assert.equal(result.status,200,JSON.stringify(result.body));const backup=result.body.backup;
+  assert.equal(backup.data.tables.pos_products.length,2);assert.equal(backup.data.tables.pos_sales.length,1);
+  assert.equal(JSON.stringify(backup).includes('password_hash'),false);
+  const copy=await invoke('duplicateProject',id,{password:'test-password',name:'copy'});assert.equal(copy.status,201);
+  assert.equal((await invoke(null,copy.body.project.id)).body.products[0].stockQty,0);
+  const payload={backup,password:'test-password',requestId:crypto.randomUUID()};
+  assert.equal((await invoke('restoreAccount',null,{...payload,password:'wrong'})).status,403);
+  assert.equal((await invoke('restoreAccount',null,payload,'b')).status,400);
+  const invalid=structuredClone(backup);invalid.data.tables.pos_products[0].price=-1;
+  assert.equal((await invoke('restoreAccount',null,{...payload,backup:invalid})).status,400);
+  const restored=await invoke('restoreAccount',null,payload);assert.equal(restored.status,200,JSON.stringify(restored.body));
+  assert.equal((await invoke(null,id)).body.products[0].stockQty,7);
+  assert.equal((await invoke(null,id)).body.sales[0].total,0);
+  assert.equal((await invoke(null,other,{},'b')).status,200);
+  assert.equal((await invoke(null,copy.body.project.id)).status,500);
+  const fresh=(await invoke(null,id)).body;
+  assert.ok(fresh.dataRevision);
+  assert.equal((await invoke('finalizeSale',id,{localOrderId:'old-client',method:'cash',total:0,cart:[{type:'product',id:'p1',qty:1,unitPrice:0}]})).status,409);
+  assert.equal((await invoke('restoreAccount',null,payload)).status,200);
+  assert.equal((await invoke('backupProject',id)).status,410);assert.equal((await invoke('restoreProject',null)).status,410);
+ }finally{await db.close();}
 });
 
-test('malformed backup rejects without writes and injected restore failure rolls back the whole project', async () => {
-  const { db, id, invoke } = await fixture();
-  try {
-    const password = 'test-password';
-    const backup = (await invoke('backupProject', id, { password })).body.backup;
-    for (const edit of [b => { b.version = 2; }, b => { b.products[0].price = -1; }, b => { b.bundles[0].items[0].qty = 0.5; }, b => { b.sales[0].total = -10; }, b => { b.products.push(b.products[0]); }, b => { b.products[0].image_url = 'javascript:alert(1)'; }]) {
-      const invalid = structuredClone(backup); edit(invalid);
-      assert.equal((await invoke('restoreProject', null, { password, name: 'bad', backup: invalid })).status, 400);
-    }
-    assert.equal((await db.query('SELECT * FROM pos_projects')).rows.length, 1);
-    const oversized = structuredClone(backup);
-    oversized.project.extra = 'x'.repeat(3 * 1024 * 1024);
-    assert.equal((await invoke('restoreProject', null, { password, name: 'too large', backup: oversized })).status, 400);
-    await db.query("UPDATE pos_products SET set_description = $1 WHERE project_id = $2 AND id = 'p1'", ['x'.repeat(3 * 1024 * 1024), id]);
-    assert.equal((await invoke('backupProject', id, { password })).status, 413);
-    await db.query("UPDATE pos_products SET set_description = NULL WHERE project_id = $1 AND id = 'p1'", [id]);
-    await db.exec(`CREATE FUNCTION fail_restore() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected failure'; END $$;
-      CREATE TRIGGER reject_restored_sales BEFORE INSERT ON pos_sales FOR EACH ROW EXECUTE FUNCTION fail_restore()`);
-    const result = await invoke('restoreProject', null, { password, name: 'failed', backup });
-    assert.equal(result.status, 500);
-    assert.equal((await db.query('SELECT * FROM pos_projects')).rows.length, 1);
-    assert.equal((await db.query('SELECT * FROM pos_products')).rows.length, 2);
-    assert.equal((await db.query('SELECT * FROM pos_bundles')).rows.length, 1);
-    assert.equal((await db.query('SELECT * FROM pos_sales')).rows.length, 1);
-    await db.exec('DROP TRIGGER reject_restored_sales ON pos_sales');
-    assert.equal((await invoke('restoreProject', null, { password, name: 'retry', backup })).status, 201);
-  } finally { await db.close(); }
+test('snapshot restore failure rolls back every deletion and can retry the same request',async()=>{
+ const {db,id,invoke}=await fixture();try{
+  const backup=(await invoke('backupAccount')).body.backup;
+  await db.query("UPDATE pos_products SET stock=6,stock_qty=6 WHERE project_id=$1 AND id='p1'",[id]);
+  await db.exec("CREATE FUNCTION fail_restore() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'failure'; END $$; CREATE TRIGGER reject_restore BEFORE INSERT ON pos_sales FOR EACH ROW EXECUTE FUNCTION fail_restore()");
+  const payload={backup,password:'test-password',requestId:crypto.randomUUID()};
+  assert.equal((await invoke('restoreAccount',null,payload)).status,500);
+  assert.equal((await invoke(null,id)).body.products[0].stockQty,6);assert.equal((await invoke(null,id)).body.sales.length,1);
+  await db.exec('DROP TRIGGER reject_restore ON pos_sales');
+  const retried=await invoke('restoreAccount',null,payload);assert.equal(retried.status,200,JSON.stringify(retried.body));
+  assert.equal((await invoke(null,id)).body.products[0].stockQty,7);
+ }finally{await db.close();}
 });
 
 test('sale failure rolls back stock and unauthenticated requests never initialize the database', async () => {
@@ -217,9 +191,9 @@ test('bundle snapshot mismatch and malformed restored component quantities prese
     assert.equal(result.status, 409);
     assert.equal((await db.query('SELECT * FROM pos_sale_receipts WHERE project_id=$1', [id])).rows.length, 0);
     assert.equal((await invoke(null, id)).body.products[0].stock, 7);
-    const backup = (await invoke('backupProject', id, { password: 'test-password' })).body.backup;
-    backup.sales[0].lines[0].subItems = [{ productId: 'p1', qty: -2, unitPrice: 0 }];
-    assert.equal((await invoke('restoreProject', null, { password: 'test-password', name: 'bad', backup })).status, 400);
+    const backup = (await invoke('backupAccount')).body.backup;
+    backup.data.tables.pos_sales[0].lines[0].subItems = [{productId:'p1',qty:-2,unitPrice:0}];
+    assert.equal((await invoke('restoreAccount',null,{password:'test-password',backup,requestId:crypto.randomUUID()})).status,400);
     assert.equal((await db.query('SELECT * FROM pos_projects')).rows.length, 1);
   } finally { await db.close(); }
 });

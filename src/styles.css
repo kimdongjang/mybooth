@@ -1115,3 +1115,76 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 }
 
 .app-confirm-dialog{position:fixed;inset:0;margin:auto;max-height:calc(100dvh - 32px);overflow:auto;border:0;border-radius:12px;padding:24px;width:min(440px,calc(100vw - 32px));box-shadow:0 16px 48px #0f172a40;color:#17233b;background:white}.app-confirm-dialog::backdrop{background:#0007}.app-confirm-dialog h2{font-size:18px;font-weight:700;margin:0 0 16px}.app-confirm-dialog p{font-size:14px;line-height:1.7;white-space:pre-line}.app-confirm-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+
+.app-confirm-dialog{position:fixed;inset:0;margin:auto;max-height:calc(100dvh - 32px);overflow:auto;border:0;border-radius:12px;padding:24px;width:min(440px,calc(100vw - 32px));box-shadow:0 16px 48px #0f172a40;color:#17233b;background:white}.app-confirm-dialog::backdrop{background:#0007}.app-confirm-dialog h2{font-size:18px;font-weight:700;margin:0 0 16px}.app-confirm-dialog p{font-size:14px;line-height:1.7;white-space:pre-line}.app-confirm-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.event-summary{display:grid;gap:6px;font-size:14px;color:#334155}.event-summary small{font-size:12px;color:#64748b}.account-form{display:grid;gap:16px;max-width:500px}.account-form input{display:block;margin-top:8px}.account-danger{margin-top:32px;padding-top:24px;border-top:1px solid #e2e8f0}
+
+.account-form + .management-back{margin-top:16px}.account-danger h2{font-weight:700;font-size:16px;margin-bottom:8px}.account-danger>p{max-width:720px;line-height:1.7;margin-bottom:16px}
+
+.app-confirm-actions .management-delete{background:#e5484d;color:white;border:1px solid #e5484d;border-radius:6px;padding:8px 16px;min-height:40px}.app-confirm-actions .management-delete:hover{background:#d9363e}
+
+/* Inventory loading keeps the list silhouette behind a centered status. */
+.inventory-loading{position:relative;min-height:440px;padding-top:4px;overflow:hidden}
+.inventory-skeleton{opacity:.65;pointer-events:none}
+.inventory-skeleton-search{height:108px;border-radius:12px;background:#e2e8f0;margin-bottom:16px}
+.inventory-skeleton-toolbar{height:40px;width:104px;margin:0 0 12px auto;border-radius:8px;background:#e2e8f0}
+.inventory-skeleton-table{border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff}
+.inventory-skeleton-row{display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr;gap:24px;padding:23px 16px;border-bottom:1px solid #edf0f4}
+.inventory-skeleton-row:last-child{border-bottom:0}
+.inventory-skeleton-row span{height:14px;border-radius:5px;background:#e2e8f0}
+.inventory-loading-status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:12px;background:#f8fafc66;color:#334155;font-size:14px;font-weight:500}
+.inventory-loading-spinner{width:26px;height:26px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:inventory-loading-spin .8s linear infinite;flex-shrink:0}
+@keyframes inventory-loading-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.inventory-loading-spinner{animation-duration:2s}}
+.account-content{display:grid;gap:20px}
+.account-page .management-product-header h2{font-size:15px;font-weight:600}
+.account-card-body{padding:20px}
+.account-details{margin:0 0 24px}
+.account-details dt{font-size:12px;color:#64748b}
+.account-details dd{margin:0;font-size:14px;color:#17243b;overflow-wrap:anywhere}
+.account-page .account-form{max-width:500px;gap:16px}
+.account-page .account-form input{margin-top:0}
+.account-page .account-form>button{justify-self:start;min-height:40px}
+.account-page .account-danger{margin-top:0;padding-top:0;border:1px solid #e2e8f0}
+.account-danger .account-card-body>p{max-width:720px;font-size:13px;line-height:1.7;color:#64748b;margin:0 0 20px}
+@media(max-width:767px){.account-card-body{padding:16px}.account-page .management-product-header{padding:12px 16px}.account-details{grid-template-columns:1fr;gap:16px}.inventory-skeleton-row{gap:12px;padding:20px 12px}.inventory-loading-status{font-size:13px}}
+
+.inventory-loading-spinner{width:40px;height:40px;border-width:4px}
+.event-picker-add{background:#f1f3f5;color:#7b8492;justify-content:center;align-items:center;min-height:190px;border:1px dashed #d1d5db}
+.event-picker-add>span{font-size:32px}
+.management-table th button{font:inherit;color:inherit;cursor:pointer}
+@media(prefers-reduced-motion:reduce){.inventory-loading-spinner,.inventory-skeleton *{animation:none!important}}
+
+.bulk-table{min-width:1100px}.bulk-table input{width:100%;min-width:85px;padding:8px;border:1px solid #dbe1e8;border-radius:6px}.account-form fieldset{display:flex;gap:12px;flex-wrap:wrap}.account-form label{display:grid;gap:6px}.account-form input,.account-form select{padding:8px;border:1px solid #dbe1e8;border-radius:6px}
+
+.event-settlement-panel{margin:16px 0}.event-settlement-panel h3{margin:20px 0 12px;font-weight:600}.event-cost-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1.5fr auto;gap:10px;align-items:end;margin:14px 0}.event-cost-row label{display:grid;gap:6px;font-size:12px;min-width:0}.event-cost-row input,.event-cost-row select{width:100%;padding:8px;border:1px solid #dbe1e8;border-radius:6px}.event-settlement-panel td button+button{margin-left:8px}@media(max-width:767px){.event-cost-row{grid-template-columns:1fr 1fr}.event-settlement-panel .management-table{min-width:600px}}
+
+.revenue-status[data-status=closed]{background:#eff6ff;color:#1d4ed8}.event-final-costs{margin:16px 0;font-size:13px;line-height:1.8}
+
+/* Search and filter sizing follows the inventory list, across all pages. */
+:root{--search-control-font:calc(13px + 1pt);--search-input-height:44px;--search-filter-height:40px;--search-control-radius:8px;--search-control-gap:12px}
+#root :is([role="search"],.revenue-period,.catalog-filters){gap:var(--search-control-gap)}
+#root :is([role="search"],.revenue-period,.catalog-filters) :is(label,input,select,button,summary,.filter-label),
+#root .search-control-field,
+#root input[type="search"]{font-size:var(--search-control-font);line-height:1.5}
+#root :is([role="search"],.revenue-period) :is(input,select),
+#root input[type="search"]{min-width:0;border-radius:var(--search-control-radius);box-sizing:border-box}
+#root input[type="search"]{height:var(--search-input-height);min-height:var(--search-input-height);padding:10px 12px}
+#root :is([role="search"],.revenue-period) :is(select,input[type="date"]){height:var(--search-filter-height);min-height:var(--search-filter-height);padding:6px 10px}
+#root :is([role="search"],.revenue-period,.catalog-filters) button{min-height:var(--search-filter-height);padding:6px 14px;border-radius:var(--search-control-radius);box-sizing:border-box}
+#root [role="search"] .inventory-search-button{min-height:var(--search-input-height);padding:0 14px}
+#root [role="search"] .inventory-search-reset{padding:6px 0}
+#root [role="search"] summary{min-height:var(--search-filter-height)}
+#root .settlement-search label{gap:4px}
+#root .filter-options{column-gap:8px;row-gap:8px}
+#root .catalog-filters{align-items:center}
+#root .filter-label{padding-top:0}
+#root input[type="search"]::placeholder{font-size:inherit}
+@media(max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){:root{--search-control-font:calc(11px + 1pt);--search-filter-height:44px;--search-control-gap:8px}#root :is([role="search"],.revenue-period,.catalog-filters) button{padding-inline:12px}#root [role="search"] .inventory-search-reset{padding-inline:0}}
+
+/* Shared content typography uses the inventory search control scale. */
+#root :is(input,select,textarea,button,label,legend,summary,output),
+#root :is(table,table *),
+#root :is(.inventory-card,.management-product,.account-card-body,.account-form,.event-panel,.event-settlement-panel,.event-danger-panel,.dashboard-card,.settlement-card,.settlement-editor,.inventory-import-page,.inventory-transfer-form,.registration-date-form,.management-pagination){font-size:var(--search-control-font);line-height:1.5}
+#root :is(.inventory-card,.management-product,.account-card-body,.event-panel,.event-settlement-panel,.event-danger-panel,.dashboard-card,.settlement-card,.settlement-editor,.inventory-import-page) :is(p,li,small,dt,dd,h3,h4,span),
+#root :is(.management-field,.event-field,.settlement-payment-fields) > span,
+#root :is(.management-details legend span,.inventory-import-guide-count,.inventory-import-guide-body,.event-final-costs,.filter-label,.product-creator,.product-stock,.event-status,.revenue-status){font-size:var(--search-control-font);line-height:1.5}

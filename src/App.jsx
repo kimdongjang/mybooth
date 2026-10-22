@@ -1,7 +1,9 @@
-import DashboardPage from './pages/DashboardPage';
+import LoadingState from './components/LoadingState';
 import RevenuePage from './pages/RevenuePage';
 import { settlementEntries } from './utils/settlementEntries';
-import { allowNavigation } from './hooks/useUnsavedChanges';
+import DashboardPage from './pages/DashboardPage';
+import AccountPage from './pages/AccountPage';
+import { allowNavigation, useUnsavedChanges } from './hooks/useUnsavedChanges';
 import { sessionStore, saveProjectList, readProjectList, isNative } from './platform/mobile';
 import InventoryPage from './pages/InventoryPage';
 import GettingStarted from './components/GettingStarted';
@@ -48,14 +50,14 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
   const [dataRevision, setDataRevision] = useState(null);
-  const readOnly = Boolean(selectedProject?.archivedAt);
+  const readOnly = Boolean(selectedProject?.archivedAt || selectedProject?.settlementClosedAt);
   const [readyScope, setReadyScope] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [routePage, setScreen, routeHash] = usePageRoute();
   const routeParams = new URLSearchParams(routeHash.split('?')[1] || '');
   const linkedProjectId = ['log', 'settings'].includes(routePage) ? routeParams.get('projectId') : null;
   const routeProductId = routePage === 'settings' ? productIdForHash(routeHash) || routeParams.get('productId') || '' : '';
-  const screen = selectedProject || linkedProjectId || ['restore', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue'].includes(routePage) ? routePage : 'projects';
+  const screen = selectedProject || linkedProjectId || ['restore', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue'].includes(routePage) ? (['restore','projectBackup'].includes(routePage) ? 'account' : routePage) : 'projects';
   const [orderExpanded, setOrderExpanded] = useState(false);
 
 
@@ -83,6 +85,8 @@ export default function App() {
   const [bundleRows, setBundleRows] = useState([{ productId: '', qty: 1 }]);
   const [bundleName, setBundleName] = useState('');
   const [bundlePrice, setBundlePrice] = useState('');
+  const clearRegistration = useUnsavedChanges((screen === 'projectNew' && Boolean(newProjectName.trim())) || (screen === 'bundleNew' && Boolean(bundleName.trim() || bundlePrice || bundleRows.some(row => row.productId))));
+  useEffect(() => { if (screen !== 'projectNew') setNewProjectName(''); if (screen !== 'bundleNew') { setBundleName(''); setBundlePrice(''); setBundleRows([{ productId: '', qty: 1 }]); } }, [screen]);
   const [creatorFilter, setCreatorFilter] = useState('all');
   const [purchaseTab, setPurchaseTab] = useState('products');
   useEffect(() => {
@@ -105,6 +109,7 @@ export default function App() {
     if (!token || typeof BroadcastChannel === 'undefined') return;
     const channel = new BroadcastChannel('pos-project-lifecycle');
     channel.onmessage = ({ data }) => {
+      if(data.adminId===adminId && data.action==='settlementChanged'){setSelectedProject(current=>current?.id===data.projectId?{...current,settlementClosedAt:data.closedAt}:current);if(selectedProject?.id===data.projectId)setCart([]);void stateRepository.setSettlementClosedAt(data.projectId,data.closedAt);return;}
       if (data.adminId !== adminId || !data.projectId || !['archiveProject', 'unarchiveProject'].includes(data.action)) return;
       setProjects(current => current.map(project => project.id === data.projectId ? { ...project, archivedAt: data.archivedAt } : project));
       setSelectedProject(current => current?.id === data.projectId ? { ...current, archivedAt: data.archivedAt } : current);
@@ -128,12 +133,13 @@ export default function App() {
     setSales(nextSales);
     setDataRevision(data.dataRevision || null);
     const nextArchivedAt = (fromCache && selectedProject.archivedAt) || data.archivedAt || null;
-    setSelectedProject(current => current?.id === selectedProject.id ? { ...current, archivedAt: nextArchivedAt } : current);
-    if (nextArchivedAt) setCart([]);
+    setSelectedProject(current => current?.id === selectedProject.id ? { ...current, archivedAt: nextArchivedAt, settlementClosedAt: data.settlementClosedAt || null } : current);
+    if (nextArchivedAt || data.settlementClosedAt) setCart([]);
     setReadyScope(scope);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (!await allowNavigation()) return;
     setScreen('login', true);
     sessionStore.removeItem(AUTH_TOKEN_KEY);
     sessionStore.removeItem(AUTH_ADMIN_KEY);
@@ -230,6 +236,7 @@ export default function App() {
     try {
       const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ action: 'createProject', payload: { name: newProjectName.trim() } }) });
       const project = data.project;
+      clearRegistration();
       setNewProjectName('');
       await loadProjects();
       selectProject(project);
@@ -312,7 +319,7 @@ export default function App() {
     if (selectedProject?.id !== target.id) selectProject(target, { fromInventory: true, destination: routeHash.slice(1) });
   }, [token, projectLoading, linkedProjectId, projects, selectedProject?.id]);
 
-  useEffect(() => { if (token) loadProjects(); }, [token]);
+  useEffect(() => { if (token) loadProjects(); }, [token, screen === 'projects', screen === 'dashboard', screen === 'revenue']);
   useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id]);
 
   const login = async (credentials) => {
@@ -353,21 +360,21 @@ export default function App() {
   };
 
   const inventoryApi = async (action, payload = {}) => {
-    if (!navigator.onLine) throw new Error('공통 상품·재고 관리는 인터넷 연결이 필요합니다.');
+    if (!navigator.onLine) throw new Error('상품·재고는 인터넷 연결이 필요합니다.');
     if (action === 'getEventState') {
       const queueVersion = await stateRepository.queueVersion(payload.projectId);
       const data = await requestJson(`/api/pos?projectId=${encodeURIComponent(payload.projectId)}`);
       if (payload.apply && activeScope.current === scope && payload.projectId === selectedProject?.id) await applyState(data, false, queueVersion);
       return data;
     }
-    if (['saveInventory','saveEventProduct'].includes(action) && (await Promise.all(projects.map(project => orderRepository.countWaiting(project.id)))).some(Boolean)) throw new Error('공통 상품 수정 전 모든 행사의 미동기화 주문을 먼저 동기화해주세요.');
+    if (['saveInventory','saveEventProduct','importInventory','recordStockMovement'].includes(action) && (await Promise.all(projects.map(project => orderRepository.countWaiting(project.id)))).some(Boolean)) throw new Error('공통 상품 수정 전 모든 행사의 미동기화 주문을 먼저 동기화해주세요.');
     if (['transferInventory', 'createEventProduct'].includes(action) && await orderRepository.countWaiting(payload.projectId)) throw new Error('이 행사의 미동기화 주문을 먼저 동기화해주세요.');
     if (action === 'createEventProduct' && readOnly) throw new Error('보관된 행사에는 상품을 등록할 수 없습니다.');
-    const queueVersionBefore = ['createEventProduct','transferInventory','saveEventProduct','saveInventory'].includes(action) && selectedProject?.id ? await stateRepository.queueVersion(selectedProject.id) : null;
+    const queueVersionBefore = ['createEventProduct','transferInventory','saveEventProduct','saveInventory','recordStockMovement','importInventory'].includes(action) && selectedProject?.id ? await stateRepository.queueVersion(selectedProject.id) : null;
     if (activeScope.current !== scope) throw new Error('화면이 변경되었습니다. 다시 시도해주세요.');
     const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ action, payload }) });
     if (['createEventProduct','saveEventProduct'].includes(action) && activeScope.current === scope && payload.projectId === selectedProject?.id) await applyState(data, false, queueVersionBefore);
-    if ((action === 'saveInventory' || (action === 'transferInventory' && payload.projectId === selectedProject?.id)) && selectedProject?.id && activeScope.current === scope) {
+    if ((['saveInventory','recordStockMovement','importInventory'].includes(action) || (action === 'transferInventory' && payload.projectId === selectedProject?.id)) && selectedProject?.id && activeScope.current === scope) {
       setCart([]);
       const state = await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}`);
       if (activeScope.current === scope) await applyState(state, false, queueVersionBefore);
@@ -521,6 +528,7 @@ export default function App() {
     if (!bundleName.trim() || String(bundlePrice).trim() === '' || !Number.isInteger(price) || price < 0 || !items.length || items.some((item) => !Number.isInteger(item.qty) || item.qty <= 0)) return alert('세트 이름, 0원 이상의 정수 판매가, 구성품과 양의 정수 수량을 입력해주세요.');
     const saved = await persistBundles([...bundles, { id: uid(), name: bundleName.trim(), price, items }]);
     if (!saved) return;
+    clearRegistration();
     setBundleName(''); setBundlePrice(''); setBundleRows([{ productId: '', qty: 1 }]);
     setSettingsTab('bundles');
     setScreen('settings');
@@ -651,13 +659,13 @@ export default function App() {
     <GettingStarted key={token} scope={`${screen}:${selectedProject?.id || ""}`} />
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onReleaseProject={releaseProject} releaseDisabled={saving || loading || projectLoading} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
-    {readOnly && !['inventory', 'account', 'dashboard', 'revenue'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">보관된 행사 · 읽기 전용입니다. <button type="button" className="event-text-link" onClick={() => setScreen('projectArchive')}>비밀번호로 보관 해제 →</button></div>}
-    {loading || projectLoading || (linkedProjectId && selectedProject?.id !== linkedProjectId) || (selectedProject && readyScope !== scope && !error) ? <main className="page-content flex items-center justify-center" role="status">데이터를 불러오는 중...</main> : <>
+    {readOnly && !['inventory', 'account', 'dashboard', 'revenue'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">{selectedProject?.settlementClosedAt?'정산 마감 · 읽기 전용입니다.':'보관된 행사 · 읽기 전용입니다.'} <button type="button" className="event-text-link" onClick={() => setScreen(selectedProject?.settlementClosedAt?'log':'projectArchive')}>{selectedProject?.settlementClosedAt?'정산 마감 관리 →':'비밀번호로 보관 해제 →'}</button></div>}
+    {loading || projectLoading || (linkedProjectId && selectedProject?.id !== linkedProjectId) || (selectedProject && readyScope !== scope && !error) ? <main className="page-content"><LoadingState /></main> : <>
 
     {screen === 'dashboard' && <DashboardPage key={adminId} request={requestJson} />}
     {screen === 'revenue' && <RevenuePage key={adminId} request={requestJson} />}
     {screen === 'inventory' && <InventoryPage projects={projects} key={adminId} adminId={adminId} api={inventoryApi} routeHash={routeHash} navigate={setScreen} />}
-    {screen === 'account' && <main className="page-content"><h1>내 계정 정보</h1><section className="inventory-card"><p>아이디: <strong>{adminId}</strong></p><p>상품과 창고 재고는 이 계정에 저장되며, 행사별 판매·정산은 각각 보관됩니다.</p><button type="button" className="management-back" onClick={logout}>로그아웃</button></section></main>}
+    {screen === 'account' && <AccountPage adminId={adminId} request={requestJson} logout={logout} beforeDelete={async () => { if (loading || projectLoading || saving || !navigator.onLine) throw new Error('온라인에서 행사 목록을 모두 불러온 뒤 다시 시도해주세요.'); const fresh = await requestJson('/api/pos'); if ((await Promise.all(fresh.projects.map(project => orderRepository.countWaiting(project.id)))).some(Boolean)) throw new Error('모든 행사의 미동기화 주문을 먼저 동기화해주세요.'); }} />}
     {['projects', 'projectNew'].includes(screen) && <ProjectsPage creating={screen === 'projectNew'} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} navigate={setScreen} />}
 
     {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
@@ -666,9 +674,9 @@ export default function App() {
 
     {screen === 'pos' && <SalesPage project={selectedProject} readOnly={readOnly} purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
-    {['settings', 'bundleNew', 'productNew'].includes(screen) && <ProductsPage adminId={adminId} inventoryApi={inventoryApi} dataRevision={dataRevision} projectName={selectedProject.name} initialProductId={routeProductId} registerProduct={product => inventoryApi('createEventProduct', { projectId: selectedProject.id, dataRevision, product })} creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={(page, tab = 'bundles') => { setSettingsTab(tab); setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
+    {['settings', 'bundleNew', 'productNew'].includes(screen) && <ProductsPage adminId={adminId} inventoryApi={inventoryApi} dataRevision={dataRevision} projectName={selectedProject.name} initialProductId={routeProductId} registerProduct={product => inventoryApi('createEventProduct', { projectId: selectedProject.id, dataRevision, product })} creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={async (page, tab = 'bundles') => { if (!await allowNavigation()) return; setSettingsTab(tab); await setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
 
-    {screen === 'log' && selectedProject && <SettlementPage key={`${selectedProject.id}:${routeParams.get('productId') || ''}`} initialProductId={linkedProjectId ? routeParams.get('productId') || '' : ''} initialProductSearch={linkedProjectId ? routeParams.get('productName') || '' : ''} initialTab={routeParams.get('productId') ? 'history' : 'summary'} readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} saleLineProductEntries={saleLineProductEntries} voidSale={voidSale} />}
+    {screen === 'log' && selectedProject && <SettlementPage key={`${screen}:${selectedProject.id}:${routeParams.get('productId') || ''}`} initialProductId={linkedProjectId ? routeParams.get('productId') || '' : ''} initialProductSearch={linkedProjectId ? routeParams.get('productName') || '' : ''} reportOnly={screen === 'revenue'} initialTab={screen === 'log' && routeParams.get('productId') ? 'history' : 'summary'} request={requestJson} projectId={selectedProject.id} products={products} bundles={bundles} onSettlementChange={async () => {const data=await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'settlementChanged',adminId,projectId:selectedProject.id,closedAt:data.settlementClosedAt});channel.close();}}} readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} saleLineProductEntries={saleLineProductEntries} voidSale={voidSale} />}
     </>}
 
   </div>;

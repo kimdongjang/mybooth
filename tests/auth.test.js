@@ -38,12 +38,17 @@ test('email signup, database uniqueness, legacy migration and unchanged login', 
     assert.equal((await db.query('SELECT admin_id FROM projects')).rows[0].admin_id, 'admin');
     assert.equal((await invoke({ id: 'admin', password: 'old-password' })).status, 200);
     assert.equal((await invoke({ id: 'existing', password: 'old-password' })).status, 200);
+    assert.equal(await auth.namespace.validateAdminPassword('existing', 'old-password', sql), true);
+    assert.equal(await auth.namespace.validateAdminPassword('existing', 'wrong', sql), false);
     assert.equal((await invoke({ id: 'admin', password: 'wrong-password' })).status, 401);
     for (const email of [undefined, '', 'invalid', 'a b@example.com', 'x'.repeat(255)]) {
       assert.equal((await invoke({ mode: 'signup', id: 'new-user', password: 'password', email })).status, 400);
     }
     const signup = await invoke({ mode: 'signup', id: 'new-user', password: 'password', email: ' User@Example.com ' });
     assert.equal(signup.status, 201);
+    assert.match(signup.body.admin.nickname, /^(똑똑한|맛있는|즐거운|다정한|용감한|반짝이는) (자동차|딸기|고양이|구름|토끼|별)$/);
+    assert.equal((await invoke({ mode: 'signup', id: 'nick-user', password: 'password', email: 'nick@example.com', nickname: '  부스작가  ' })).body.admin.nickname, '부스작가');
+    assert.equal((await invoke({ mode: 'signup', id: 'long-nick', password: 'password', email: 'long@example.com', nickname: 'x'.repeat(31) })).status, 400);
     assert.equal(signup.body.admin.email, 'user@example.com');
     assert.equal(auth.namespace.verifyToken(signup.body.token).id, 'new-user');
     assert.notEqual((await db.query("SELECT password_hash FROM pos_admins WHERE id = 'new-user'")).rows[0].password_hash, 'password');
@@ -53,6 +58,9 @@ test('email signup, database uniqueness, legacy migration and unchanged login', 
     await db.query("UPDATE pos_admins SET email = 'assigned@example.com' WHERE id = 'admin'");
     await auth.namespace.initAuthDb();
     assert.equal((await db.query("SELECT email FROM pos_admins WHERE id = 'admin'")).rows[0].email, 'assigned@example.com');
+    await db.query("UPDATE pos_admins SET deleted_at=NOW(),password_hash='',email=NULL,nickname=NULL WHERE id='new-user'");
+    assert.equal((await invoke({ id: 'new-user', password: 'password' })).status, 401);
+    assert.equal((await invoke({ mode: 'signup', id: 'new-user', password: 'password', email: 'reuse@example.com' })).status, 409);
   } finally {
     await db.close();
   }

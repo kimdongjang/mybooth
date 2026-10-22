@@ -1,3 +1,4 @@
+import { initEventSettlements, eventSettlementCommand, eventRecord, eventState } from './lib/eventSettlement.js';
 import { sql as pool } from '@vercel/postgres';
 import { assertPostgresConnectionString, requireAuth } from './lib/auth.js';
 import { settlementMoneyEntries } from '../src/utils/settlementEntries.js';
@@ -31,12 +32,19 @@ export function createHandler(pool) {
       await sql`CREATE TABLE IF NOT EXISTS pos_settlement_commands (
         admin_id TEXT NOT NULL REFERENCES pos_admins(id), id TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
         fingerprint TEXT NOT NULL, PRIMARY KEY(admin_id,id))`;
+      await initEventSettlements(sql);
       if (req.method === 'GET') {
         const rows = await sql`SELECT s.* FROM pos_settlements s JOIN pos_projects p ON p.id=s.project_id AND p.admin_id=s.admin_id WHERE s.admin_id=${admin.id}`;
+        const events=await sql`SELECT * FROM pos_event_settlements WHERE admin_id=${admin.id}`;
+        let state;
+        if(req.query?.projectId){if(!(await sql`SELECT id FROM pos_projects WHERE id=${req.query.projectId} AND admin_id=${admin.id}`).rows.length)fail('행사를 찾을 수 없습니다.',404);state=await eventState(sql,admin.id,req.query.projectId);}
         await client.query('COMMIT');
-        return res.status(200).json({ settlements: rows.rows.map(record) });
+        return res.status(200).json({ state, settlements: rows.rows.map(record), eventSettlements: events.rows.map(eventRecord) });
       }
       if (req.method !== 'POST') fail('Method not allowed', 405);
+      if (['saveEventCosts','closeEventSettlement','reopenEventSettlement'].includes(req.body?.action)) {
+        const result=await eventSettlementCommand(sql,admin.id,req.body);await client.query('COMMIT');return res.status(200).json(result);
+      }
       const { action, projectId, creator, version, requestId, deductions, amount, paidAt, memo = '', paymentId } = req.body || {};
       if (!['saveDeductions', 'addPayment', 'reversePayment'].includes(action) || typeof projectId !== 'string' || typeof creator !== 'string' || !creator.trim() || creator !== creator.trim() || creator.length > 200 || !integer(version) || typeof requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(requestId)) fail('올바른 정산 요청이 아닙니다.');
       if (!(await sql`SELECT id FROM pos_projects WHERE id=${projectId} AND admin_id=${admin.id} FOR UPDATE`).rows.length) fail('행사를 찾을 수 없습니다.', 404);
@@ -48,6 +56,9 @@ export function createHandler(pool) {
         await client.query('COMMIT');
         return res.status(200).json({ settlement: record(current) });
       }
+      const closure=(await sql`SELECT * FROM pos_event_settlements WHERE admin_id=${admin.id} AND project_id=${projectId}`).rows[0];
+      if (action==='saveDeductions' && closure?.closed_at) fail('마감된 정산은 수정할 수 없습니다.',409);
+      if (action==='addPayment' && !closure?.closed_at) fail('행사 정산을 먼저 마감해주세요.',409);
       if ((current?.version || 0) !== version) fail('정산 내역이 변경되었습니다. 새로고침 후 다시 시도해주세요.', 409);
       const products = (await sql`SELECT p.*,CASE WHEN i.id IS NOT NULL THEN i.product->>'creatorName' ELSE p.creator_name END AS creator_name
         FROM pos_products p LEFT JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id AND l.admin_id=${admin.id}
@@ -59,8 +70,11 @@ export function createHandler(pool) {
       for (const sale of sales) for (const line of sale.lines || []) for (const entry of settlementMoneyEntries(line, byId, bundles)) {
         if ((String(entry.creator || '').trim() || '미지정') === creator) { gross += entry.amount; found = true; }
       }
-      if (!found && !current) fail('판매 내역에 없는 작가입니다.', 404);
+      if (!found && !current && !closure?.snapshot?.rows.some(row=>row.creator===creator)) fail('판매 내역에 없는 작가입니다.', 404);
       gross = Math.round(gross);
+      const frozen=closure?.closed_at ? closure.snapshot.rows.find(row=>row.creator===creator) : null;
+      if(closure?.closed_at && !frozen)fail('마감 내역에 없는 작가입니다.',404);
+      if(frozen)gross=frozen.gross;
       let nextDeductions = current?.deductions || [];
       const payments = [...(current?.payments || [])];
       const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
@@ -76,7 +90,7 @@ export function createHandler(pool) {
         if (gross - fees < paid && fees > oldFees) fail('이미 지급한 금액보다 정산 예정액을 줄일 수 없습니다.');
       } else if (action === 'addPayment') {
         if (!integer(amount) || amount === 0 || typeof memo !== 'string' || memo.length > 500) fail('지급 금액과 메모를 확인해주세요.');
-        const net = gross - nextDeductions.reduce((sum, item) => sum + item.amount, 0);
+        const net = frozen ? frozen.net : gross - nextDeductions.reduce((sum, item) => sum + item.amount, 0);
         if (amount > net - paid) fail('지급 금액은 남은 정산금보다 클 수 없습니다.');
         payments.push({ id: requestId, amount, paidAt: date(paidAt), memo: memo.trim() });
       } else {

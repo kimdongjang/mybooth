@@ -55,6 +55,13 @@ test('IndexedDB atomic sale/cancel, injected failure, stale tabs and remote resp
     const pending = (await orders.getPendingOrders('a'))[0];
     await orders.updateStatus(pending.id, 'SYNCING');
     assert.equal((await orders.getPendingOrders('a'))[0].localOrderId, 'void_sale');
+    const locked=await states.acceptRemote('a',{...sold,settlementClosedAt:'2026-10-21'});
+    assert.deepEqual(locked.products,initial.products);
+    assert.equal(locked.settlementClosedAt,'2026-10-21');
+    assert.equal((await orders.getAll('a')).length,2);
+    await assert.rejects(states.commitOrder('a',{...order,localOrderId:'closed-order'},locked,sold),/마감/);
+    await states.setSettlementClosedAt('a',null);
+    assert.equal((await states.get('a')).settlementClosedAt,null);
   } finally { await db.delete(); }
 });
 

@@ -1,4 +1,8 @@
+import InventoryImport from './InventoryImport';
+import StockMovementForm from '../components/StockMovementForm';
 import RegistrationDateForm from '../components/RegistrationDateForm';
+import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
+import { confirmAction } from '../utils/confirmAction';
 import InventoryTransferRecovery from '../components/InventoryTransferRecovery';
 import { useEffect, useRef, useState } from 'react';
 import { prepareProductImage } from '../utils/productImage';
@@ -39,7 +43,13 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
   const optionsFor = key => [...new Set(items.map(item => item[key] || '미지정'))].sort((a, b) => a.localeCompare(b, 'ko'));
   const events = [...new Map(items.flatMap(item => (item.allocations || []).map(row => [String(row.project_id), row.event_name]))).entries()].sort((a, b) => a[1].localeCompare(b[1], 'ko'));
   const filterCount = ['registeredDate', 'event', 'creatorExact', 'goodsType', 'genre'].filter(key => search[key] && search[key] !== 'all').length;
-  const filteredItems = filterInventory(items, search);
+  const [sort,setSort] = useState({key:'createdAt',direction:1});
+  const filteredItems = filterInventory(items, search).sort((a,b) => {
+    const value = sort.key === 'name' ? a.name.localeCompare(b.name,'ko') : sort.key === 'remainingStock' ? Number(a.remainingStock)-Number(b.remainingStock) : (Date.parse(a.createdAt)||0)-(Date.parse(b.createdAt)||0);
+    return value*sort.direction || a.id.localeCompare(b.id);
+  });
+  const sortBy = key => {setSort(current=>({key,direction:current.key===key?-current.direction:1}));setPage(1);};
+  const tool = routeHash.split('?')[0] === '#/inventory/import' ? 'import' : routeHash.split('?')[0] === '#/inventory/movements' ? 'movements' : null;
   const changeSearch = next => { setSearch(next); setPage(1); };
   const changeDraft = (key, value) => setDraft(current => ({ ...current, [key]: key === 'stock' ? (value === '' ? '' : Number(value)) : value }));
   const [busy, setBusy] = useState(false);
@@ -83,6 +93,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     else { setView('detail'); const item = items.find(item => item.id === id); setDraft(item ? { ...item } : null); }
   }, [routeHash, ready]);
   const savedItem = draft && items.find(item => item.id === draft.id);
+  const clearUnsaved = useUnsavedChanges(Boolean(draft && (view === 'new' ? draft.name || draft.goodsType || draft.vtuberName || draft.creatorName || draft.genre || Number(draft.stock) : JSON.stringify(draft) !== JSON.stringify(savedItem))));
   const allocationKey = row => JSON.stringify([row.project_id,row.product_id]);
   const allocationRows = savedItem ? [
     ...(savedItem.allocations || []),
@@ -110,7 +121,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     event.preventDefault();
     if (preparing) return;
     await run(async () => {
-      const { price, ...product } = draft;
+      const product = { ...draft };
       if (pendingMoves || uncertain) throw new Error('이전 재고 이동 결과를 먼저 확인해주세요.');
       if (allocationError) throw new Error(allocationError);
       const allocationPlan = view === 'detail' ? { totalStock: Number(totalStock), allocations: allocationRows.map(row => ({ projectId: row.project_id, productId: row.product_id, quantity: Number(row.quantity), stock: Number(row.stock), initialStock: Number(row.initial_stock), dataRevision: row.data_revision ?? null })) } : undefined;
@@ -126,6 +137,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
           setItems(data.inventory); setDraft({ ...saved }); setImage(null); uploadedImage.current = null;
         } catch (err) { throw new Error(`상품은 저장되었지만 이미지 저장에 실패했습니다. 다시 저장해주세요. ${err.message || ''}`); }
       }
+      clearUnsaved();
       if (view === 'new') navigate(`/inventory/${encodeURIComponent(draft.id)}`, true);
       setView('detail'); alert('상품과 재고를 저장했습니다.');
     });
@@ -139,7 +151,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
       if (!latest) { setDraft(null); throw new Error('이미 삭제되었거나 재고를 찾을 수 없습니다.'); }
       const blockers = (latest.allocations || []).filter(row => row.is_active !== false && !row.archived_at);
       if (blockers.length) { setDeleteBlockers(blockers); return; }
-      if (!confirm(`“${latest.name}” 상품을 재고 관리에서 삭제할까요?\n남은 수량과 과거 판매 이력은 보존됩니다. 삭제 후에는 재고 수정과 새 행사 배정을 할 수 없습니다.`)) return;
+      if (!await confirmAction(`“${latest.name}” 상품을 재고 관리에서 삭제할까요?\n남은 수량과 과거 판매 이력은 보존됩니다. 삭제 후에는 재고 수정과 새 행사 배정을 할 수 없습니다.`)) return;
       let data;
       try { data = await api('removeInventory', { inventoryId: latest.id, version: latest.version }); }
       catch (err) {
@@ -152,6 +164,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         }
         throw err;
       }
+      clearUnsaved();
       setItems(data.inventory); setDraft(null); setView('list');
       setDeletionNotice(`“${latest.name}” 상품을 재고 관리에서 삭제했습니다. 남은 수량과 판매 이력은 유지됩니다.`);
       navigate('inventory');
@@ -175,24 +188,29 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
   return <main className="page-content inventory-page">
     <header className="inventory-page-header">
       <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol>
-        <li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>공통 상품·재고 관리</a></li>
+        <li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고관리</a></li>
         <li aria-hidden="true">/</li>
         {view !== 'list' && <><li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고 목록</a></li><li aria-hidden="true">/</li></>}
-        <li><h1 aria-current="page" tabIndex={-1}>{view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상품 재고 상세'}</h1></li>
+        <li><h1 aria-current="page" tabIndex={-1}>{tool === 'import' ? '엑셀 일괄 등록' : tool === 'movements' ? '외부 판매·로스' : view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상세정보'}</h1></li>
       </ol></nav>
       {view !== 'list' && <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
     </header>
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
     {deletionNotice && <div role="status" className="inventory-card"><p>{deletionNotice}</p><button type="button" className="management-back" onClick={() => setDeletionNotice('')}>닫기</button></div>}
-    {!ready && !error && <p role="status">재고를 불러오는 중…</p>}
+    {!ready && !error && <div className="inventory-loading" aria-busy="true">
+      <div className="inventory-skeleton" aria-hidden="true"><div className="inventory-skeleton-search" /><div className="inventory-skeleton-toolbar" /><div className="inventory-skeleton-table">{Array.from({ length: 7 }, (_, row) => <div className="inventory-skeleton-row" key={row}>{Array.from({ length: 4 }, (_, column) => <span key={column} />)}</div>)}</div></div>
+      <div className="inventory-loading-status" role="status"><span className="inventory-loading-spinner" aria-hidden="true" /><span>재고를 불러오는 중…</span></div>
+    </div>}
     {uncertain && <div role="status" className="inventory-card"><p>이전에 요청한 재고 이동의 완료 여부를 확인해주세요.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(resolvePending)}>이전 이동 결과 확인</button></div>}
     <InventoryTransferRecovery adminId={adminId} api={api} onBlocked={setPendingMoves} onInventory={inventory => { setItems(inventory); setDraft(current => current ? inventory.find(row => row.id === current.id) || null : null); }} />
-    <section className={`product-management ${view !== 'detail' ? 'inventory-list-content' : ''}`}>
+    {ready && tool === 'import' && <InventoryImport api={api} adminId={adminId} />}
+    {ready && tool === 'movements' && <StockMovementForm adminId={adminId} api={api} items={items} onChange={data=>setItems(data.inventory)} />}
+    <section hidden={Boolean(tool) || (!ready && !error)} className={`product-management ${view !== 'detail' ? 'inventory-list-content' : ''}`}>
       {view === 'list' ? <>
         <form className="inventory-search" role="search" aria-label="재고 검색" onSubmit={event => { event.preventDefault(); changeSearch({ ...search, product: query }); }}>
           <div className="inventory-search-bar">
-            <label className="inventory-query"><span className="sr-only">상품명·캐릭터·장르·굿즈 종류 통합 검색</span><input type="search" placeholder="상품명·캐릭터·장르·굿즈 종류" value={query} onChange={event => setQuery(event.target.value)} /></label>
+            <label className="inventory-query"><span className="sr-only">상품명·캐릭터·작품/시리즈·굿즈 종류 통합 검색</span><input type="search" placeholder="상품명·캐릭터·작품/시리즈·굿즈 종류" value={query} onChange={event => setQuery(event.target.value)} /></label>
             <button className="inventory-search-button" type="submit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>검색</button>
           </div>
           <div className="inventory-filter-section"><details className="inventory-filters"><summary>상세 조건 추가{filterCount > 0 && <span className="inventory-filter-count">{filterCount}</span>}</summary>
@@ -202,21 +220,21 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
                 ['event', '등록된 행사', events],
                 ['creatorExact', '제작자', optionsFor('creatorName').map(value => [value, value])],
                 ['goodsType', '굿즈 종류', optionsFor('goodsType').map(value => [value, value])],
-                ['genre', '장르', optionsFor('genre').map(value => [value, value])],
+                ['genre', '작품/시리즈', optionsFor('genre').map(value => [value, value])],
               ].map(([key, label, options]) => <label key={key}><span>{label}</span><select value={search[key]} onChange={event => changeSearch({ ...search, [key]: event.target.value })}><option value={key === 'stock' ? 'all' : ''}>전체</option>{options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>)}
             </div>
           </details>
           {(search.product || filterCount > 0 || query) && <button type="button" className="inventory-search-reset" onClick={() => { setQuery(''); changeSearch(emptySearch()); }}>검색 조건 초기화</button>}
           </div>
         </form>
-        <div className="inventory-table-actions"><button type="button" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
+        <div className="inventory-table-actions"><button className="management-back" onClick={()=>navigate('/inventory/import')}>엑셀 일괄 등록</button><button className="management-back" onClick={()=>navigate('/inventory/movements')}>외부 판매·로스</button><button type="button" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
-          <caption className="sr-only">상품명과 제작자, 캐릭터와 장르, 판매 수량과 잔여 수량 및 총재고, 등록일</caption>
-          <thead><tr>{['상품명 / 제작자', '캐릭터 / 장르', '재고', '등록일'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <caption className="sr-only">상품명과 제작자, 캐릭터와 작품/시리즈, 판매 수량과 잔여 수량 및 총재고, 등록일</caption>
+          <thead><tr>{[['name','상품명 / 제작자'],[null,'캐릭터 / 작품/시리즈'],['remainingStock','재고'],['createdAt','등록일']].map(([key,label]) => <th scope="col" key={label} aria-sort={key && sort.key===key ? sort.direction===1?'ascending':'descending':undefined}>{key ? <button onClick={()=>sortBy(key)}>{label}{sort.key===key ? sort.direction===1?' ↑':' ↓':''}</button>:label}</th>)}</tr></thead>
           <tbody>{filteredItems.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
             <td><a className="management-name-link inventory-cell-main" href={`#/inventory/${encodeURIComponent(item.id)}`} aria-label={`${item.name} 재고 상세보기`} title={item.name} onClick={event => open(event,item)}>{item.name}</a><small className="inventory-cell-sub" title={item.creatorName || '미지정'}>{item.creatorName || '미지정'}</small></td>
             <td><span className="inventory-cell-main" title={item.vtuberName || ''}>{item.vtuberName || '—'}</span><small className="inventory-cell-sub" title={item.genre || ''}>{item.genre || '—'}</small></td>
-            <td className="mono"><span className="inventory-cell-main">판매 {won((item.history || []).reduce((sum, row) => sum + Number(row.soldQty || 0), 0))}개 / 잔여 {won(item.remainingStock)}개</span><small className="inventory-cell-sub">총재고 {won(item.totalStock)}개</small></td>
+            <td className="mono"><span className="inventory-cell-main">판매 {won((item.history || []).reduce((sum, row) => sum + Number(row.soldQty || 0), 0))}개 / 잔여 {won(item.remainingStock)}개</span><small className="inventory-cell-sub">총 {won(item.totalStock)}개</small></td>
             <td>{dateLabel(item.createdAt)}</td>
           </tr>)}</tbody>
         </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}{ready && items.length > 0 && !filteredItems.length && <p className="catalog-empty">검색 조건에 맞는 재고가 없습니다.</p>}</div>
@@ -237,7 +255,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
             {(image || draft.imageUrl) && <button type="button" className="product-image-remove" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => { setImage(null); uploadedImage.current = null; changeDraft('imageUrl', null); }}>이미지 제거</button>}
           </div>
           <form id="inventory-product-form" onSubmit={save} className="management-details">
-            <InventoryProductFields draft={draft} products={items} onChange={changeDraft} disabled={busy || preparing || uncertain || pendingMoves || !ready} />
+            <InventoryProductFields showPricing draft={draft} products={items} onChange={changeDraft} disabled={busy || preparing || uncertain || pendingMoves || !ready} />
             {view === 'new' && <label className="management-field"><span>최초 입고 수량</span><Input aria-label="최초 입고 수량" required type="number" min="0" max="2147483647" step="1" value={draft.stock} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('stock', value)} /></label>}
           </form>
         </div>
@@ -259,6 +277,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
           {!allocationRows.length && <p className="management-note">등록된 행사가 없습니다.</p>}
         </section>}
         {view === 'detail' && <section className="inventory-history"><h4>행사별 판매 이력</h4><p className="management-note">보존된 판매 내역 기준이며 취소된 판매는 제외합니다. 링크를 누르면 해당 행사로 전환해 판매 내역을 엽니다.</p>
+          <StockMovementForm adminId={adminId} api={api} items={items} inventoryId={draft.id} onChange={data=>{setItems(data.inventory);setDraft(data.inventory.find(i=>i.id===draft.id));}} />
           <div className="management-table-wrap"><table className="management-table"><thead><tr><th scope="col">행사</th><th scope="col">판매 수량</th><th scope="col">판매 내역</th></tr></thead><tbody>{(draft.history || []).map(history => <tr key={history.projectId}><td><a className="event-text-link" href={`#/products?projectId=${encodeURIComponent(history.projectId)}`} onClick={event => {
             if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
             event.preventDefault(); navigate(`/products?projectId=${encodeURIComponent(history.projectId)}`);

@@ -12,7 +12,7 @@ export function periodRange(period, start, end, now = new Date()) {
   if (period === 'custom') return { start, end };
   return { start: '', end: '' };
 }
-export function revenueSummary(data, settlements, range) {
+export function revenueSummary(data, settlements, range, eventSettlements = []) {
   const rows = new Map(), events = [];
   let total = 0, count = 0, cash = 0, transfer = 0;
   const getRow = (project, creator) => {
@@ -46,21 +46,30 @@ export function revenueSummary(data, settlements, range) {
     const project = data.projects.find(project => project.id === settlement.projectId);
     if (project) Object.assign(getRow(project, settlement.creator), settlement);
   }
+  for(const closure of eventSettlements.filter(row=>row.closedAt)) {
+    const project=data.projects.find(p=>p.id===closure.projectId);if(!project)continue;
+    for(const [key,row] of rows)if(row.projectId===project.id)rows.delete(key);
+    for(const frozen of closure.snapshot.rows) Object.assign(getRow(project,frozen.creator),settlements.find(r=>r.projectId===project.id&&r.creator===frozen.creator)||{},{...frozen,confirmed:true});
+  }
   const creators = new Map();
   for (const row of rows.values()) {
     row.gross = Math.round(row.gross); row.filteredGross = Math.round(row.filteredGross);
-    row.fees = row.deductions.reduce((sum, fee) => sum + fee.amount, 0);
-    row.adjustmentNeeded = Math.max(0, row.fees - row.gross);
-    row.net = Math.max(0, row.gross - row.fees);
+    row.confirmed=Boolean(row.confirmed);
+    row.expectedGross=row.confirmed?0:row.gross;
+    if(!row.confirmed){row.fees=0;row.net=0;}
+    row.adjustmentNeeded = row.confirmed ? Math.max(0, row.fees - row.gross):0;
     row.paid = row.payments.reduce((sum, payment) => sum + payment.amount, 0);
-    row.pending = Math.max(0, row.net - row.paid);
-    row.overpaid = Math.max(0, row.paid - row.net);
-    const creator = creators.get(row.creator) || { name: row.creator, gross: 0, net: 0, paid: 0, pending: 0, fees: 0, overpaid: 0, adjustmentNeeded: 0, rows: [] };
-    for (const field of ['gross', 'net', 'paid', 'pending', 'fees', 'overpaid', 'adjustmentNeeded']) creator[field] += row[field];
+    row.pending = row.net - row.paid;
+    row.overpaid = row.confirmed ? Math.max(0, row.paid - Math.max(0,row.net)):0;
+    const creator = creators.get(row.creator) || { name: row.creator, gross: 0, expectedGross:0, net: 0, paid: 0, pending: 0, fees: 0, overpaid: 0, adjustmentNeeded: 0, rows: [] };
+    for (const field of ['gross','expectedGross', 'net', 'paid', 'pending', 'fees', 'overpaid', 'adjustmentNeeded']) creator[field] += row[field];
     creator.rows.push(row); creators.set(row.creator, creator);
   }
+  for(const creator of creators.values()){creator.confirmed=creator.rows.some(row=>row.confirmed);creator.hasOpen=creator.rows.some(row=>!row.confirmed);creator.unpaid=creator.rows.some(row=>row.confirmed&&row.net>row.paid);}
   for (const event of events) {
     const matching = [...rows.values()].filter(row => row.projectId === event.id);
+    event.confirmed=Boolean(eventSettlements.find(row=>row.projectId===event.id)?.closedAt);
+    event.unpaid=matching.some(row=>row.confirmed&&row.net>row.paid);
     event.pending = matching.reduce((sum, row) => sum + row.pending, 0);
     event.overpaid = matching.reduce((sum, row) => sum + row.overpaid, 0);
     event.adjustmentNeeded = matching.reduce((sum, row) => sum + row.adjustmentNeeded, 0);
@@ -68,10 +77,11 @@ export function revenueSummary(data, settlements, range) {
   }
   return { total, count, cash, transfer, average: count ? total / count : 0, events: events.sort((a,b) => b.amount-a.amount),
     creators: [...creators.values()].sort((a,b) => b.pending-a.pending || b.gross-a.gross || a.name.localeCompare(b.name,'ko')),
+    expectedGross:[...rows.values()].reduce((sum,row)=>sum+row.expectedGross,0),net:[...rows.values()].reduce((sum,row)=>sum+row.net,0),paid:[...rows.values()].reduce((sum,row)=>sum+row.paid,0),
     pending: [...rows.values()].reduce((sum,row) => sum+row.pending,0), fees: [...rows.values()].reduce((sum,row)=>sum+row.fees,0) };
 }
 export function settlementStatus(row) {
-  return row.overpaid > 0 ? '초과 지급 확인' : row.adjustmentNeeded > 0 ? '차감 내역 확인' : row.pending === 0 ? '정산 완료' : row.paid > 0 ? '일부 완료' : '대기';
+  return !row.confirmed || row.hasOpen ? '정산 중' : row.overpaid > 0 ? '초과 지급 확인' : !row.unpaid && row.pending <= 0 && row.paid > 0 ? '지급 완료' : '마감';
 }
 export function settlementCsv(creators) {
   const cell = value => `"${String(value ?? '').replace(/"/g,'""')}"`;
