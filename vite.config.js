@@ -78,6 +78,8 @@ export default defineConfig(({ mode, command }) => {
     }
   }
   return ({
+  resolve: { dedupe: ['react', 'react-dom'] },
+  optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime'] },
   build: { target: 'es2022' },
   plugins: [createVercelApiDevPlugin(), react(), tailwindcss(), {
     name: 'validate-mobile-origin',

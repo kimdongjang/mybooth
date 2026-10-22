@@ -1,3 +1,4 @@
+import LoadingState from '../components/LoadingState';
 import { revenueSummary } from '../utils/revenueSummary';
 import { useEffect, useState } from 'react';
 import { liveQuery } from 'dexie';
@@ -51,7 +52,7 @@ export default function DashboardPage({ request }) {
     <p className="account-dashboard-basis">전체 기간 · 서버 동기화 완료 기준</p>
     {error && <p role="alert" className="dashboard-error">{error}</p>}
     {queueError && <p role="alert" className="dashboard-error">{queueError}</p>}
-    {!data && !error && <div role="status">데이터를 불러오는 중...</div>}
+    {!data && !error && <LoadingState />}
     {summary && <>
       <dl className="account-dashboard-kpis">
         <Metric label="전체 판매액" value={`${won(summary.total)}원`} />

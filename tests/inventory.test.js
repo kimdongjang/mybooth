@@ -1,3 +1,6 @@
+import * as eventSettlement from '../api/lib/eventSettlement.js';
+import * as accountInventory from '../api/lib/accountInventory.js';
+import { hashPassword } from '../api/lib/auth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -19,10 +22,11 @@ async function fixture() {
   await module.link(specifier => {
     const exports = specifier === '@vercel/postgres' ? { sql: { connect: async () => ({ sql, query: query => { statements.push(query); return db.query(query); }, release() {} }) } }
       : specifier === './lib/auth.js' ? {
+        hashPassword,
         assertPostgresConnectionString() {},
         requireAuth(req, res) { if (req.adminId) return { id: req.adminId }; res.status(401).json({ error: 'Unauthorized' }); return null; },
         validateAdminPassword: async (_id, password) => password === 'test-password',
-      } : defaults;
+      } : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
     }, { context });
@@ -412,12 +416,11 @@ test('event genre edits share the common source, preserve clearing and backups, 
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
     assert.equal(saved.body.products[0].genre, '행사 장르');
     assert.equal((await invoke('listInventory')).body.inventory[0].genre, '행사 장르');
-    const backup = (await invoke('backupProject', event, { password: 'test-password' })).body.backup;
-    assert.equal(backup.products[0].genre, '행사 장르');
+    const backup = (await invoke('backupAccount')).body.backup;
+    assert.equal(backup.data.tables.pos_products[0].genre, '행사 장르');
     const copied = await invoke('duplicateProject', event, { password: 'test-password', name: '장르 복제' });
     assert.equal((await invoke(null, copied.body.project.id)).body.products[0].genre, '행사 장르');
-    const restored = await invoke('restoreProject', null, { password: 'test-password', name: '장르 복원', backup });
-    assert.equal((await invoke(null, restored.body.project.id)).body.products[0].genre, '행사 장르');
+    assert.equal((await invoke('restoreProject',null,{})).status,410);
     product = saved.body.products[0];
     assert.equal((await invoke('saveEventProduct', null, { projectId: event, productId: product.id, inventoryVersion: product.inventoryVersion, product: { ...product, genre: {} } })).status, 400);
     assert.equal((await invoke(null, event)).body.products[0].genre, '행사 장르');
@@ -534,9 +537,16 @@ test('allocation plan saves total and all event quantities atomically without ch
     assert.equal((await f.invoke('finalizeSale', f.first, { localOrderId: 'plan-sale', method: 'cash', total: 3000, cart: [{ type: 'product', id: productId, name: '공통 상품', unitPrice: 1000, qty: 3 }] })).status, 200);
     item = await f.read();
     const payload = allocationPayload(item,100,{[f.first]:40,[f.second]:10});
+    payload.registrationDate = '2024-02-29';
+    const eventCreatedAt = (await f.invoke(null,f.first)).body.products[0].createdAt;
     const saved = await f.invoke('saveInventory', null, payload);
     assert.equal(saved.status,200,JSON.stringify(saved.body));
     item = await f.read();
+    assert.equal(item.createdAt,'2024-02-29T00:00:00.000Z');
+    assert.equal((await f.invoke(null,f.first)).body.products[0].createdAt,eventCreatedAt);
+    const invalidDate = {...allocationPayload(item,110),registrationDate:'2024-02-30'};
+    assert.equal((await f.invoke('saveInventory',null,invalidDate)).status,400);
+    assert.deepEqual(await f.read(),item);
     assert.equal(item.totalStock,100); assert.equal(item.stock,50); assert.equal(item.remainingStock,97);
     assert.equal(item.allocations.find(row=>row.project_id===f.first).stock,37);
     assert.equal(item.history.find(row=>row.projectId===f.first).soldQty,3);
@@ -602,7 +612,7 @@ test('allocation plan rolls back common metadata, warehouse, event changes and l
   try {
     const item=await f.read();
     await f.db.exec("CREATE FUNCTION fail_plan() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected plan failure'; END $$; CREATE TRIGGER fail_plan BEFORE UPDATE ON pos_inventory FOR EACH ROW EXECUTE FUNCTION fail_plan()");
-    const payload=allocationPayload(item,110,{[f.first]:40,[f.second]:10}); payload.product.name='실패할 이름';
+    const payload=allocationPayload(item,110,{[f.first]:40,[f.second]:10}); payload.product.name='실패할 이름'; payload.registrationDate='2024-02-29';
     assert.equal((await f.invoke('saveInventory',null,payload)).status,500);
     const after=await f.read(); assert.deepEqual(after,item);
     assert.equal(Number((await f.db.query('SELECT COUNT(*) AS n FROM pos_inventory_transfers')).rows[0].n),2);
@@ -739,5 +749,103 @@ test('inventory registration date edits validate ownership, version and calendar
  const result=await invoke('updateInventoryRegistrationDate',null,body);assert.equal(result.status,200);
  const after=result.body.inventory[0];assert.equal(after.createdAt,'2024-02-29T00:00:00.000Z');assert.equal(after.version,before.version+1);assert.equal(after.remainingStock,before.remainingStock);assert.equal(after.totalReceived,before.totalReceived);assert.deepEqual(after.allocations,before.allocations);assert.deepEqual(after.history,before.history);
  assert.equal((await invoke('updateInventoryRegistrationDate',null,body)).status,409);
+ }finally{await db.close();}
+});
+
+test('event picker summaries, profile edits and account deletion preserve other owners and roll back failures', async () => {
+  const { db, invoke } = await fixture();
+  try {
+    const event = (await invoke('createProject', null, { name: '내 행사' })).body.project.id;
+    const foreign = (await invoke('createProject', null, { name: '다른 계정 행사' }, 'b')).body.project.id;
+    const product = { id: 'account-goods', name: '엽서', goodsType: '엽서', vtuberName: '', creatorName: '', genre: '오리지날', price: 1000, stockQty: 5 };
+    assert.equal((await invoke('createEventProduct', null, { projectId: event, product })).status, 200);
+    await invoke('finalizeSale', event, { localOrderId: 'account-sale', method: 'cash', total: 2000, cart: [{ type: 'product', id: product.id, name: product.name, unitPrice: 1000, qty: 2 }] });
+    assert.deepEqual((await invoke()).body.projects[0].summary, { products: 1, remainingStock: 3, sales: 1, total: 2000 });
+    assert.equal((await invoke(null, null, {}, 'b')).body.projects.length, 1);
+    assert.equal((await invoke('updateProfile', null, { nickname: ' 새 닉네임 ' })).body.admin.nickname, '새 닉네임');
+    assert.equal((await invoke('updateProfile', null, { nickname: ' ' })).status, 400);
+    assert.equal((await invoke('updateProfile', null, { nickname: 'x'.repeat(31) })).status, 400);
+    assert.equal((await invoke('deleteAccount', null, { confirmId: 'b', password: 'test-password' })).status, 403);
+    assert.equal((await invoke('deleteAccount', null, { confirmId: 'a', password: 'wrong' })).status, 403);
+    await db.exec("CREATE FUNCTION fail_account_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected'; END $$; CREATE TRIGGER fail_account_delete BEFORE UPDATE ON pos_admins FOR EACH ROW EXECUTE FUNCTION fail_account_delete()");
+    assert.equal((await invoke('deleteAccount', null, { confirmId: 'a', password: 'test-password' })).status, 500);
+    assert.equal((await invoke(null, event)).body.products[0].stockQty, 3);
+    assert.equal((await invoke(null, event)).body.sales.length, 1);
+    await db.exec('DROP TRIGGER fail_account_delete ON pos_admins');
+    assert.equal((await invoke('deleteAccount', null, { confirmId: 'a', password: 'test-password' })).status, 200);
+    for (const table of ['pos_projects', 'pos_inventory', 'pos_inventory_numbers', 'pos_inventory_transfers']) assert.equal(Number((await db.query(`SELECT COUNT(*) AS n FROM ${table} WHERE admin_id='a'`)).rows[0].n), 0, table);
+    for (const table of ['pos_products', 'pos_bundles', 'pos_sales', 'pos_sale_receipts', 'pos_inventory_links']) assert.equal(Number((await db.query(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id=$1`, [event])).rows[0].n), 0, table);
+    assert.equal((await invoke('createProject', null, { name: 'old token' })).status, 401);
+    assert.equal((await invoke('updateProfile', null, { nickname: 'old token' })).status, 401);
+    assert.equal((await invoke(null, foreign, {}, 'b')).status, 200);
+    assert.equal((await db.query("SELECT nickname FROM pos_admins WHERE id='b'")).rows[0].nickname, null);
+  } finally { await db.close(); }
+});
+
+test('external sales and event damage are separate, scoped, versioned and idempotent; failed movement rolls back',async()=>{
+ const {db,invoke}=await fixture();try{
+  const event=(await invoke('createProject',null,{name:'loss event'})).body.project.id;
+  let item=(await invoke('saveInventory',null,{product:{id:'movement-source',version:-1,name:'상품',stock:10,price:1000,cost:400}})).body.inventory[0];
+  const external={requestId:crypto.randomUUID(),inventoryId:item.id,version:item.version,quantity:2,reason:'external',memo:'윗치폼'};
+  let result=await invoke('recordStockMovement',null,external);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.inventory[0].stock,8);
+  assert.equal(result.body.movements[0].request.productName,'상품');
+  assert.equal((await invoke('recordStockMovement',null,external)).body.inventory[0].stock,8);
+  assert.equal((await invoke('recordStockMovement',null,{...external,quantity:3})).status,409);
+  assert.equal((await invoke('recordStockMovement',null,external,'b')).status,409);
+  for(const quantity of [0,-1,1.5,2147483648])assert.equal((await invoke('recordStockMovement',null,{...external,requestId:crypto.randomUUID(),quantity})).status,400);
+  await invoke('transferInventory',null,{projectId:event,inventoryId:item.id,qty:5,direction:'allocate',requestId:'movement-allocation'});
+  item=(await invoke('listInventory')).body.inventory[0];const product=(await invoke(null,event)).body.products[0];
+  const damage={requestId:crypto.randomUUID(),inventoryId:item.id,version:item.version,projectId:event,productId:product.id,quantity:1,reason:'damage',memo:'파손'};
+  result=await invoke('recordStockMovement',null,damage);assert.equal(result.status,200,JSON.stringify(result.body));
+  assert.equal((await invoke(null,event)).body.products[0].stockQty,4);assert.equal((await invoke(null,event)).body.sales.length,0);
+  assert.equal(result.body.inventory[0].stock,3);assert.equal(result.body.inventory[0].remainingStock,7);
+  assert.equal((await invoke('recordStockMovement',null,damage)).status,200);
+  item=result.body.inventory[0];
+  await db.exec("CREATE FUNCTION fail_movement() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'failure'; END $$; CREATE TRIGGER reject_movement BEFORE INSERT ON pos_stock_movements FOR EACH ROW EXECUTE FUNCTION fail_movement()");
+  assert.equal((await invoke('recordStockMovement',null,{...external,requestId:crypto.randomUUID(),version:item.version,quantity:1,reason:'loss'})).status,500);
+  assert.equal((await invoke('listInventory')).body.inventory[0].stock,3);
+  assert.equal((await invoke('listStockMovements',null,{},'b')).body.movements.length,0);
+ }finally{await db.close();}
+});
+
+test('bulk product import is atomic, preserves zero prices and retries without duplicates',async()=>{
+ const {db,invoke}=await fixture();try{
+  const products=[{id:crypto.randomUUID(),name:'무료',stock:0,price:0,cost:0},{id:crypto.randomUUID(),name:'유료',stock:5,price:3000,cost:1000}];
+  const result=await invoke('importInventory',null,{products});assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.inventory.length,2);
+  assert.equal((await invoke('importInventory',null,{products})).body.inventory.length,2);
+  assert.equal((await invoke('importInventory',null,{products:products.map(p=>({...p,stock:10}))})).status,409);
+  const bad=[{id:crypto.randomUUID(),name:'rollback',stock:2,price:0},{id:crypto.randomUUID(),name:'invalid',stock:-1,price:0}];
+  assert.equal((await invoke('importInventory',null,{products:bad})).status,400);
+  assert.equal((await invoke('listInventory')).body.inventory.length,2);
+  assert.equal((await invoke('listInventory',null,{},'b')).body.inventory.length,0);
+ }finally{await db.close();}
+});
+
+test('credential changes require current password, validate email and preserve account ownership',async()=>{
+ const {db,invoke}=await fixture();try{
+  assert.equal((await invoke('updateCredentials',null,{password:'wrong',email:'a@example.com'})).status,403);
+  assert.equal((await invoke('updateCredentials',null,{password:'test-password',email:'invalid'})).status,400);
+  assert.equal((await invoke('updateCredentials',null,{password:'test-password',email:'a@example.com',newPassword:'short'})).status,400);
+  const result=await invoke('updateCredentials',null,{password:'test-password',email:'A@example.com',newPassword:'new-password'});assert.equal(result.status,200,JSON.stringify(result.body));
+  const account=(await db.query("SELECT * FROM pos_admins WHERE id='a'")).rows[0];assert.equal(account.email,'a@example.com');assert.ok(account.password_hash.includes(':'));assert.notEqual(account.password_hash,'new-password');
+  assert.equal((await db.query("SELECT email FROM pos_admins WHERE id='b'")).rows[0].email,null);
+ }finally{await db.close();}
+});
+
+test('closed event blocks sales, voids, registration and allocation while keeping reads and warehouse data',async()=>{
+ const {db,invoke}=await fixture();try{
+  const event=(await invoke('createProject',null,{name:'마감 행사'})).body.project.id;
+  const item=(await invoke('saveInventory',null,{product:{id:'closed-stock',version:-1,name:'상품',stock:10}})).body.inventory[0];
+  await invoke('transferInventory',null,{projectId:event,inventoryId:item.id,qty:5,direction:'allocate',requestId:'closed-allocation'});
+  const product=(await invoke(null,event)).body.products[0];
+  await db.query("INSERT INTO pos_event_settlements(admin_id,project_id,closed_at,snapshot) VALUES('a',$1,NOW(),'{\"rows\":[]}')",[event]);
+  const state=(await invoke(null,event)).body;assert.ok(state.settlementClosedAt);
+  for(const [action,payload] of [['finalizeSale',{localOrderId:'closed-sale',method:'cash',total:0,cart:[{type:'product',id:product.id,qty:1,unitPrice:0}]}],['voidSale',{id:'any'}],['clearSales',{password:'test-password'}]])assert.equal((await invoke(action,event,payload)).status,409);
+  assert.equal((await invoke('createEventProduct',null,{projectId:event,product:{id:'blocked',name:'새상품',price:0,stockQty:1}})).status,409);
+  const fresh=(await invoke('listInventory')).body.inventory[0];
+  const plan={totalStock:fresh.totalStock,allocations:[{projectId:event,productId:product.id,quantity:4,stock:5,initialStock:5,dataRevision:null}]};
+  assert.equal((await invoke('saveInventory',null,{product:fresh,allocationPlan:plan})).status,409);
+  assert.equal((await invoke('listInventory')).body.inventory[0].stock,5);
+  assert.equal((await invoke(null,event)).body.products[0].stockQty,5);
  }finally{await db.close();}
 });

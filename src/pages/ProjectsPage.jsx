@@ -14,11 +14,12 @@ export default function ProjectsPage({ creating, projects, selectedProject, newP
           <span className="event-status" data-archived={Boolean(project.archivedAt)}>{project.archivedAt ? '보관 중' : '진행 중'}</span>
           <strong>{project.name}</strong>
           <span className="event-muted">생성일 {new Date(project.createdAt).toLocaleDateString('ko-KR')}{selectedProject?.id === project.id ? ' · 현재 선택한 행사' : ''}</span>
+          {project.summary ? <span className="event-summary"><span>판매 {project.summary.sales.toLocaleString()}건 · {project.summary.total.toLocaleString()}원</span><span>상품 {project.summary.products.toLocaleString()}종 · 남은 재고 {project.summary.remainingStock.toLocaleString()}개</span><small>서버 동기화 완료 기준</small></span> : <span className="event-muted">요약 정보는 온라인에서 목록을 새로 불러오면 표시됩니다.</span>}
           <span className="event-picker-action">{project.archivedAt ? '행사 내역 열기' : '판매 화면 열기'} →</span>
         </button>)}
-        {!projects.length && <div className="event-panel"><h2>등록된 행사가 없습니다</h2><p>새 행사를 만들거나 기존 프로젝트 백업을 복원해 시작하세요.</p><button className="event-button" onClick={() => navigate('projectNew')}>새 행사 추가</button></div>}
+        <button type="button" className="event-picker-card event-picker-add" onClick={() => navigate('projectNew')}><span aria-hidden="true">＋</span><strong>새 행사 추가하기</strong></button>
       </div>}
-      {!creating && !projects.length && <div className="event-picker-restore"><p>기존 행사 백업 파일이 있나요?</p><button type="button" className="event-text-link" onClick={() => navigate('restore')}>백업 파일로 새 행사 복원 →</button></div>}
+
     </div>
   </div></main>;
 }

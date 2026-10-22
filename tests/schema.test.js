@@ -1,3 +1,6 @@
+import * as eventSettlement from '../api/lib/eventSettlement.js';
+import * as accountInventory from '../api/lib/accountInventory.js';
+import { hashPassword } from '../api/lib/auth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -27,10 +30,11 @@ for (const legacy of [true, false]) {
       await module.link(specifier => {
         const exports = specifier === '@vercel/postgres' ? { sql }
           : specifier === './lib/auth.js' ? {
+            hashPassword,
             assertPostgresConnectionString() {},
             requireAuth: req => ({ id: req.adminId }),
             validateAdminPassword: async (_id, password) => password === 'test-password',
-          } : defaults;
+          } : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
         return new vm.SyntheticModule(Object.keys(exports), function () {
           for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
         }, { context });

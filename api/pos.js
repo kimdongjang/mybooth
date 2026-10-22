@@ -1,14 +1,23 @@
+import { initEventSettlements } from './lib/eventSettlement.js';
+import { accountSnapshot, stockMovement } from './lib/accountInventory.js';
 import { sql as pool } from '@vercel/postgres';
-import { assertPostgresConnectionString, requireAuth, validateAdminPassword } from './lib/auth.js';
+import { assertPostgresConnectionString, requireAuth, hashPassword, validateAdminPassword } from './lib/auth.js';
 import { CURRENT_SEED_VERSION, getDefaultBundles, getDefaultProducts } from './lib/defaultData.js';
 
 export function createHandler(sql) {
 const uid = () => globalThis.crypto.randomUUID();
 const detachedProjectIds = new Set(['pxwiu2t', 's4fjgga']);
+function validImageUrl(value, prefix) {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname.endsWith('.public.blob.vercel-storage.com') && url.pathname.startsWith(prefix);
+  } catch { return false; }
+}
 const displayName = (product) => product.name || [product.vtuberName, product.goodsType, product.creatorName ? `(${product.creatorName})` : ''].filter(Boolean).join(' ') || '새 굿즈';
 
 function normalizeProduct(product = {}) {
-  if (product.genre != null && (typeof product.genre !== 'string' || product.genre.length > 200)) throw Object.assign(new Error('장르는 200자 이내로 입력해주세요.'), { status: 400 });
+  if (product.genre != null && (typeof product.genre !== 'string' || product.genre.length > 200)) throw Object.assign(new Error('작품/시리즈는 200자 이내로 입력해주세요.'), { status: 400 });
   const now = new Date().toISOString();
   const productCode = product.productCode || product.id || uid();
   const stockQty = Number(product.stockQty ?? product.stock ?? 0) || 0;
@@ -39,6 +48,10 @@ let initialized = false;
 async function initDb() {
   if (initialized) return;
   assertPostgresConnectionString();
+  await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS nickname TEXT`;
+  await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS email TEXT`;
+  await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS password_hash TEXT`;
   await sql`CREATE TABLE IF NOT EXISTS pos_projects (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL REFERENCES pos_admins(id) ON DELETE CASCADE, name TEXT NOT NULL, seed_version INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
   await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS seed_version INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`;
@@ -125,7 +138,7 @@ async function initDb() {
   await sql`DO $$
     DECLARE target_id TEXT;
     BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pos_admins WHERE id = 'admin') THEN RETURN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pos_admins WHERE id = 'admin' AND deleted_at IS NULL) THEN RETURN; END IF;
       LOCK TABLE pos_projects, pos_products, pos_bundles, pos_sales IN SHARE ROW EXCLUSIVE MODE;
       IF NOT EXISTS (SELECT 1 FROM pos_products WHERE project_id IS NULL)
         AND NOT EXISTS (SELECT 1 FROM pos_bundles WHERE project_id IS NULL)
@@ -141,6 +154,7 @@ async function initDb() {
       UPDATE pos_sales SET project_id = target_id WHERE project_id IS NULL;
     END $$`;
   await initInventory();
+  await initEventSettlements(sql);
   initialized = true;
 }
 
@@ -166,6 +180,8 @@ async function initInventory() {
     PRIMARY KEY(project_id, product_id), UNIQUE(project_id, inventory_id),
     FOREIGN KEY(admin_id, inventory_id) REFERENCES pos_inventory(admin_id, id))`;
   await sql`CREATE INDEX IF NOT EXISTS pos_inventory_links_owner_idx ON pos_inventory_links(admin_id,inventory_id)`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_account_restores (admin_id TEXT NOT NULL REFERENCES pos_admins(id),id TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(admin_id,id))`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_stock_movements (admin_id TEXT NOT NULL REFERENCES pos_admins(id),id TEXT NOT NULL,request JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(admin_id,id))`;
   await sql`CREATE TABLE IF NOT EXISTS pos_inventory_transfers (
     admin_id TEXT NOT NULL REFERENCES pos_admins(id) ON DELETE CASCADE,
     id TEXT NOT NULL, request JSONB NOT NULL, PRIMARY KEY(admin_id, id))`;
@@ -250,10 +266,10 @@ async function inventoryState(adminId) {
     }
     if (row.product.removedAt) continue;
     inventory.push({ ...row.product, id: row.id, productNumber, genre: row.product.genre || '', stock: row.stock, version: row.version,
-      totalReceived, totalEstimated, totalStock: Number(row.stock) + linked.reduce((sum,a) => sum + Number(a.initial_stock),0), remainingStock: remaining, history, allocations: linked.map(row => ({ ...row, data_revision: detachedProjectIds.has(row.project_id) ? row.data_revision : null })) });
+      totalReceived, totalEstimated, totalStock: Number(row.stock) + linked.reduce((sum,a) => sum + Number(a.initial_stock),0), remainingStock: remaining, history, allocations: linked.map(row => ({ ...row, data_revision: row.data_revision || null })) });
   }
   const inventoryEvents = (await sql`SELECT e.id,e.name,e.archived_at,(SELECT revision FROM pos_event_archives WHERE project_id=e.id) AS data_revision FROM pos_projects e WHERE e.admin_id=${adminId} ORDER BY e.created_at,e.id`).rows;
-  return { inventory, inventoryEvents: inventoryEvents.map(event => ({ ...event, data_revision: detachedProjectIds.has(event.id) ? event.data_revision : null })) };
+  return { inventory, inventoryEvents: inventoryEvents.map(event => ({ ...event, data_revision: event.data_revision || null })) };
 }
 
 function inventoryInteger(value, minimum = 0) {
@@ -280,6 +296,7 @@ async function inventoryAction(adminId, action, payload) {
   // also take their existing project lock. Serialization failures return 409.
   await sql`SELECT id FROM pos_admins WHERE id = ${adminId} FOR UPDATE`;
   await sql`SELECT id FROM pos_projects WHERE admin_id=${adminId} ORDER BY id FOR UPDATE`;
+  const closedEvents=new Set((await sql`SELECT project_id FROM pos_event_settlements WHERE admin_id=${adminId} AND closed_at IS NOT NULL`).rows.map(row=>row.project_id));
   if (['removeInventory', 'updateInventoryRegistrationDate'].includes(action)) {
     if (typeof payload.inventoryId !== 'string' || !payload.inventoryId || payload.inventoryId.length > 500) throw Object.assign(new Error('올바른 재고 상품을 선택해주세요.'), { status: 400 });
     const row = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} AND id=${payload.inventoryId}`).rows[0];
@@ -310,7 +327,7 @@ async function inventoryAction(adminId, action, payload) {
     const priorLink = (await sql`SELECT inventory_id FROM pos_inventory_links WHERE admin_id=${adminId} AND project_id=${projectId} AND product_id=${productId}`).rows[0];
     if (!priorLink) await inventoryState(adminId);
     const row = (await sql`SELECT i.* FROM pos_inventory i JOIN pos_inventory_links l ON l.inventory_id=i.id AND l.admin_id=i.admin_id JOIN pos_products p ON p.id=l.product_id AND p.project_id=l.project_id WHERE i.admin_id=${adminId} AND l.project_id=${projectId} AND l.product_id=${productId} AND COALESCE(p.is_active,TRUE)=TRUE`).rows[0];
-    if (!row || row.product.removedAt) throw Object.assign(new Error('공통 상품을 찾을 수 없습니다. 공통 상품·재고 관리를 먼저 열고 다시 시도해주세요.'), { status: 409 });
+    if (!row || row.product.removedAt) throw Object.assign(new Error('공통 상품을 찾을 수 없습니다. 상품·재고를 먼저 열고 다시 시도해주세요.'), { status: 409 });
     if (action === 'saveEventProduct' && row.version !== payload.inventoryVersion && !(!priorLink && payload.inventoryVersion == null && row.version === 0)) throw Object.assign(new Error('공통 상품이 변경되었습니다. 최신 정보를 불러와주세요.'), { status: 409 });
     let product;
     if (action === 'saveCommonProductImage') {
@@ -371,15 +388,13 @@ async function inventoryAction(adminId, action, payload) {
     if (old?.product?.removedAt) throw Object.assign(new Error('제거된 재고는 수정할 수 없습니다.'), { status: 409 });
     if (input.id && (old ? old.version !== input.version : input.version !== -1)) throw Object.assign(new Error('재고가 변경되었습니다. 새로고침해주세요.'), { status: 409 });
     const price = submittedPrice ?? old?.product?.price ?? 0;
-    if (input.genre != null && (typeof input.genre !== 'string' || input.genre.length > 200)) throw Object.assign(new Error('장르는 200자 이내로 입력해주세요.'), { status: 400 });
+    if (input.genre != null && (typeof input.genre !== 'string' || input.genre.length > 200)) throw Object.assign(new Error('작품/시리즈는 200자 이내로 입력해주세요.'), { status: 400 });
     const genre = (input.genre ?? old?.product?.genre ?? '').trim();
     const imageUrl = Object.hasOwn(input, 'imageUrl') ? input.imageUrl : old?.product?.imageUrl || null;
     if (imageUrl != null && imageUrl !== old?.product?.imageUrl) {
-      let url;
-      try { url = new URL(imageUrl); } catch { throw Object.assign(new Error('올바른 상품 이미지 URL이 아닙니다.'), { status: 400 }); }
-      if (typeof imageUrl !== 'string' || url.protocol !== 'https:' || !url.hostname.endsWith('.public.blob.vercel-storage.com') || !url.pathname.startsWith(`/inventory/${encodeURIComponent(adminId)}/${encodeURIComponent(id)}/`)) throw Object.assign(new Error('올바른 상품 이미지 URL이 아닙니다.'), { status: 400 });
+      if (!validImageUrl(imageUrl, `/inventory/${encodeURIComponent(adminId)}/${encodeURIComponent(id)}/`)) throw Object.assign(new Error('올바른 상품 이미지 URL이 아닙니다.'), { status: 400 });
     }
-    const product = { genre, createdAt: old ? old.product.createdAt || null : new Date().toISOString(), imageUrl, name: input.name.trim(), price, goodsType: String(input.goodsType || input.name).slice(0,200), creatorName: String(input.creatorName || '').slice(0,200), vtuberName: String(input.vtuberName || '').slice(0,200) };
+    const product = { genre, createdAt: Object.hasOwn(payload, 'registrationDate') ? registrationDate(payload.registrationDate) : old ? old.product.createdAt || null : new Date().toISOString(), imageUrl, name: input.name.trim(), price, cost: inventoryInteger(input.cost ?? old?.product?.cost ?? 0), goodsType: String(input.goodsType || input.name).slice(0,200), creatorName: String(input.creatorName || '').slice(0,200), vtuberName: String(input.vtuberName || '').slice(0,200) };
     // Initialize old totals/numbers before applying a stock delta.
     await inventoryState(adminId);
     if (old) {
@@ -409,6 +424,7 @@ async function inventoryAction(adminId, action, payload) {
           const sold = current.history.find(h => h.projectId === row.project_id && h.productId === row.product_id)?.soldQty || 0;
           const delta = quantity - Number(row.initial_stock);
           if (quantity < sold || Number(row.stock) + delta < 0) throw Object.assign(new Error('행사 배정 수량은 이미 판매·차감한 수량보다 적을 수 없습니다.'), { status: 400 });
+          if (delta && closedEvents.has(row.project_id)) throw Object.assign(new Error('마감된 행사의 배정은 수정할 수 없습니다.'),{status:409});
           if (row.archived_at && delta > 0) throw Object.assign(new Error('보관된 행사의 배정 수량은 늘릴 수 없습니다.'), { status: 409 });
           assigned += quantity;
           changes.push({ row, quantity, delta });
@@ -499,14 +515,18 @@ async function assertProject(adminId, projectId) {
 }
 
 async function dataRevision(projectId) {
-  if (!detachedProjectIds.has(projectId)) return null;
   return (await sql`SELECT revision FROM pos_event_archives WHERE project_id = ${projectId}`).rows[0]?.revision || null;
 }
 
 async function listProjects(adminId) {
   await initDb();
-  const result = await sql`SELECT id, name, seed_version, archived_at, created_at, updated_at FROM pos_projects WHERE admin_id = ${adminId} ORDER BY updated_at DESC, created_at DESC`;
-  return { projects: result.rows.map((project) => ({ id: project.id, name: project.name, archivedAt: project.archived_at ? new Date(project.archived_at).toISOString() : null, seedVersion: Number(project.seed_version || 0), createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString() })) };
+  const result = await sql`SELECT e.id, e.name, e.seed_version, e.archived_at, e.created_at, e.updated_at,
+    (SELECT COUNT(*) FROM pos_products p WHERE p.project_id=e.id AND COALESCE(p.is_active,TRUE)) AS product_count,
+    (SELECT COALESCE(SUM(COALESCE(p.stock_qty,p.stock)),0) FROM pos_products p WHERE p.project_id=e.id AND COALESCE(p.is_active,TRUE)) AS remaining_stock,
+    (SELECT COUNT(*) FROM pos_sales s WHERE s.project_id=e.id) AS sale_count,
+    (SELECT COALESCE(SUM(s.total),0) FROM pos_sales s WHERE s.project_id=e.id) AS sale_total
+    FROM pos_projects e WHERE e.admin_id = ${adminId} ORDER BY updated_at DESC, created_at DESC`;
+  return { projects: result.rows.map((project) => ({ id: project.id, name: project.name, summary: { products: Number(project.product_count || 0), remainingStock: Number(project.remaining_stock || 0), sales: Number(project.sale_count || 0), total: Number(project.sale_total || 0) }, archivedAt: project.archived_at ? new Date(project.archived_at).toISOString() : null, seedVersion: Number(project.seed_version || 0), createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString() })) };
 }
 
 async function insertProduct(projectId, input, onlyMissing = false, saleNumber = null) {
@@ -585,6 +605,7 @@ async function readState(adminId, projectId) {
     sql`SELECT id, time, method, total, lines FROM pos_sales WHERE project_id = ${projectId} ORDER BY time ASC`,
   ]);
   return {
+    settlementClosedAt: (await sql`SELECT closed_at FROM pos_event_settlements WHERE admin_id=${adminId} AND project_id=${projectId}`).rows[0]?.closed_at || null,
     archivedAt: (await sql`SELECT archived_at FROM pos_projects WHERE id = ${projectId}`).rows[0]?.archived_at || null,
     dataRevision: await dataRevision(projectId),
     products: products.rows.map((product) => ({ id: product.id, saleNumber: product.sale_number == null ? null : Number(product.sale_number), inventoryId: product.inventory_id || null, productNumber: product.product_number || null, inventoryVersion: product.inventory_version ?? null, genre: product.genre || '', productCode: product.product_code || product.id, goodsType: product.goods_type || product.name, vtuberName: product.vtuber_name || '', creatorName: product.creator_name || '', stockQty: Number(product.stock_qty ?? product.stock ?? 0), initialStockQty: Number(product.initial_stock_qty ?? product.stock_qty ?? product.stock ?? 0), size: product.size || null, imageUrl: product.image_url || null, price: Number(product.price) || 0, setCreatorName: product.set_creator_name || null, setGroupName: product.set_group_name || null, setPrice: product.set_price == null ? null : Number(product.set_price) || 0, setDescription: product.set_description || null, isActive: product.is_active !== false, createdAt: new Date(product.created_at).toISOString(), updatedAt: new Date(product.updated_at).toISOString(), name: product.name, stock: Number(product.stock_qty ?? product.stock ?? 0) })),
@@ -616,9 +637,8 @@ async function replaceProducts(adminId, projectId, products) {
 async function updateProductImage(adminId, projectId, { productId, imageUrl }) {
   await assertProject(adminId, projectId);
   if (imageUrl != null) {
-    const url = new URL(imageUrl);
     const prefix = `/products/${encodeURIComponent(projectId)}/${encodeURIComponent(productId)}/`;
-    if (url.protocol !== 'https:' || !url.hostname.endsWith('.public.blob.vercel-storage.com') || !url.pathname.startsWith(prefix)) throw new Error('올바른 상품 이미지 URL이 아닙니다.');
+    if (!validImageUrl(imageUrl, prefix)) throw new Error('올바른 상품 이미지 URL이 아닙니다.');
   }
   await sql`UPDATE pos_products SET image_url = ${imageUrl || null}, updated_at = NOW() WHERE project_id = ${projectId} AND id = ${productId}`;
 }
@@ -695,7 +715,7 @@ async function voidSale(adminId, projectId, id) {
 }
 
 async function clearSales(adminId, projectId, password) {
-  if (!await validateAdminPassword(adminId, password)) throw new Error('패스워드가 올바르지 않습니다.');
+  if (!await validateAdminPassword(adminId, password, sql)) throw new Error('패스워드가 올바르지 않습니다.');
   await assertProject(adminId, projectId);
   await sql`INSERT INTO pos_sale_receipts (project_id, id) SELECT project_id, id FROM pos_sales WHERE project_id = ${projectId} ON CONFLICT (project_id, id) DO NOTHING`;
   await sql`DELETE FROM pos_sales WHERE project_id = ${projectId}`;
@@ -728,8 +748,7 @@ function validateBackup(backup) {
   for (const p of backup.products) {
     if (!text(p.name) || !integer(p.price) || !integer(p.stock) || (p.stock_qty != null && !integer(p.stock_qty)) || (p.initial_stock_qty != null && !integer(p.initial_stock_qty)) || (p.set_price != null && !integer(p.set_price)) || (p.is_active != null && typeof p.is_active !== 'boolean')) invalid();
     if (p.image_url != null) {
-      const image = new URL(p.image_url);
-      if (image.protocol !== 'https:' || !image.hostname.endsWith('.public.blob.vercel-storage.com')) invalid();
+      if (!validImageUrl(p.image_url, '/')) invalid();
     }
   }
   for (const b of backup.bundles) {
@@ -767,10 +786,64 @@ async function handler(req, res) {
   const admin = requireAuth(req, res);
   if (!admin) return;
   try {
+    await initDb();
+    if (!(await sql`SELECT id FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows.length) return res.status(401).json({ error: '인증이 필요합니다.' });
+    if ((req.method === 'GET' && req.query?.account === 'true') || ['updateProfile', 'updateCredentials', 'deleteAccount'].includes(req.body?.action)) {
+      const account = (await sql`SELECT id,email,nickname FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows[0];
+      if (!account) return res.status(401).json({ error: '탈퇴했거나 존재하지 않는 계정입니다.' });
+      if (req.method === 'GET') return res.status(200).json({ admin: account });
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+      const payload = req.body.payload || {};
+      if (req.body.action === 'updateProfile') {
+        if (typeof payload.nickname !== 'string' || !payload.nickname.trim() || payload.nickname.trim().length > 30) return res.status(400).json({ error: '닉네임은 1~30자로 입력해주세요.' });
+        await sql`UPDATE pos_admins SET nickname=${payload.nickname.trim()} WHERE id=${admin.id}`;
+        return res.status(200).json({ admin: { ...account, nickname: payload.nickname.trim() } });
+      }
+      if (req.body.action === 'updateCredentials') {
+        if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({error:'현재 비밀번호를 확인해주세요.'});
+        const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || (payload.newPassword && (typeof payload.newPassword !== 'string' || payload.newPassword.length < 6 || payload.newPassword.length > 128))) return res.status(400).json({error:'이메일과 새 비밀번호(6~128자)를 확인해주세요.'});
+        try {
+          await sql`UPDATE pos_admins SET email=${email} WHERE id=${admin.id}`;
+          if (payload.newPassword) await sql`UPDATE pos_admins SET password_hash=${hashPassword(payload.newPassword)} WHERE id=${admin.id}`;
+        } catch (error) { if (error.code === '23505') return res.status(409).json({error:'이미 사용 중인 이메일입니다.'}); throw error; }
+        return res.status(200).json({admin:{...account,email}});
+      }
+      if (payload.confirmId !== admin.id || !await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '아이디와 패스워드를 확인해주세요.' });
+      // Delete links via projects first, then shared inventory. Keep an unusable ID tombstone
+      // so legacy bootstrap and old signed tokens cannot regain this account.
+      await sql`DELETE FROM pos_event_archives WHERE project_id IN (SELECT id FROM pos_projects WHERE admin_id=${admin.id}) OR snapshot->'project'->>'admin_id'=${admin.id}`;
+      await sql`DELETE FROM pos_projects WHERE admin_id=${admin.id}`;
+      await sql`DELETE FROM pos_account_restores WHERE admin_id=${admin.id}`;
+      await sql`DELETE FROM pos_stock_movements WHERE admin_id=${admin.id}`;
+      await sql`DELETE FROM pos_inventory_transfers WHERE admin_id=${admin.id}`;
+      await sql`DELETE FROM pos_inventory WHERE admin_id=${admin.id}`;
+      await sql`DELETE FROM pos_inventory_numbers WHERE admin_id=${admin.id}`;
+      await sql`UPDATE pos_admins SET email=NULL,nickname=NULL,password_hash='',deleted_at=NOW() WHERE id=${admin.id}`;
+      return res.status(200).json({ deleted: true });
+    }
     const projectId = req.query?.projectId || req.body?.projectId || req.body?.payload?.projectId;
     if (req.method === 'GET') return res.status(200).json(projectId ? await readState(admin.id, projectId) : await listProjects(admin.id));
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     const { action, payload = {} } = req.body || {};
+    if (projectId && !['backupAccount','restoreAccount','listInventory','listStockMovements'].includes(action)) {
+      if ((await sql`SELECT project_id FROM pos_event_settlements WHERE admin_id=${admin.id} AND project_id=${projectId} AND closed_at IS NOT NULL`).rows.length) return res.status(409).json({error:'정산이 마감된 행사입니다. 마감을 해제한 뒤 수정해주세요.'});
+    }
+    if (['backupAccount','restoreAccount'].includes(action)) return res.status(200).json(await accountSnapshot(sql,admin.id,action,payload,validateAdminPassword));
+    if (['recordStockMovement','listStockMovements'].includes(action)) return res.status(200).json(await stockMovement(sql,admin.id,action,payload,inventoryState));
+    if (action === 'importInventory') {
+      if (!Array.isArray(payload.products) || !payload.products.length || payload.products.length > 500) return res.status(400).json({error:'상품은 1~500개까지 등록할 수 있습니다.'});
+      const batchId = payload.products[0]?.id;
+      if (typeof batchId !== 'string' || payload.products.some(p=>typeof p.id!=='string')) return res.status(400).json({error:'상품 ID가 필요합니다.'});
+      const fingerprint=JSON.stringify(payload.products);
+      const prior=(await sql`SELECT request FROM pos_inventory_transfers WHERE admin_id=${admin.id} AND id=${batchId}`).rows[0];
+      if (prior && prior.request.fingerprint!==fingerprint) return res.status(409).json({error:'일괄 등록 요청 내용이 변경되었습니다.'});
+      if (prior) return res.status(200).json(await inventoryState(admin.id));
+      for (const product of payload.products) await inventoryAction(admin.id,'saveInventory',{product:{...product,version:-1}});
+      await sql`INSERT INTO pos_inventory_transfers (admin_id,id,request) VALUES (${admin.id},${batchId},${JSON.stringify({fingerprint})}::jsonb)`;
+      return res.status(200).json(await inventoryState(admin.id));
+    }
+    if (['restoreProject','backupProject'].includes(action)) return res.status(410).json({error:'마이페이지의 계정 전체 백업·복원을 이용해주세요.'});
     if (action === 'updateProductImage') {
       const linked = (await sql`SELECT inventory_id FROM pos_inventory_links WHERE admin_id=${admin.id} AND project_id=${req.body.projectId || payload.projectId} AND product_id=${payload.productId}`).rows[0];
       if (linked) return res.status(200).json(await inventoryAction(admin.id, 'saveCommonProductImage', { ...payload, projectId: req.body.projectId || payload.projectId, dataRevision: req.body.dataRevision ?? payload.dataRevision }));
@@ -778,7 +851,7 @@ async function handler(req, res) {
     if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct', 'saveEventProduct', 'removeInventory', 'updateInventoryRegistrationDate'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
     if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
     if (action === 'restoreProject') {
-      if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+      if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
       const name = typeof payload.name === 'string' ? payload.name.trim() : '';
       if (!name || name.length > 100) return res.status(400).json({ error: '새 프로젝트 이름은 1~100자로 입력해주세요.' });
       try { validateBackup(payload.backup); } catch { return res.status(400).json({ error: '지원하지 않거나 손상된 프로젝트 백업입니다.' }); }
@@ -790,7 +863,7 @@ async function handler(req, res) {
       await initDb();
       const project = (await sql`SELECT id, archived_at FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id} FOR UPDATE`).rows[0];
       if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.' });
-      if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+      if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
       if (action === 'backupProject') {
         const backup = await snapshot(projectId);
         if (encodeURIComponent(JSON.stringify(backup)).replace(/%[0-9A-F]{2}/g, 'x').length > 3 * 1024 * 1024) return res.status(413).json({ error: '프로젝트가 백업 파일 한도(3MiB)를 초과했습니다. 별도 데이터 내보내기가 필요합니다.' });
@@ -810,13 +883,13 @@ async function handler(req, res) {
       const project = (await sql`SELECT name, archived_at FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id} FOR UPDATE`).rows[0];
       if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.' });
       if (action === 'renameProject') {
-        if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+        if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
         if (project.archived_at) return res.status(409).json({ error: '보관된 행사입니다. 보관을 해제한 뒤 변경해주세요.' });
         const name = typeof payload.name === 'string' ? payload.name.trim() : '';
         if (!name || name.length > 100) return res.status(400).json({ error: '프로젝트 이름은 1~100자로 입력해주세요.' });
         await sql`UPDATE pos_projects SET name = ${name}, updated_at = NOW() WHERE id = ${projectId} AND admin_id = ${admin.id}`;
       } else {
-        if (!await validateAdminPassword(admin.id, payload.password)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+        if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
         if (payload.confirmName !== project.name) return res.status(400).json({ error: '프로젝트 이름을 정확히 입력해주세요.' });
         const allocated = (await sql`SELECT p.*, l.inventory_id FROM pos_products p JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id WHERE p.project_id=${projectId}`).rows.filter(p => p.inventory_id && Number(p.stock_qty ?? p.stock) > 0);
         if (allocated.length) return res.status(409).json({ error: '남은 재고를 재고 관리에서 회수한 뒤 행사를 삭제해주세요.' });
@@ -830,7 +903,7 @@ async function handler(req, res) {
     const writable = (await sql`SELECT id, archived_at FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id} FOR UPDATE`).rows[0];
     if (!writable) throw new Error('프로젝트를 찾을 수 없거나 접근 권한이 없습니다.');
     if (writable.archived_at) return res.status(409).json({ error: '보관된 행사입니다. 보관을 해제한 뒤 판매·수정을 진행해주세요.' });
-    if (detachedProjectIds.has(projectId)) {
+    {
       await assertProject(admin.id, projectId);
       const revision = await dataRevision(projectId);
       if (revision && req.body?.dataRevision !== revision) return res.status(409).json({ error: '행사 데이터가 분리되었습니다. 새로고침 후 다시 진행해주세요.' });

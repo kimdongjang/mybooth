@@ -16,6 +16,7 @@ function AuthForm({ mode, onAuthenticate }) {
   const signup = mode === 'signup';
   const [id, setId] = useState('');
   const [email, setEmail] = useState('');
+  const [nickname, setNickname] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState('');
@@ -31,7 +32,7 @@ function AuthForm({ mode, onAuthenticate }) {
     }
     setSubmitting(true);
     try {
-      await onAuthenticate({ mode, id, password, ...(signup ? { email } : {}) });
+      await onAuthenticate({ mode, id, password, ...(signup ? { email, nickname } : {}) });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -47,6 +48,7 @@ function AuthForm({ mode, onAuthenticate }) {
     <fieldset disabled={submitting} className="min-w-0">
       <label className="mb-3 block text-sm font-bold">아이디<input name={`${mode}-username`} autoComplete="username" required autoFocus value={id} onChange={(e) => setId(e.target.value)} className="mt-1 w-full rounded border border-line p-1.5 text-[13px]" /></label>
       {signup && <label className="mb-3 block text-sm font-bold">이메일<input type="email" name="signup-email" autoComplete="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded border border-line p-1.5 text-[13px]" /></label>}
+      {signup && <label className="mb-3 block text-sm font-bold">닉네임 (선택)<input maxLength={30} value={nickname} onChange={event => setNickname(event.target.value)} placeholder="비워두면 랜덤 닉네임을 만들어드려요" className="mt-1 w-full rounded border border-line p-1.5 text-[13px]" /></label>}
       <PasswordField id={`${mode}-password`} label="패스워드" signup={signup} value={password} onChange={setPassword} />
       {signup && <PasswordField id="signup-password-confirmation" label="패스워드 확인" signup value={confirmation} onChange={setConfirmation} />}
       {error && <div role="alert" className="mb-3 rounded bg-danger px-3 py-2 text-xs text-white">{error}</div>}

@@ -1,3 +1,5 @@
+import { eventSettlementPreview } from '../src/utils/eventSettlement.js';
+import * as eventSettlement from '../api/lib/eventSettlement.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -15,16 +17,21 @@ async function fixture() {
     CREATE TABLE pos_inventory(admin_id TEXT,id TEXT,product JSONB);
     INSERT INTO pos_products VALUES('event','p','키링','최신 이름',9999,TRUE);
     CREATE TABLE pos_bundles(project_id TEXT,id TEXT,items JSONB);
-    CREATE TABLE pos_sales(project_id TEXT,lines JSONB);
-    INSERT INTO pos_sales VALUES('event','[{"type":"product","id":"p","name":"키링","creatorName":"작가","unitPrice":1000,"qty":10}]');`);
+    CREATE TABLE pos_sales(project_id TEXT,lines JSONB,id SERIAL PRIMARY KEY);
+    INSERT INTO pos_sales(project_id,lines) VALUES('event','[{"type":"product","id":"p","name":"키링","creatorName":"작가","unitPrice":1000,"qty":10}]');`);
   let connects=0,tail=Promise.resolve();
   const pool={connect:async()=>{connects++;const prior=tail;let release;tail=new Promise(resolve=>release=resolve);await prior;return {sql(parts,...values){return this.query(parts.reduce((s,p,i)=>s+(i?`$${i}`:'')+p,''),values);},query(query,values){return db.query(query,values);},release};}};
   const context=vm.createContext({});
   const module=new vm.SourceTextModule(await readFile(new URL('../api/settlements.js',import.meta.url),'utf8'),{context});
-  await module.link(name=>{const exports=name==='@vercel/postgres'?{sql:pool}:name.endsWith('auth.js')?{assertPostgresConnectionString(){},requireAuth(req,res){if(req.adminId)return{id:req.adminId};res.status(401).json({error:'Unauthorized'});return null;}}:{settlementMoneyEntries};return new vm.SyntheticModule(Object.keys(exports),function(){for(const[key,value]of Object.entries(exports))this.setExport(key,value);},{context});});
+  await module.link(name=>{const exports=name==='@vercel/postgres'?{sql:pool}:name.endsWith('auth.js')?{assertPostgresConnectionString(){},requireAuth(req,res){if(req.adminId)return{id:req.adminId};res.status(401).json({error:'Unauthorized'});return null;}}:name.endsWith('eventSettlement.js')?eventSettlement:{settlementMoneyEntries};return new vm.SyntheticModule(Object.keys(exports),function(){for(const[key,value]of Object.entries(exports))this.setExport(key,value);},{context});});
   await module.evaluate();
-  const invoke=async(body=null,adminId='a')=>{const result={};await module.namespace.default({adminId,method:body?'POST':'GET',body},{status(status){result.status=status;return this;},json(value){result.body=JSON.parse(JSON.stringify(value));return this;}});return result;};
-  return{db,invoke,connects:()=>connects};
+  const invoke=async(body=null,adminId='a',query={})=>{const result={};await module.namespace.default({adminId,method:body?'POST':'GET',body,query},{status(status){result.status=status;return this;},json(value){result.body=JSON.parse(JSON.stringify(value));return this;}});return result;};
+  const close=async()=>{
+   const result=await invoke(null,'a',{projectId:'event'});assert.equal(result.status,200,JSON.stringify(result.body));
+   const event=result.body.eventSettlements.find(row=>row.projectId==='event') || {version:0,costs:[]};
+   return invoke({action:'closeEventSettlement',projectId:'event',version:event.version,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(eventSettlementPreview(result.body.state,event.costs,result.body.settlements))});
+  };
+  return{db,invoke,close,connects:()=>connects};
 }
 const command=(action,version,extra={})=>({action,version,projectId:'event',creator:'작가',requestId:crypto.randomUUID(),...extra});
 
@@ -33,6 +40,7 @@ test('settlement deductions, partial payments, replay, stale versions and revers
     assert.equal((await f.invoke(null,null)).status,401);assert.equal(f.connects(),0);
     const fee=command('saveDeductions',0,{deductions:[{label:'운영비',amount:1000},{label:'수수료',amount:500}]});
     let result=await f.invoke(fee);assert.equal(result.status,200);assert.equal(result.body.settlement.version,1);
+    assert.equal((await f.close()).status,200);
     const payment=command('addPayment',1,{amount:4000,paidAt:'2026-10-21',memo:'1차 이체'});
     result=await f.invoke(payment);assert.equal(result.status,200);assert.equal(result.body.settlement.payments.length,1);
     assert.equal((await f.invoke(payment)).body.settlement.payments.length,1);
@@ -51,8 +59,10 @@ test('settlement API isolates owners and validates integer fees, dates, creator 
   assert.equal((await f.invoke(command('saveDeductions',0,{deductions:[],projectId:'foreign'}))).status,404);
   assert.equal((await f.invoke(command('saveDeductions',0,{deductions:[],creator:'최신 이름'}))).status,404);
   for(const amount of [-1,0.5,10001,'10'])assert.equal((await f.invoke(command('saveDeductions',0,{deductions:[{label:'비용',amount}]}))).status,400);
-  for(const paidAt of ['2026-02-30','2026-13-01',''])assert.equal((await f.invoke(command('addPayment',0,{amount:1,paidAt}))).status,400);
   assert.equal((await f.invoke(command('saveDeductions',0,{deductions:[]}))).status,200);
+  assert.equal((await f.close()).status,200);
+  for(const paidAt of ['2026-02-30','2026-13-01',''])assert.equal((await f.invoke(command('addPayment',1,{amount:1,paidAt}))).status,400);
+  assert.equal((await f.invoke(command('saveDeductions',1,{deductions:[]}))).status,409);
   assert.deepEqual((await f.invoke(null,'b')).body.settlements,[]);
   await f.db.exec("UPDATE pos_admins SET deleted_at=NOW() WHERE id='a'");
   assert.equal((await f.invoke()).status,401);
@@ -62,6 +72,7 @@ test('settlement API isolates owners and validates integer fees, dates, creator 
 test('ledger writes roll back with receipt failures and concurrent stale payments cannot both commit',async()=>{
  const f=await fixture();try{
   await f.invoke();
+  assert.equal((await f.close()).status,200);
   await f.db.exec("CREATE FUNCTION reject_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected failure'; END $$; CREATE TRIGGER reject_receipt BEFORE INSERT ON pos_settlement_commands FOR EACH ROW EXECUTE FUNCTION reject_receipt()");
   const payment=command('addPayment',0,{amount:6000,paidAt:'2026-10-21'});
   assert.equal((await f.invoke(payment)).status,500);
@@ -78,11 +89,12 @@ test('Korean date filters change sales metrics without reassigning lifetime dedu
  const records=[{projectId:'event',creator:'=작가',version:1,deductions:[{label:'운영비',amount:2000}],payments:[{id:'paid',amount:3000,paidAt:'2026-10-21'}]}];
  assert.equal(koreanDay('2026-09-30T15:00:00Z'),'2026-10-01');
  assert.deepEqual(periodRange('year','','',new Date('2026-12-31T16:00:00Z')),{start:'2027-01-01',end:'2027-12-31'});
- const summary=revenueSummary(data,records,{start:'2026-10-01',end:'2026-10-01'});
+ const closures=[{projectId:'event',closedAt:'2026-10-21',snapshot:{rows:[{creator:'=작가',gross:10000,fees:2000,net:8000}]}}];
+ const summary=revenueSummary(data,records,{start:'2026-10-01',end:'2026-10-01'},closures);
  assert.equal(summary.total,10000);assert.equal(summary.pending,5000);assert.equal(summary.creators[0].net,8000);
- const excluded=revenueSummary(data,records,{start:'2026-11-01',end:'2026-11-30'});assert.equal(excluded.total,0);assert.equal(excluded.pending,5000);
+ const excluded=revenueSummary(data,records,{start:'2026-11-01',end:'2026-11-30'},closures);assert.equal(excluded.total,0);assert.equal(excluded.pending,5000);
  const csv=settlementCsv(summary.creators);assert.ok(csv.startsWith('\uFEFF'));assert.ok(csv.includes("'=작가"));assert.ok(csv.includes('"행사,이름"'));
- const cancelled=revenueSummary({...data,states:[{products:[],sales:[]}]},records,{start:'',end:''});assert.equal(cancelled.pending,0);assert.equal(cancelled.creators[0].overpaid,3000);
+ const cancelled=revenueSummary({...data,states:[{products:[],sales:[]}]},records,{start:'',end:''},closures);assert.equal(cancelled.pending,5000);assert.equal(cancelled.creators[0].overpaid,0);
 });
 
 
@@ -90,4 +102,59 @@ test('bundle payment rounding conserves every won across creators',()=>{
  const entries=settlementMoneyEntries({type:'bundle',qty:1,unitPrice:100,subItems:['a','b','c'].map(creatorName=>({creatorName,productId:creatorName,qty:1,unitPrice:1}))},{},[]);
  assert.deepEqual(entries.map(entry=>entry.amount),[34,33,33]);
  assert.equal(entries.reduce((sum,entry)=>sum+entry.amount,0),100);
+});
+
+test('event costs split by ratio/equal, close freezes figures, payment gates reopen and reopening preserves history',async()=>{
+ const f=await fixture();try{
+  const costs=[{label:'부스 임대료',memo:'메모',type:'fixed',split:'equal',value:7000},{label:'수수료',memo:'',type:'percent',split:'ratio',value:500}];
+  const save={action:'saveEventCosts',projectId:'event',version:0,requestId:crypto.randomUUID(),costs};
+  assert.equal((await f.invoke(save)).status,200);assert.equal((await f.invoke(save)).status,200);
+  assert.equal((await f.invoke({...save,costs:[]})).status,409);
+  assert.equal((await f.invoke({...save,requestId:crypto.randomUUID()},'b')).status,404);
+  const initial=(await f.invoke(null,'a',{projectId:'event'})).body;
+  const expected=eventSettlementPreview(initial.state,costs,initial.settlements);
+  assert.equal(expected.fees,7500);assert.equal(expected.net,2500);
+  assert.equal(expected.rows.find(r=>r.creator==='작가').net,6000);
+  assert.equal(expected.rows.find(r=>r.creator==='최신 이름').net,-3500);
+  const close={action:'closeEventSettlement',projectId:'event',version:1,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(expected)};
+  const closed=await f.invoke(close);assert.equal(closed.status,200,JSON.stringify(closed.body));assert.equal((await f.invoke(close)).status,200);
+  assert.equal(closed.body.eventSettlement.snapshot.fees,7500);
+  assert.equal((await f.invoke({...save,version:2,requestId:crypto.randomUUID()})).status,409);
+  await f.db.query("UPDATE pos_products SET creator_name='새 이름',price=1 WHERE project_id='event'");
+  assert.equal((await f.invoke()).body.eventSettlements[0].snapshot.rows.find(r=>r.creator==='작가').net,6000);
+  const payment=command('addPayment',0,{amount:6000,paidAt:'2026-10-21'});
+  assert.equal((await f.invoke(payment)).status,200);
+  const reopen={action:'reopenEventSettlement',projectId:'event',version:2,requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke(reopen)).status,409);
+  assert.equal((await f.invoke(command('reversePayment',1,{paymentId:payment.requestId,paidAt:'2026-10-21',memo:''}))).status,200);
+  const result=await f.invoke(reopen);assert.equal(result.status,200,JSON.stringify(result.body));
+  assert.equal(result.body.eventSettlement.closedAt,null);assert.equal(result.body.eventSettlement.history.length,2);
+  assert.equal(result.body.eventSettlement.history[1].snapshot.rows.find(r=>r.creator==='작가').net,6000);
+  assert.equal((await f.invoke(command('addPayment',2,{amount:1,paidAt:'2026-10-21'}))).status,409);
+ }finally{await f.db.close();}
+});
+
+test('close detects changed sales, rejects stale versions and rolls back snapshot and revision when receipt fails',async()=>{
+ const f=await fixture();try{
+  const before=(await f.invoke(null,'a',{projectId:'event'})).body;
+  const close={action:'closeEventSettlement',projectId:'event',version:0,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(eventSettlementPreview(before.state,[],[]))};
+  await f.db.query("UPDATE pos_sales SET lines='[{\"type\":\"product\",\"id\":\"p\",\"creatorName\":\"작가\",\"qty\":1,\"unitPrice\":500}]'");
+  assert.equal((await f.invoke(close)).status,409);
+  assert.equal((await f.invoke()).body.eventSettlements.length,0);
+  await f.db.exec("CREATE FUNCTION reject_close() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'failure'; END $$; CREATE TRIGGER reject_close_receipt BEFORE INSERT ON pos_settlement_commands FOR EACH ROW EXECUTE FUNCTION reject_close()");
+  assert.equal((await f.close()).status,500);
+  assert.equal((await f.invoke()).body.eventSettlements.length,0);
+  assert.equal((await f.db.query('SELECT * FROM pos_event_archives')).rows.length,0);
+  await f.db.exec('DROP TRIGGER reject_close_receipt ON pos_settlement_commands');
+  assert.equal((await f.close()).status,200);
+ }finally{await f.db.close();}
+});
+
+test('unclosed revenue remains expected; closed net, fees and creators stay frozen even after master changes',()=>{
+ const data={projects:[{id:'closed',name:'마감'},{id:'open',name:'진행'}],states:[{products:[],sales:[{total:100,lines:[{type:'product',id:'p',creatorName:'변경 작가',qty:1,unitPrice:100}]}]},{products:[],sales:[{total:200,lines:[{type:'product',id:'p',creatorName:'작가',qty:1,unitPrice:200}]}]}]};
+ const closures=[{projectId:'closed',closedAt:'2026-10-21',snapshot:{rows:[{creator:'작가',gross:100,fees:150,net:-50}]}}];
+ const summary=revenueSummary(data,[],{start:'',end:''},closures);
+ assert.equal(summary.total,300);assert.equal(summary.net,-50);assert.equal(summary.fees,150);assert.equal(summary.expectedGross,200);assert.equal(summary.pending,-50);
+ assert.equal(summary.creators.length,1);assert.equal(summary.creators[0].rows.length,2);
+ assert.equal(summary.events.find(e=>e.id==='open').confirmed,false);
 });

@@ -1,3 +1,6 @@
+import * as eventSettlement from '../api/lib/eventSettlement.js';
+import * as accountInventory from '../api/lib/accountInventory.js';
+import { hashPassword } from '../api/lib/auth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -14,6 +17,9 @@ async function fixture() {
   const sql = async (parts, ...values) => {
     const query = parts.join('?').replace(/\s+/g, ' ').trim();
     statements.push(query);
+    if (query.startsWith('SELECT project_id FROM pos_event_settlements') || query.startsWith('SELECT closed_at FROM pos_event_settlements')) return {rows:[]};
+    if (query.startsWith('SELECT revision FROM pos_event_archives')) return {rows:[]};
+    if (query.startsWith('SELECT id FROM pos_admins')) return { rows: [{ id: values[0] }] };
     if ((query.startsWith('CREATE ') || query.startsWith('ALTER ') || query.startsWith('DO '))) return { rows: [] };
     if (query.startsWith('SELECT id FROM pos_projects') || query.startsWith('SELECT id, archived_at FROM pos_projects')) {
       return { rows: rows.pos_projects.filter(p => p.id === values[0] && p.admin_id === values[1]) };
@@ -57,10 +63,11 @@ async function fixture() {
   await module.link((specifier) => {
     const exports = specifier === '@vercel/postgres' ? { sql }
       : specifier === './lib/auth.js' ? {
+        hashPassword,
         assertPostgresConnectionString() {},
         requireAuth: req => ({ id: req.adminId || 'admin-a' }),
         validateAdminPassword: async () => true,
-      } : defaults;
+      } : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
     }, { context });

@@ -5,7 +5,6 @@ export const projectSections = [
   { page: 'projectName', title: '이름 변경', description: '행사 이름을 변경합니다. 상품과 판매 기록은 유지됩니다.' },
   { page: 'projectArchive', title: '보관·해제', description: '행사를 종료하고 기록을 보관하거나 판매를 다시 시작합니다.' },
   { page: 'projectDuplicate', title: '행사 복제', description: '같은 상품·세트 구성으로 다음 행사를 준비합니다.' },
-  { page: 'projectBackup', title: '백업·복원', description: '행사 자료를 파일로 보관하고 새 행사로 복원합니다.' },
   { page: 'projectDelete', title: '행사 삭제', description: '이 행사의 상품·재고·판매 기록을 영구 삭제합니다.', danger: true },
 ];
 

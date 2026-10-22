@@ -14,6 +14,8 @@ async function harness(file) {
   const source = await readFile(new URL(`../src/pages/${file}.jsx`, import.meta.url), 'utf8');
   const module = new vm.SourceTextModule(ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext } }).outputText, { context });
   const mocks = {
+    '../components/EventSettlementPanel': {default:'EventSettlementPanel'},
+    '../components/LoadingState': {default:'LoadingState'},
     react: { useState: initial => { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value; }]; }, useEffect: effect => { if (!mounted) effects.push(effect); } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'fragment' },
     dexie: { liveQuery: () => ({ subscribe: () => ({ unsubscribe() {} }) }) },
@@ -62,6 +64,16 @@ test('dashboard totals use server stock fields and server sales; late responses 
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(other.render(next).some(node => node.props?.label === '미분배 재고'), false);
 });
+
+test('revenue history preserves export but cannot cancel sales or clear them', async () => {
+  const h = await harness('SettlementPage');
+  const props = { reportOnly: true, initialTab: 'history', stats: { total: 1000, cash: 1000, transfer: 0 }, sales: [{ id: 's' }], visibleSales: [{ id: 's', time: '2026-10-21', total: 1000, method: 'cash', lines: [] }], creatorSalesSummary: [] };
+  const labels = h.render(props).filter(node => node.type === 'button').map(node => node.props.children);
+  assert.ok(labels.includes('판매 내역 내보내기'));
+  assert.ok(!labels.includes('취소'));
+  assert.ok(!labels.includes('전체 판매 내역 초기화'));
+});
+
 
 test('account summary combines historical creator snapshots across events and preserves free sales and exact event links', () => {
  const data = { projects:[{id:'a',name:'A'},{id:'b',name:'B',archivedAt:'2026-01-01'}], inventory:[{id:'original',name:'키링',stock:7,history:[{soldQty:3}],allocations:[{project_id:'a',stock:1,is_active:true}]}], states:[
