@@ -44,9 +44,8 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
   const events = [...new Map(items.flatMap(item => (item.allocations || []).map(row => [String(row.project_id), row.event_name]))).entries()].sort((a, b) => a[1].localeCompare(b[1], 'ko'));
   const filterCount = ['registeredDate', 'event', 'creatorExact', 'goodsType', 'genre'].filter(key => search[key] && search[key] !== 'all').length;
   const [sort,setSort] = useState({key:'createdAt',direction:1});
-  const margin = item => Number(item.price)>0 ? (Number(item.price)-Number(item.cost||0))/Number(item.price) : 0;
   const filteredItems = filterInventory(items, search).sort((a,b) => {
-    const value = sort.key === 'name' ? a.name.localeCompare(b.name,'ko') : sort.key === 'margin' ? margin(a)-margin(b) : sort.key === 'remainingStock' ? Number(a.remainingStock)-Number(b.remainingStock) : (Date.parse(a.createdAt)||0)-(Date.parse(b.createdAt)||0);
+    const value = sort.key === 'name' ? a.name.localeCompare(b.name,'ko') : sort.key === 'remainingStock' ? Number(a.remainingStock)-Number(b.remainingStock) : (Date.parse(a.createdAt)||0)-(Date.parse(b.createdAt)||0);
     return value*sort.direction || a.id.localeCompare(b.id);
   });
   const sortBy = key => {setSort(current=>({key,direction:current.key===key?-current.direction:1}));setPage(1);};
@@ -231,12 +230,12 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         <div className="inventory-table-actions"><button className="management-back" onClick={()=>navigate('/inventory/import')}>엑셀 일괄 등록</button><button className="management-back" onClick={()=>navigate('/inventory/movements')}>외부 판매·로스</button><button type="button" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
           <caption className="sr-only">상품명과 제작자, 캐릭터와 작품/시리즈, 판매 수량과 잔여 수량 및 총재고, 등록일</caption>
-          <thead><tr>{[['name','상품명 / 제작자'],[null,'캐릭터 / 작품/시리즈'],['remainingStock','재고'],['margin','마진율'],['createdAt','등록일']].map(([key,label]) => <th scope="col" key={label} aria-sort={key && sort.key===key ? sort.direction===1?'ascending':'descending':undefined}>{key ? <button onClick={()=>sortBy(key)}>{label}{sort.key===key ? sort.direction===1?' ↑':' ↓':''}</button>:label}</th>)}</tr></thead>
+          <thead><tr>{[['name','상품명 / 제작자'],[null,'캐릭터 / 작품/시리즈'],['remainingStock','재고'],['createdAt','등록일']].map(([key,label]) => <th scope="col" key={label} aria-sort={key && sort.key===key ? sort.direction===1?'ascending':'descending':undefined}>{key ? <button onClick={()=>sortBy(key)}>{label}{sort.key===key ? sort.direction===1?' ↑':' ↓':''}</button>:label}</th>)}</tr></thead>
           <tbody>{filteredItems.slice((currentPage - 1) * 10, currentPage * 10).map(item => <tr key={item.id}>
             <td><a className="management-name-link inventory-cell-main" href={`#/inventory/${encodeURIComponent(item.id)}`} aria-label={`${item.name} 재고 상세보기`} title={item.name} onClick={event => open(event,item)}>{item.name}</a><small className="inventory-cell-sub" title={item.creatorName || '미지정'}>{item.creatorName || '미지정'}</small></td>
             <td><span className="inventory-cell-main" title={item.vtuberName || ''}>{item.vtuberName || '—'}</span><small className="inventory-cell-sub" title={item.genre || ''}>{item.genre || '—'}</small></td>
             <td className="mono"><span className="inventory-cell-main">판매 {won((item.history || []).reduce((sum, row) => sum + Number(row.soldQty || 0), 0))}개 / 잔여 {won(item.remainingStock)}개</span><small className="inventory-cell-sub">총 {won(item.totalStock)}개</small></td>
-            <td>{Number(item.price)>0 ? `${(margin(item)*100).toFixed(1)}%` : '—'}</td><td>{dateLabel(item.createdAt)}</td>
+            <td>{dateLabel(item.createdAt)}</td>
           </tr>)}</tbody>
         </table>{ready && !items.length && <div className="management-empty"><h3>등록된 상품이 없습니다</h3><p>상품 추가 버튼으로 첫 상품을 등록하세요.</p></div>}{ready && items.length > 0 && !filteredItems.length && <p className="catalog-empty">검색 조건에 맞는 재고가 없습니다.</p>}</div>
         <p className="settlement-result" role="status">검색 결과 {filteredItems.length}개 / 전체 {items.length}개</p>

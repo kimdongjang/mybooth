@@ -1159,3 +1159,32 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 .event-settlement-panel{margin:16px 0}.event-settlement-panel h3{margin:20px 0 12px;font-weight:600}.event-cost-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1.5fr auto;gap:10px;align-items:end;margin:14px 0}.event-cost-row label{display:grid;gap:6px;font-size:12px;min-width:0}.event-cost-row input,.event-cost-row select{width:100%;padding:8px;border:1px solid #dbe1e8;border-radius:6px}.event-settlement-panel td button+button{margin-left:8px}@media(max-width:767px){.event-cost-row{grid-template-columns:1fr 1fr}.event-settlement-panel .management-table{min-width:600px}}
 
 .revenue-status[data-status=closed]{background:#eff6ff;color:#1d4ed8}.event-final-costs{margin:16px 0;font-size:13px;line-height:1.8}
+
+/* Search and filter sizing follows the inventory list, across all pages. */
+:root{--search-control-font:calc(13px + 1pt);--search-input-height:44px;--search-filter-height:40px;--search-control-radius:8px;--search-control-gap:12px}
+#root :is([role="search"],.revenue-period,.catalog-filters){gap:var(--search-control-gap)}
+#root :is([role="search"],.revenue-period,.catalog-filters) :is(label,input,select,button,summary,.filter-label),
+#root .search-control-field,
+#root input[type="search"]{font-size:var(--search-control-font);line-height:1.5}
+#root :is([role="search"],.revenue-period) :is(input,select),
+#root input[type="search"]{min-width:0;border-radius:var(--search-control-radius);box-sizing:border-box}
+#root input[type="search"]{height:var(--search-input-height);min-height:var(--search-input-height);padding:10px 12px}
+#root :is([role="search"],.revenue-period) :is(select,input[type="date"]){height:var(--search-filter-height);min-height:var(--search-filter-height);padding:6px 10px}
+#root :is([role="search"],.revenue-period,.catalog-filters) button{min-height:var(--search-filter-height);padding:6px 14px;border-radius:var(--search-control-radius);box-sizing:border-box}
+#root [role="search"] .inventory-search-button{min-height:var(--search-input-height);padding:0 14px}
+#root [role="search"] .inventory-search-reset{padding:6px 0}
+#root [role="search"] summary{min-height:var(--search-filter-height)}
+#root .settlement-search label{gap:4px}
+#root .filter-options{column-gap:8px;row-gap:8px}
+#root .catalog-filters{align-items:center}
+#root .filter-label{padding-top:0}
+#root input[type="search"]::placeholder{font-size:inherit}
+@media(max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){:root{--search-control-font:calc(11px + 1pt);--search-filter-height:44px;--search-control-gap:8px}#root :is([role="search"],.revenue-period,.catalog-filters) button{padding-inline:12px}#root [role="search"] .inventory-search-reset{padding-inline:0}}
+
+/* Shared content typography uses the inventory search control scale. */
+#root :is(input,select,textarea,button,label,legend,summary,output),
+#root :is(table,table *),
+#root :is(.inventory-card,.management-product,.account-card-body,.account-form,.event-panel,.event-settlement-panel,.event-danger-panel,.dashboard-card,.settlement-card,.settlement-editor,.inventory-import-page,.inventory-transfer-form,.registration-date-form,.management-pagination){font-size:var(--search-control-font);line-height:1.5}
+#root :is(.inventory-card,.management-product,.account-card-body,.event-panel,.event-settlement-panel,.event-danger-panel,.dashboard-card,.settlement-card,.settlement-editor,.inventory-import-page) :is(p,li,small,dt,dd,h3,h4,span),
+#root :is(.management-field,.event-field,.settlement-payment-fields) > span,
+#root :is(.management-details legend span,.inventory-import-guide-count,.inventory-import-guide-body,.event-final-costs,.filter-label,.product-creator,.product-stock,.event-status,.revenue-status){font-size:var(--search-control-font);line-height:1.5}
