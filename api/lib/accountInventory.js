@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { validateAdminPassword } from './auth.js';
+import { foundationBackup, migratedBooth,protectMigratedLifecycle } from './boothFoundation.js';
 const fail = (message,status=400) => { throw Object.assign(new Error(message),{status}); };
 const tables = ['pos_projects','pos_inventory_numbers','pos_inventory','pos_products','pos_bundles','pos_sales','pos_sale_receipts','pos_inventory_links','pos_inventory_adjustments','pos_inventory_transfers','pos_stock_movements','pos_event_archives','pos_settlements','pos_settlement_commands','pos_event_settlements'];
 const owned = new Set(['pos_projects','pos_inventory_numbers','pos_inventory','pos_inventory_links','pos_inventory_adjustments','pos_inventory_transfers','pos_stock_movements','pos_settlements','pos_settlement_commands','pos_event_settlements']);
@@ -15,10 +16,13 @@ export async function accountSnapshot(sql,adminId,action,payload,checkPassword=v
   if(action==='backupAccount') {
     const records={};
     for(const table of available) records[table]=(await query([`SELECT * FROM ${table} WHERE ${scope(table)}`,tail(table)],adminId)).rows;
-    const data={format:'withbooth-account',version:1,owner:adminId,createdAt:new Date().toISOString(),tables:records};
+    const foundation=await foundationBackup(sql,adminId);
+    const data={format:'withbooth-account',version:foundation?2:1,owner:adminId,createdAt:new Date().toISOString(),tables:records,...(foundation?{foundation}:{})};
     if(Buffer.byteLength(JSON.stringify(data))>3*1024*1024) fail('백업 크기가 3MiB를 초과했습니다.',413);
     return {backup:{data,signature:signature(data)}};
   }
+  await protectMigratedLifecycle(sql,adminId,'restoreAccount');
+  if(await migratedBooth(sql,adminId)) fail('부스 이력이 포함된 자료는 계정 전체 교체로 복원할 수 없습니다.',409);
   if(!await checkPassword(adminId,payload.password,sql)) fail('현재 비밀번호를 확인해주세요.',403);
   const {data,signature:provided}=payload.backup || {};
   if(!data || data.format!=='withbooth-account' || data.version!==1 || data.owner!==adminId || typeof provided!=='string' || provided!==signature(data) || Buffer.byteLength(JSON.stringify(data))>3*1024*1024 || !data.tables || Object.keys(data.tables).some(t=>!available.includes(t))) fail('현재 계정의 유효한 백업 파일이 아닙니다.');

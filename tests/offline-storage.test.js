@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import 'fake-indexeddb/auto';
+import Dexie from 'dexie';
 
 const urls = new Map();
 function sourceUrl(path) {
@@ -28,6 +29,30 @@ const { orderRepository: orders } = await load('../src/database/orderRepository.
 const initial = { products: [{ id: 'p', stock: 5 }], bundles: [], sales: [], dataRevision: null };
 const sold = { ...initial, products: [{ id: 'p', stock: 4 }], sales: [{ id: 'sale' }] };
 const order = { projectId: 'a', localOrderId: 'sale', createdAt: '2026-10-15', payload: { projectId: 'a' }, syncStatus: 'PENDING', retryCount: 0 };
+
+test('v3 to v4 upgrade preserves legacy payloads and binds cached state only after owner-confirmed remote reads',async()=>{
+  await db.delete();
+  const legacy=new Dexie(db.name);
+  legacy.version(3).stores({orders:'++id, projectId, [projectId+syncStatus], [projectId+localOrderId], localOrderId, createdAt, syncStatus, retryCount, lastSyncAt',posState:'key, projectId, updatedAt'});
+  await legacy.table('orders').add({...order});
+  await legacy.table('posState').put({key:'project:a:latest',projectId:'a',updatedAt:'2026-10-15',state:initial});
+  legacy.close();
+  try {
+    await db.open();
+    assert.equal(db.verno,4);assert.deepEqual((await orders.getAll('a'))[0].payload,order.payload);
+    assert.equal((await orders.getAll('a'))[0].localOrderId,'sale');
+    assert.equal(await states.getForActor('a','a'),null,'unbound legacy cache is not shown offline as a different user');
+    await assert.rejects(states.acceptRemote('a',{...initial,actorId:'b',legacyActorId:'a'}),/원래 계정/);
+    const bound=await states.acceptRemote('a',{...sold,actorId:'a',legacyActorId:'a',boothId:'booth-a'});
+    assert.deepEqual(bound.products,initial.products);assert.equal(bound.actorId,'a');
+    assert.equal((await orders.getAll('a'))[0].actorId,undefined,'migration does not invent a legacy author');
+    assert.equal(await states.getForActor('a','b'),null);
+    const scoped={...order,actorId:'a',boothId:'booth-a',localOrderId:'scoped',payload:{projectId:'a',actorId:'a',boothId:'booth-a'}};
+    await states.commitOrder('a',scoped,initial,sold);
+    assert.equal((await states.getForActor('a','a')).boothId,'booth-a');
+    await assert.rejects(states.commitOrder('a',{...scoped,actorId:'b'},sold,initial),/계정/);
+  }finally{await db.delete();await db.open();}
+});
 
 test('IndexedDB atomic sale/cancel, injected failure, stale tabs and remote response races', async () => {
   try {
@@ -63,6 +88,36 @@ test('IndexedDB atomic sale/cancel, injected failure, stale tabs and remote resp
     await states.setSettlementClosedAt('a',null);
     assert.equal((await states.get('a')).settlementClosedAt,null);
   } finally { await db.delete(); }
+});
+
+test('retired contract preserves queued sale, dependent cancel and local projection until compatibility recovery', async () => {
+  const previousNavigator=Object.getOwnPropertyDescriptor(globalThis,'navigator'),previousFetch=globalThis.fetch,warn=console.warn;
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{onLine:true,locks:{request:async(_name,_options,callback)=>callback({})}}});
+  const {syncService}=await load('../src/sync/syncService.ts');
+  const payload={projectId:'a',action:'finalizeSale',payload:{localOrderId:'sale',lines:[],total:0}};
+  const sent=[];
+  try {
+    await db.open();await states.save('a',sold);
+    await orders.add({...order,payload});
+    await orders.add({...order,localOrderId:'void_sale',payload:{projectId:'a',action:'voidSale',payload:{localOrderId:'void_sale',saleId:'sale'}}});
+    syncService.configure({projectId:'a',getAuthToken:()=> 'a-token'});
+    globalThis.fetch=async(_url,options)=>{sent.push(JSON.parse(options.body));return {ok:false,status:410,json:async()=>({error:'구형 쓰기 계약이 종료되었습니다.'})};};
+    console.warn=()=>{};await syncService.sync();
+    assert.deepEqual(sent,[payload]);
+    assert.deepEqual((await orders.getAll('a')).map(o=>o.syncStatus),['FAILED','PENDING']);
+    assert.deepEqual((await orders.getAll('a'))[0].payload,payload);
+    assert.equal((await orders.getAll('a'))[0].localOrderId,'sale');
+    assert.equal(await orders.countWaiting('a'),2);
+    assert.deepEqual(await states.acceptRemote('a',initial),sold);
+    globalThis.fetch=async(_url,options)=>{sent.push(JSON.parse(options.body));return {ok:true,json:async()=>({})};};
+    await syncService.sync();
+    assert.deepEqual(sent[1],payload,'recovery retries the exact original contract and identity');
+    assert.equal(sent[2].action,'voidSale');assert.equal(await orders.countWaiting('a'),0);
+  } finally {
+    console.warn=warn;globalThis.fetch=previousFetch;
+    if(previousNavigator)Object.defineProperty(globalThis,'navigator',previousNavigator);else delete globalThis.navigator;
+    await db.delete();await db.open();
+  }
 });
 
 test('sync recovers SYNCING in insertion order, stops dependencies on failure, and freezes credentials', async () => {

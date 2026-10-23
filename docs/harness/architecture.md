@@ -746,3 +746,6 @@ loadDashboard는 행사 목록/listInventory 이후 소유 행사 상세를 최�
 api/settlements GET은 현재 계정 원장을 반환한다. POST saveDeductions/addPayment/reversePayment는 계정→소유 행사 잠금, expected version, requestId 영수증을 사용한다. pos_settlements의 관리자/행사/작가별 deductions/payments JSONB와 pos_settlement_commands의 요청 fingerprint를 같은 트랜잭션으로 저장한다. 동일 요청 재전송은 이력을 중복 추가하지 않으며 같은ID 다른내용·stale version은409다. 지급은 남은 금액 이내 양의 정수, 차감은 판매액 이하 정수이며 취소는 음수 보정 기록을 추가한다. 실제 이체·입금 확인은 수행하지 않는다. 원가/비용은 자동 추정하지 않고 입력한 차감 합계를 표시한다.
 
 지급 금액의 원 단위 정산 배분은 기존 세트 가중치를 쓰되 largest-remainder 방식으로 반올림 잔액을 배분하여 합계가 원 판매액과 일치한다. 서버가 최신 판매 스냅샷과 기존 마스터 fallback에서 금액을 다시 계산한다. 미동기화 요청은 지급 전 현재 기기에서 차단한다. 대시보드는 원장 기준 정산 대기 알림을 수익현황으로 연결한다. 새 표는 반복 가능한 생성이며 행사 삭제와 함께 CASCADE 삭제된다. 기존 행사 복제·JSON 백업에는 금전 원장을 복사하지 않는다. 서비스워커 v126. 로컬 API 미들웨어도 /api/settlements를 제공한다.
+
+## 작가 작업 공간 (2026-10-23)
+개인 재고·수익과 행사별 위임 권한을 분리한다. api/lib/eventAccess.js가 행사 조회 및 쓰기 범위를 검사하고 storageContract.js는 기존/신규 저장 스키마를 호환한다. 상세 계약은 ../artist-booth-transition/08-workspace-implementation.md를 참조한다.

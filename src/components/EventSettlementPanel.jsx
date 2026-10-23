@@ -29,10 +29,12 @@ export default function EventSettlementPanel({request,projectId,onChange}) {
  };
  const savePayment=async command=>{
   if(await orderRepository.countWaiting(projectId))throw new Error('미동기화 거래를 먼저 처리해주세요.');
+  const recipientId=command.recipientId||data.recipientMappings?.find(m=>m.project_id===projectId&&m.legacy_creator===command.creator)?.recipient_id;
+  if(recipientId){command={...command,recipientId};delete command.creator;}
   const result=await request('/api/settlements',{method:'POST',body:JSON.stringify(command)});
   if(active.current)setData(current=>({...current,settlements:[...current.settlements.filter(r=>r.projectId!==result.settlement.projectId||r.creator!==result.settlement.creator),result.settlement]}));
  };
- const rowFor=frozen=>{const record=data.settlements.find(row=>row.projectId===projectId&&row.creator===frozen.creator)||{version:0,payments:[],deductions:[]};const paid=record.payments.reduce((sum,p)=>sum+p.amount,0);return {...record,...frozen,projectId,projectName:'행사 정산',confirmed:true,paid,pending:frozen.net-paid};};
+ const rowFor=frozen=>{const record=data.settlements.find(row=>row.projectId===projectId&&row.creator===frozen.creator)||{version:0,payments:[],deductions:[]};const paid=record.payments.reduce((sum,p)=>sum+p.amount,0);return {...record,...frozen,recipientId:record.recipientId||data.recipientMappings?.find(m=>m.project_id===projectId&&m.legacy_creator===frozen.creator)?.recipient_id,projectId,projectName:'행사 정산',confirmed:true,paid,pending:frozen.net-paid};};
  const paid=preview?.rows.some(row=>rowFor(row).paid>0);
  const change=(index,key,value)=>setCosts(current=>current.map((row,i)=>i===index?{...row,[key]:value}:row));
  return <section className="settlement-card event-settlement-panel"><div className="dashboard-card-heading"><h2>행사 정산 마감</h2><span className="revenue-status">{event.closedAt?(preview.rows.every(row=>row.net<=rowFor(row).paid)&&paid?'지급 완료':'마감'):'정산 중'}</span></div>{error&&<p role="alert" className="inventory-error">{error}</p>}{previewError&&<p role="alert">{previewError}</p>}{!data&&!error&&<LoadingState/>}{data&&<>

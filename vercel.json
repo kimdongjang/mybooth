@@ -1,0 +1,15 @@
+{
+  "builds": [
+    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } },
+    { "src": "api/auth.js", "use": "@vercel/node" },
+    { "src": "api/pos.js", "use": "@vercel/node" },
+    { "src": "api/booths.js", "use": "@vercel/node" },
+    { "src": "api/settlements.js", "use": "@vercel/node" },
+    { "src": "api/product-images.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/(auth|pos|booths|settlements|product-images)", "dest": "/api/$1.js" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}

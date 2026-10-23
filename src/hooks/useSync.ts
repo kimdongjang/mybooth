@@ -6,6 +6,8 @@ interface UseSyncOptions {
   enabled: boolean;
   getAuthToken: () => string | null;
   projectId?: string | null;
+  actorId?: string | null;
+  boothId?: string | null;
 }
 
 export interface UseSyncResult extends SyncSnapshot {
@@ -14,13 +16,13 @@ export interface UseSyncResult extends SyncSnapshot {
   refreshPendingCount: () => Promise<void>;
 }
 
-export function useSync({ enabled, getAuthToken, projectId }: UseSyncOptions): UseSyncResult {
+export function useSync({ enabled, getAuthToken, projectId, actorId, boothId }: UseSyncOptions): UseSyncResult {
   const [online, setOnline] = useState(isOnline());
   const [snapshot, setSnapshot] = useState<SyncSnapshot>({ isSyncing: false, pendingCount: 0, lastSyncedAt: null });
 
   useEffect(() => {
-    syncService.configure({ getAuthToken, projectId: enabled ? projectId : null });
-  }, [enabled, getAuthToken, projectId]);
+    syncService.configure({ getAuthToken, projectId: enabled ? projectId : null, actorId, boothId });
+  }, [enabled, getAuthToken, projectId, actorId, boothId]);
 
   useEffect(() => syncService.subscribe(setSnapshot), []);
 

@@ -5,6 +5,8 @@ export type SyncStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED' | 'ARCHIVED
 export interface StoredOrder<TPayload = unknown> {
   id?: number;
   projectId: string;
+  actorId?: string;
+  boothId?: string | null;
   localOrderId: string;
   createdAt: string;
   payload: TPayload;
@@ -25,7 +27,7 @@ export class PosDatabase extends Dexie {
   posState!: Table<StoredPosState, string>;
 
   constructor() {
-    super('booth-pos-offline-db');
+    super(import.meta.env?.MODE === 'localdb' ? 'booth-pos-local-dev-db' : 'booth-pos-offline-db');
 
     this.version(1).stores({
       orders: '++id, localOrderId, createdAt, syncStatus, retryCount, lastSyncAt',
@@ -38,6 +40,11 @@ export class PosDatabase extends Dexie {
 
     this.version(3).stores({
       orders: '++id, projectId, [projectId+syncStatus], [projectId+localOrderId], localOrderId, createdAt, syncStatus, retryCount, lastSyncAt',
+      posState: 'key, projectId, updatedAt',
+    });
+    // Index-only upgrade: old payloads, local IDs and uncertain queue rows stay intact.
+    this.version(4).stores({
+      orders: '++id, projectId, actorId, [projectId+syncStatus], [projectId+localOrderId], [actorId+projectId], localOrderId, createdAt, syncStatus, retryCount, lastSyncAt',
       posState: 'key, projectId, updatedAt',
     });
   }

@@ -1,3 +1,5 @@
+import * as storageContract from '../api/lib/storageContract.js';
+import * as boothFoundation from '../api/lib/boothFoundation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -12,11 +14,13 @@ test('upload tokens require authentication, owned product and matching path; res
   let owned = true;
   let archived = false;
   const dependencies = {
+    './lib/storageContract.js': storageContract, './lib/boothFoundation.js': boothFoundation,
     '@vercel/blob/client': { handleUpload: async options => {
       tokenOptions = await options.onBeforeGenerateToken(options.body.pathname, options.body.clientPayload);
       return { type: 'token' };
     } },
     '@vercel/postgres': { sql: async parts => {
+      if(parts.join('?').startsWith('SELECT to_regclass')) return {rows:[{name:null}]};
       assert.match(parts.join('?'), /project\.archived_at IS NULL|product->>'removedAt' IS NULL/);
       return { rows: owned && !archived ? [{ id: 'P001' }] : [] };
     } },
