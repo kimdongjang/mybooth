@@ -17,7 +17,7 @@ export function settlementEntries(line, productsById, bundles) {
       return [{
         productId: line.id,
         name: line.name || productNameWithoutCreator(product),
-        creator: line.creatorName || creatorNameOf(product),
+        creator: line.settlementCreator || line.creatorName || product?.settlementCreator || creatorNameOf(product),
         qty: Number(line.qty || 0),
         amount: Number(line.unitPrice || 0) * Number(line.qty || 0),
       }];
@@ -38,7 +38,7 @@ export function settlementEntries(line, productsById, bundles) {
         return {
           productId: item.productId,
           name: item.name || productNameWithoutCreator(product) || product?.name || '알 수 없는 굿즈',
-          creator: item.creatorName || creatorNameOf(product),
+          creator: item.settlementCreator || item.creatorName || product?.settlementCreator || creatorNameOf(product),
           qty: Number(item.qty || 0) * lineQty,
           amount: lineTotal * (weights[index] / totalWeight),
         };

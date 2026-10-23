@@ -4,11 +4,21 @@ export async function uploadProductImage(projectId, productId, image) {
   return uploadImage(`products/${encodeURIComponent(projectId)}/${encodeURIComponent(productId)}`, { projectId, productId }, image);
 }
 
-export function uploadInventoryImage(adminId, inventoryId, image) {
-  return uploadImage(`inventory/${encodeURIComponent(adminId)}/${encodeURIComponent(inventoryId)}`, { inventoryId }, image);
+export function uploadInventoryImage(adminId, inventoryId, image, ownerId) {
+  return uploadImage(`inventory/${encodeURIComponent(adminId)}/${encodeURIComponent(inventoryId)}`, { inventoryId,...(ownerId?{ownerId}:{}) }, image);
 }
 
 async function uploadImage(prefix, scope, image) {
+  if (import.meta.env?.MODE === 'localdb') {
+    const response = await fetch(`/api/product-images?${new URLSearchParams(scope)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': image.type, Authorization: `Bearer ${sessionStorage.getItem('pos_local_dev:pos_admin_token')}` },
+      body: image,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.url?.startsWith('/local-images/')) throw new Error(data?.error || '로컬 이미지 저장에 실패했습니다.');
+    return data;
+  }
   const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[image.type];
   const pathname = `${prefix}/${crypto.randomUUID()}.${extension}`;
   const response = await fetch('/api/product-images', {

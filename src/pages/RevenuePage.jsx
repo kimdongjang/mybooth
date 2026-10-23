@@ -21,12 +21,13 @@ export default function RevenuePage({ request }) {
   const [data,setData]=useState(null), [records,setRecords]=useState([]), [closures,setClosures]=useState([]), [error,setError]=useState('');
   const [refresh,setRefresh]=useState(0), [period,setPeriod]=useState('all'), [start,setStart]=useState(''), [end,setEnd]=useState('');
   const [editing,setEditing]=useState(null);
+  const [mappings,setMappings]=useState([]);
   const active=useRef(true);
   useEffect(()=>{
     let current=true;active.current=true;setError('');setData(null);setEditing(null);
     loadDashboard(request,false).then(async next=>{
       const financial=await request('/api/settlements');
-      if(current){setData(next);setRecords(financial.settlements);setClosures(financial.eventSettlements || []);}
+      if(current){setData(next);setRecords(financial.settlements);setClosures(financial.eventSettlements || []);setMappings(financial.recipientMappings||[]);}
     }).catch(err=>{if(current)setError(err.message);});
     return()=>{current=false;active.current=false;};
   },[request,refresh]);
@@ -35,6 +36,8 @@ export default function RevenuePage({ request }) {
   const summary=data&&!invalid?revenueSummary(data,records,range,closures):null;
   const save=async command=>{
     if(await orderRepository.countWaiting(command.projectId))throw new Error('이 행사의 미동기화 요청을 먼저 동기화해주세요.');
+    const recipientId=command.recipientId||mappings.find(m=>m.project_id===command.projectId&&m.legacy_creator===command.creator)?.recipient_id;
+    if(recipientId){command={...command,recipientId};delete command.creator;}
     const result=await request('/api/settlements',{method:'POST',body:JSON.stringify(command)});
     if(!active.current)return;
     setRecords(current=>[...current.filter(row=>row.projectId!==result.settlement.projectId||row.creator!==result.settlement.creator),result.settlement]);

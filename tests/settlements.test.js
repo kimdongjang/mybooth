@@ -1,3 +1,5 @@
+import * as storageContract from '../api/lib/storageContract.js';
+import * as boothFoundation from '../api/lib/boothFoundation.js';
 import { eventSettlementPreview } from '../src/utils/eventSettlement.js';
 import * as eventSettlement from '../api/lib/eventSettlement.js';
 import test from 'node:test';
@@ -23,7 +25,7 @@ async function fixture() {
   const pool={connect:async()=>{connects++;const prior=tail;let release;tail=new Promise(resolve=>release=resolve);await prior;return {sql(parts,...values){return this.query(parts.reduce((s,p,i)=>s+(i?`$${i}`:'')+p,''),values);},query(query,values){return db.query(query,values);},release};}};
   const context=vm.createContext({});
   const module=new vm.SourceTextModule(await readFile(new URL('../api/settlements.js',import.meta.url),'utf8'),{context});
-  await module.link(name=>{const exports=name==='@vercel/postgres'?{sql:pool}:name.endsWith('auth.js')?{assertPostgresConnectionString(){},requireAuth(req,res){if(req.adminId)return{id:req.adminId};res.status(401).json({error:'Unauthorized'});return null;}}:name.endsWith('eventSettlement.js')?eventSettlement:{settlementMoneyEntries};return new vm.SyntheticModule(Object.keys(exports),function(){for(const[key,value]of Object.entries(exports))this.setExport(key,value);},{context});});
+  await module.link(name=>{const exports=name==='@vercel/postgres'?{sql:pool}:name.endsWith('auth.js')?{assertPostgresConnectionString(){},requireAuth(req,res){if(req.adminId)return{id:req.adminId};res.status(401).json({error:'Unauthorized'});return null;}}:name.endsWith('storageContract.js')?storageContract:name.endsWith('boothFoundation.js')?boothFoundation:name.endsWith('eventSettlement.js')?eventSettlement:{settlementMoneyEntries};return new vm.SyntheticModule(Object.keys(exports),function(){for(const[key,value]of Object.entries(exports))this.setExport(key,value);},{context});});
   await module.evaluate();
   const invoke=async(body=null,adminId='a',query={})=>{const result={};await module.namespace.default({adminId,method:body?'POST':'GET',body,query},{status(status){result.status=status;return this;},json(value){result.body=JSON.parse(JSON.stringify(value));return this;}});return result;};
   const close=async()=>{

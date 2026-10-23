@@ -1,6 +1,9 @@
 import { db, type StoredOrder } from './dexie';
 
 export interface PosStateCache {
+  actorId?: string;
+  legacyActorId?: string;
+  boothId?: string | null;
   settlementClosedAt?: string | null;
   archivedAt?: string | null;
   dataRevision?: string | null;
@@ -26,7 +29,10 @@ export const stateRepository = {
       if (waiting || (queueVersion !== undefined && queueVersion !== await this.queueVersion(projectId))) {
         const cached = await this.get(projectId);
         if (!cached) throw new Error('미전송 주문의 로컬 상태가 없습니다. 주문 백업을 보존해주세요.');
-        if(state.settlementClosedAt !== undefined){cached.settlementClosedAt=state.settlementClosedAt;await this.save(projectId,cached);}
+        if(state.actorId && ((cached.actorId && cached.actorId!==state.actorId) || (!cached.actorId && state.legacyActorId!==state.actorId))) throw new Error('미전송 주문의 원래 계정에서 동기화해주세요.');
+        if(state.actorId){cached.actorId=state.actorId;cached.legacyActorId=state.legacyActorId;cached.boothId=state.boothId;}
+        if(state.settlementClosedAt !== undefined) cached.settlementClosedAt=state.settlementClosedAt;
+        if(state.actorId || state.settlementClosedAt !== undefined) await this.save(projectId,cached);
         return cached;
       }
       await this.save(projectId, state);
@@ -37,6 +43,9 @@ export const stateRepository = {
   async commitOrder(projectId: string, order: Omit<StoredOrder, 'id'>, expected: PosStateCache, next: PosStateCache): Promise<void> {
     await db.transaction('rw', db.orders, db.posState, async () => {
       const current = await this.get(projectId);
+      if(order.actorId && current?.actorId!==order.actorId) throw new Error('주문 계정과 저장된 행사 계정이 다릅니다. 온라인에서 다시 불러와주세요.');
+      const payload=order.payload as {actorId?:string;boothId?:string|null};
+      if(order.actorId && (payload.actorId!==order.actorId || (payload.boothId || null)!==(order.boothId || null))) throw new Error('주문 계정 또는 부스 범위가 일치하지 않습니다.');
       if (((current as PosStateCache | null)?.archivedAt || (current as PosStateCache | null)?.settlementClosedAt)) throw new Error('보관되었거나 정산이 마감된 행사에서는 판매·취소할 수 없습니다.');
       for (const key of ['products', 'bundles', 'sales', 'dataRevision'] as const) {
         if (JSON.stringify(current?.[key]) !== JSON.stringify(expected[key])) {
@@ -45,7 +54,7 @@ export const stateRepository = {
       }
       if (order.projectId !== projectId || (order.payload as { projectId?: string })?.projectId !== projectId) throw new Error('주문 행사 범위가 일치하지 않습니다.');
       await db.orders.add({ ...order });
-      await this.save(projectId, next);
+      await this.save(projectId, {...current,...next});
     });
   },
   async setArchivedAt(projectId: string, archivedAt: string | null): Promise<void> {
@@ -68,5 +77,9 @@ export const stateRepository = {
   async get(projectId: string): Promise<PosStateCache | null> {
     const cached = await db.posState.get(stateKey(projectId));
     return (cached?.state as PosStateCache | undefined) || null;
+  },
+  async getForActor(projectId: string, actorId: string): Promise<PosStateCache | null> {
+    const cached=await this.get(projectId);
+    return cached?.actorId===actorId ? cached : null;
   },
 };

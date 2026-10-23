@@ -20,7 +20,7 @@ export default function SettlementEditor({ row, save, close }) {
     // Preserve the exact command ID/body after a lost response; retry cannot pay twice.
     const fingerprint = JSON.stringify(body);
     if (!pending.current || pending.current.fingerprint !== fingerprint) pending.current = { fingerprint, command: { ...body, requestId: crypto.randomUUID() } };
-    try { await save({ ...pending.current.command, projectId: row.projectId, creator: row.creator, version: row.version }); clear(); close(); }
+    try { await save({ ...pending.current.command, projectId: row.projectId, ...(row.recipientId?{recipientId:row.recipientId}:{creator:row.creator}), version: row.version }); clear(); close(); }
     catch (err) { setError(err.message); }
     finally { locked.current = false; setBusy(false); }
   };

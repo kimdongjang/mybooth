@@ -1,14 +1,21 @@
 import { initEventSettlements } from './lib/eventSettlement.js';
+import {authorizeEvent} from './lib/eventAccess.js';
+import {canonicalSql} from './lib/storageContract.js';
 import { accountSnapshot, stockMovement } from './lib/accountInventory.js';
+import { migratedBooth, authorizeBooth, boothCapability, protectMigratedLifecycle, reconcileBoothFoundation, recipientMap, productIdentity, authorizeOriginalProduct, decorateEventProducts, legacySnapshot, legacyStockActions, guardLegacyStock, recordLegacyStockChanges,lockSharedStockCustodians,guardSharedStockWrites,decorateSharedInventory,enforceBoothContract,boothContracts } from './lib/boothFoundation.js';
 import { sql as pool } from '@vercel/postgres';
 import { assertPostgresConnectionString, requireAuth, hashPassword, validateAdminPassword } from './lib/auth.js';
 import { CURRENT_SEED_VERSION, getDefaultBundles, getDefaultProducts } from './lib/defaultData.js';
 
-export function createHandler(sql) {
+export function createHandler(sql, context = null) {
+const checkPassword = (adminId, password, connection) => validateAdminPassword(context?.actorId || adminId, password, connection);
 const uid = () => globalThis.crypto.randomUUID();
 const detachedProjectIds = new Set(['pxwiu2t', 's4fjgga']);
 function validImageUrl(value, prefix) {
   if (typeof value !== 'string') return false;
+  if (typeof process !== 'undefined' && process.env.POS_LOCAL_DB === '1'
+    && value.startsWith(`/local-images${prefix}`)
+    && /^\/local-images\/(products|inventory)\/[^/?#\\]+\/[^/?#\\]+\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(jpg|png|webp)$/.test(value)) return true;
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && url.hostname.endsWith('.public.blob.vercel-storage.com') && url.pathname.startsWith(prefix);
@@ -666,7 +673,9 @@ async function finalizeSale(adminId, projectId, { localOrderId, createdAt, metho
       const product = products.find(item => item.id === line.id);
       if (!product || product.is_active === false) throw new Error('상품을 찾을 수 없거나 판매가 중지되었습니다.');
       soldByProduct.set(line.id, (soldByProduct.get(line.id) || 0) + line.qty);
-      lines.push({ ...line, name: line.name || product.name, creatorName: line.creatorName ?? product.creator_name ?? '' });
+      const identity=context?.boothId ? await productIdentity(sql,projectId,line.id,context.boothId) : {};
+      lines.push({ ...line, name: line.name || product.name, ...identity,
+        creatorName: context?.identityWrites ? product.creator_name ?? identity.creatorName : line.creatorName ?? product.creator_name ?? '' });
     }
     if (line.type === 'bundle') {
       const bundle = (await sql`SELECT items FROM pos_bundles WHERE project_id = ${projectId} AND id = ${line.id}`).rows[0];
@@ -676,13 +685,15 @@ async function finalizeSale(adminId, projectId, { localOrderId, createdAt, metho
         error.code = '40001';
         throw error;
       }
-      const subItems = bundle.items.map(item => {
+      const subItems = await Promise.all(bundle.items.map(async item => {
         const product = products.find(product => product.id === item.productId);
         if (!product || product.is_active === false || !Number.isSafeInteger(item.qty) || item.qty <= 0) throw new Error('세트 구성을 확인해주세요.');
         soldByProduct.set(item.productId, (soldByProduct.get(item.productId) || 0) + item.qty * line.qty);
         const historical = line.subItems?.find(saved => saved.productId === item.productId);
-        return { ...item, name: historical?.name ?? product.name, creatorName: historical?.creatorName ?? product.creator_name ?? '', unitPrice: historical?.unitPrice ?? product.price };
-      });
+        const identity=context?.boothId ? await productIdentity(sql,projectId,item.productId,context.boothId) : {};
+        return { ...item, name: historical?.name ?? product.name, unitPrice: historical?.unitPrice ?? product.price, ...identity,
+          creatorName:context?.identityWrites ? product.creator_name ?? identity.creatorName : historical?.creatorName ?? product.creator_name ?? '' };
+      }));
       lines.push({ ...line, subItems });
     }
   }
@@ -715,7 +726,7 @@ async function voidSale(adminId, projectId, id) {
 }
 
 async function clearSales(adminId, projectId, password) {
-  if (!await validateAdminPassword(adminId, password, sql)) throw new Error('패스워드가 올바르지 않습니다.');
+  if (!await checkPassword(adminId, password, sql)) throw new Error('패스워드가 올바르지 않습니다.');
   await assertProject(adminId, projectId);
   await sql`INSERT INTO pos_sale_receipts (project_id, id) SELECT project_id, id FROM pos_sales WHERE project_id = ${projectId} ON CONFLICT (project_id, id) DO NOTHING`;
   await sql`DELETE FROM pos_sales WHERE project_id = ${projectId}`;
@@ -783,8 +794,9 @@ async function importProject(adminId, name, backup, duplicate = false) {
 }
 
 async function handler(req, res) {
-  const admin = requireAuth(req, res);
-  if (!admin) return;
+  const authenticated = requireAuth(req, res);
+  if (!authenticated) return;
+  const admin = { ...authenticated, id: context?.scopeAdminId || authenticated.id };
   try {
     await initDb();
     if (!(await sql`SELECT id FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows.length) return res.status(401).json({ error: '인증이 필요합니다.' });
@@ -800,7 +812,7 @@ async function handler(req, res) {
         return res.status(200).json({ admin: { ...account, nickname: payload.nickname.trim() } });
       }
       if (req.body.action === 'updateCredentials') {
-        if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({error:'현재 비밀번호를 확인해주세요.'});
+        if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({error:'현재 비밀번호를 확인해주세요.'});
         const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || (payload.newPassword && (typeof payload.newPassword !== 'string' || payload.newPassword.length < 6 || payload.newPassword.length > 128))) return res.status(400).json({error:'이메일과 새 비밀번호(6~128자)를 확인해주세요.'});
         try {
@@ -809,7 +821,7 @@ async function handler(req, res) {
         } catch (error) { if (error.code === '23505') return res.status(409).json({error:'이미 사용 중인 이메일입니다.'}); throw error; }
         return res.status(200).json({admin:{...account,email}});
       }
-      if (payload.confirmId !== admin.id || !await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '아이디와 패스워드를 확인해주세요.' });
+      if (payload.confirmId !== admin.id || !await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '아이디와 패스워드를 확인해주세요.' });
       // Delete links via projects first, then shared inventory. Keep an unusable ID tombstone
       // so legacy bootstrap and old signed tokens cannot regain this account.
       await sql`DELETE FROM pos_event_archives WHERE project_id IN (SELECT id FROM pos_projects WHERE admin_id=${admin.id}) OR snapshot->'project'->>'admin_id'=${admin.id}`;
@@ -829,7 +841,7 @@ async function handler(req, res) {
     if (projectId && !['backupAccount','restoreAccount','listInventory','listStockMovements'].includes(action)) {
       if ((await sql`SELECT project_id FROM pos_event_settlements WHERE admin_id=${admin.id} AND project_id=${projectId} AND closed_at IS NOT NULL`).rows.length) return res.status(409).json({error:'정산이 마감된 행사입니다. 마감을 해제한 뒤 수정해주세요.'});
     }
-    if (['backupAccount','restoreAccount'].includes(action)) return res.status(200).json(await accountSnapshot(sql,admin.id,action,payload,validateAdminPassword));
+    if (['backupAccount','restoreAccount'].includes(action)) return res.status(200).json(await accountSnapshot(sql,admin.id,action,payload,checkPassword));
     if (['recordStockMovement','listStockMovements'].includes(action)) return res.status(200).json(await stockMovement(sql,admin.id,action,payload,inventoryState));
     if (action === 'importInventory') {
       if (!Array.isArray(payload.products) || !payload.products.length || payload.products.length > 500) return res.status(400).json({error:'상품은 1~500개까지 등록할 수 있습니다.'});
@@ -851,7 +863,7 @@ async function handler(req, res) {
     if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct', 'saveEventProduct', 'removeInventory', 'updateInventoryRegistrationDate'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
     if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
     if (action === 'restoreProject') {
-      if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+      if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
       const name = typeof payload.name === 'string' ? payload.name.trim() : '';
       if (!name || name.length > 100) return res.status(400).json({ error: '새 프로젝트 이름은 1~100자로 입력해주세요.' });
       try { validateBackup(payload.backup); } catch { return res.status(400).json({ error: '지원하지 않거나 손상된 프로젝트 백업입니다.' }); }
@@ -863,7 +875,7 @@ async function handler(req, res) {
       await initDb();
       const project = (await sql`SELECT id, archived_at FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id} FOR UPDATE`).rows[0];
       if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.' });
-      if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+      if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
       if (action === 'backupProject') {
         const backup = await snapshot(projectId);
         if (encodeURIComponent(JSON.stringify(backup)).replace(/%[0-9A-F]{2}/g, 'x').length > 3 * 1024 * 1024) return res.status(413).json({ error: '프로젝트가 백업 파일 한도(3MiB)를 초과했습니다. 별도 데이터 내보내기가 필요합니다.' });
@@ -883,13 +895,13 @@ async function handler(req, res) {
       const project = (await sql`SELECT name, archived_at FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id} FOR UPDATE`).rows[0];
       if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.' });
       if (action === 'renameProject') {
-        if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+        if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
         if (project.archived_at) return res.status(409).json({ error: '보관된 행사입니다. 보관을 해제한 뒤 변경해주세요.' });
         const name = typeof payload.name === 'string' ? payload.name.trim() : '';
         if (!name || name.length > 100) return res.status(400).json({ error: '프로젝트 이름은 1~100자로 입력해주세요.' });
         await sql`UPDATE pos_projects SET name = ${name}, updated_at = NOW() WHERE id = ${projectId} AND admin_id = ${admin.id}`;
       } else {
-        if (!await validateAdminPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+        if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
         if (payload.confirmName !== project.name) return res.status(400).json({ error: '프로젝트 이름을 정확히 입력해주세요.' });
         const allocated = (await sql`SELECT p.*, l.inventory_id FROM pos_products p JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id WHERE p.project_id=${projectId}`).rows.filter(p => p.inventory_id && Number(p.stock_qty ?? p.stock) > 0);
         if (allocated.length) return res.status(409).json({ error: '남은 재고를 재고 관리에서 회수한 뒤 행사를 삭제해주세요.' });
@@ -938,21 +950,97 @@ return handler;
 }
 
 export default async function transactionalHandler(req, res) {
-  if (!requireAuth(req, res)) return;
+  const actor = requireAuth(req, res);
+  if (!actor) return;
   // Every mutation and lifecycle change shares the project's row lock until commit.
   let client;
   try {
     client = await pool.connect();
-    const handler = createHandler(client.sql.bind(client));
+    const sql = await canonicalSql(client.sql.bind(client));
+    const context = {};
+    const handler = createHandler(sql, context);
     await handler.initDb();
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    const requestedBooth = req.query?.boothId || req.body?.boothId;
+    const defaultBooth = await migratedBooth(sql, actor.id);
+    const accountAction = req.query?.account === 'true' || ['updateProfile','updateCredentials','deleteAccount'].includes(req.body?.action);
+    let booth = null;
+    if (accountAction && requestedBooth) throw Object.assign(new Error('계정 작업에는 부스 범위를 지정할 수 없습니다.'), {status:400});
+    if(accountAction) await protectMigratedLifecycle(sql,actor.id,req.body?.action);
+    if (!accountAction && (requestedBooth || defaultBooth)) {
+      await lockSharedStockCustodians(sql,actor.id,requestedBooth||defaultBooth.id,req.query?.projectId||req.body?.projectId||req.body?.payload?.projectId);
+      const eventId=req.query?.projectId||req.body?.projectId||req.body?.payload?.projectId;
+      const accessTables=(await sql`SELECT to_regclass('pos_event_staff') AS name`).rows[0]?.name;
+      const action=req.body?.action;
+      const configuration=['replaceProducts','replaceBundles','reorderProducts','removeProduct','saveEventProduct'];
+      if(eventId&&accessTables) {
+        const capability=req.method==='GET'?'pos':['finalizeSale','voidSale'].includes(action)?'sell':configuration.includes(action)?'configure':'manage';
+        booth=await authorizeEvent(sql,actor.id,eventId,capability,requestedBooth||defaultBooth?.id);
+      } else booth = await authorizeBooth(sql, actor.id, requestedBooth || defaultBooth.id, boothCapability(req));
+      await enforceBoothContract(sql,booth,req);
+      const projectId=req.query?.projectId || req.body?.projectId || req.body?.payload?.projectId;
+      if(projectId && !(await sql`SELECT project_id FROM pos_event_booths WHERE project_id=${projectId} AND booth_id=${booth.id}`).rows.length) throw Object.assign(new Error('부스의 행사가 아닙니다.'),{status:404});
+      await protectMigratedLifecycle(sql,booth.legacy_admin_id,req.body?.action);
+    }
+    if(['finalizeSale','voidSale'].includes(req.body?.action)) {
+      if(req.body.protocolVersion != null && req.body.protocolVersion!==2) throw Object.assign(new Error('지원하지 않는 주문 버전입니다.'),{status:400});
+      if(req.body.protocolVersion===2 && req.body.actorId!==actor.id) throw Object.assign(new Error('주문 작성자와 로그인 계정이 다릅니다.'),{status:403});
+      if(req.body.protocolVersion==null && booth && actor.id!==booth.legacy_admin_id) throw Object.assign(new Error('구형 주문은 원래 계정에서 동기화해주세요.'),{status:403});
+    }
+    if(!booth&&!accountAction)await protectMigratedLifecycle(sql,actor.id,req.body?.action);
+    if(booth) {
+      Object.assign(context,{actorId:actor.id,scopeAdminId:booth.legacy_admin_id,boothId:booth.id,identityWrites:req.body?.protocolVersion===2});
+      await reconcileBoothFoundation(sql,booth.legacy_admin_id);
+      const action=req.body?.action, payload=req.body?.payload || {};
+      if(legacyStockActions.includes(action)) {
+        context.stockBefore=await legacySnapshot(sql,booth.legacy_admin_id);
+        await guardLegacyStock(sql,actor.id,booth,action,payload,context.stockBefore);
+      }
+      let inventoryId=payload.inventoryId || (action==='saveInventory'?payload.product?.id:null);
+      if(['saveEventProduct','updateProductImage'].includes(action)) inventoryId=(await sql`SELECT inventory_id FROM pos_inventory_links WHERE admin_id=${booth.legacy_admin_id} AND project_id=${req.body?.projectId || payload.projectId} AND product_id=${payload.productId}`).rows[0]?.inventory_id;
+      if(inventoryId && ['saveInventory','saveEventProduct','updateProductImage','removeInventory','updateInventoryRegistrationDate'].includes(action)) {
+        const existing=(await sql`SELECT product FROM pos_inventory WHERE admin_id=${booth.legacy_admin_id} AND id=${inventoryId}`).rows[0];
+        const input=payload.product || {};
+        const changesOriginal=['removeInventory','updateInventoryRegistrationDate','updateProductImage'].includes(action)
+          || (payload.registrationDate && String(payload.registrationDate).slice(0,10)!==String(existing?.product.createdAt).slice(0,10))
+          || ['name','goodsType','vtuberName','creatorName','genre','imageUrl','cost',...(action==='saveInventory'?['price']:[])].some(key=>Object.hasOwn(input,key) && input[key]!==existing?.product[key]);
+        if(existing && changesOriginal) await authorizeOriginalProduct(sql,actor.id,booth.legacy_admin_id,inventoryId,booth.id);
+      }
+    }
     let status = 200;
+    await guardSharedStockWrites(sql,booth?.legacy_admin_id||actor.id,req);
     let body;
     await handler(req, { status(code) { status = code; return this; }, json(value) { body = value; return this; } });
+    if(status<400 && booth) {
+      const after=context.stockBefore?await legacySnapshot(sql,booth.legacy_admin_id):undefined;
+      await reconcileBoothFoundation(sql,booth.legacy_admin_id,after);
+      if(after) await recordLegacyStockChanges(sql,actor.id,booth,req.body.action,context.stockBefore,after);
+      if(body && typeof body==='object') {
+        body.boothId=booth.id;
+        body.recipientMappings=await recipientMap(sql,booth.legacy_admin_id);
+        if(body.projects) body.projects=body.projects.map(project=>({...project,boothId:booth.id}));
+        if(body.inventory) {
+          const owners=(await sql`SELECT i.inventory_id,i.owner_id,p.id AS artist_id,a.status,
+            EXISTS(SELECT 1 FROM pos_owner_members m WHERE m.owner_id=i.owner_id AND m.user_id=${actor.id}) AS is_owner
+            FROM pos_inventory_owners i JOIN pos_artist_profiles p ON p.owner_id=i.owner_id
+            LEFT JOIN pos_booth_artists a ON a.owner_id=i.owner_id AND a.booth_id=${booth.id} WHERE i.admin_id=${booth.legacy_admin_id}`).rows;
+          body.inventory=body.inventory.filter(item=>{const owner=owners.find(row=>row.inventory_id===item.id);return owner?.is_owner || ['active','proxy'].includes(owner?.status);})
+            .map(item=>{const owner=owners.find(row=>row.inventory_id===item.id);return {...item,ownerId:owner.owner_id,artistId:owner.artist_id};});
+        }
+        if(body.products) body.products=await decorateEventProducts(sql,booth.legacy_admin_id,req.query?.projectId || req.body?.projectId || req.body?.payload?.projectId,body.products);
+      }
+    }
+    if(status<400 && body && typeof body==='object') {
+      body.actorId=actor.id;
+      body.legacyActorId=booth?.legacy_admin_id || actor.id;
+      if(body.inventory)body.inventory=await decorateSharedInventory(sql,booth?.legacy_admin_id||actor.id,body.inventory);
+      if(defaultBooth) body.compatibility={boothId:defaultBooth.id,restoreAllowed:false,deleteAllowed:false};
+      if(booth)body.contracts=await boothContracts(sql,booth.id);
+    }
     await client.query(status >= 400 ? 'ROLLBACK' : 'COMMIT');
     return res.status(status).json(body);
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    return res.status(error.code === '40001' ? 409 : 500).json({ error: error.code === '40001' ? '프로젝트가 변경되었습니다. 새로고침 후 다시 시도해주세요.' : '프로젝트 작업에 실패했습니다. 다시 시도해주세요.' });
+    return res.status(error.code === '40001' ? 409 : (error.status || 500)).json({ error: error.code === '40001' ? '프로젝트가 변경되었습니다. 새로고침 후 다시 시도해주세요.' : error.status ? error.message : '프로젝트 작업에 실패했습니다. 다시 시도해주세요.' });
   } finally { client?.release(); }
 }

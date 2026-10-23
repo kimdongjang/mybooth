@@ -1,3 +1,6 @@
+import * as storageContract from '../api/lib/storageContract.js';
+import * as eventAccess from '../api/lib/eventAccess.js';
+import * as boothFoundation from '../api/lib/boothFoundation.js';
 import * as eventSettlement from '../api/lib/eventSettlement.js';
 import * as accountInventory from '../api/lib/accountInventory.js';
 import { hashPassword } from '../api/lib/auth.js';
@@ -17,6 +20,7 @@ async function fixture() {
   const sql = async (parts, ...values) => {
     const query = parts.join('?').replace(/\s+/g, ' ').trim();
     statements.push(query);
+    if (query.startsWith('SELECT to_regclass')) return {rows:[{name:null}]};
     if (query.startsWith('SELECT project_id FROM pos_event_settlements') || query.startsWith('SELECT closed_at FROM pos_event_settlements')) return {rows:[]};
     if (query.startsWith('SELECT revision FROM pos_event_archives')) return {rows:[]};
     if (query.startsWith('SELECT id FROM pos_admins')) return { rows: [{ id: values[0] }] };
@@ -67,7 +71,7 @@ async function fixture() {
         assertPostgresConnectionString() {},
         requireAuth: req => ({ id: req.adminId || 'admin-a' }),
         validateAdminPassword: async () => true,
-      } : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
+      } : specifier === './lib/storageContract.js' ? storageContract : specifier === './lib/eventAccess.js' ? eventAccess : specifier === './lib/boothFoundation.js' ? boothFoundation : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
     }, { context });

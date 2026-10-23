@@ -1,3 +1,6 @@
+import * as storageContract from '../api/lib/storageContract.js';
+import * as eventAccess from '../api/lib/eventAccess.js';
+import * as boothFoundation from '../api/lib/boothFoundation.js';
 import * as eventSettlement from '../api/lib/eventSettlement.js';
 import * as accountInventory from '../api/lib/accountInventory.js';
 import { hashPassword } from '../api/lib/auth.js';
@@ -26,7 +29,7 @@ async function fixture() {
         assertPostgresConnectionString() {},
         requireAuth(req, res) { if (req.adminId) return { id: req.adminId }; res.status(401).json({ error: 'Unauthorized' }); return null; },
         validateAdminPassword: async (_id, password) => password === 'test-password',
-      } : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
+      } : specifier === './lib/storageContract.js' ? storageContract : specifier === './lib/eventAccess.js' ? eventAccess : specifier === './lib/boothFoundation.js' ? boothFoundation : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
     }, { context });

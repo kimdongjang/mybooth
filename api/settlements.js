@@ -1,7 +1,9 @@
 import { initEventSettlements, eventSettlementCommand, eventRecord, eventState } from './lib/eventSettlement.js';
+import {canonicalSql} from './lib/storageContract.js';
 import { sql as pool } from '@vercel/postgres';
 import { assertPostgresConnectionString, requireAuth } from './lib/auth.js';
 import { settlementMoneyEntries } from '../src/utils/settlementEntries.js';
+import { migratedBooth, authorizeBooth, reconcileBoothFoundation, recipientMap, resolveRecipient,enforceBoothContract,boothContracts } from './lib/boothFoundation.js';
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const integer = value => Number.isSafeInteger(value) && value >= 0 && value <= 2147483647;
@@ -15,14 +17,24 @@ const record = row => ({ projectId: row.project_id, creator: row.creator, versio
 
 export function createHandler(pool) {
   return async (req, res) => {
-    const admin = requireAuth(req, res);
+    let admin = requireAuth(req, res);
     if (!admin) return;
     let client;
     try {
       assertPostgresConnectionString();
       client = await pool.connect();
-      const sql = client.sql.bind(client);
+      const sql = await canonicalSql(client.sql.bind(client));
       await client.query('BEGIN');
+      const requestedBooth=req.query?.boothId || req.body?.boothId;
+      const defaultBooth=await migratedBooth(sql,admin.id);
+      let booth=null;
+      if(requestedBooth || defaultBooth) {
+        booth=await authorizeBooth(sql,admin.id,requestedBooth || defaultBooth.id,'manage');
+        await enforceBoothContract(sql,booth,req,{settlement:true});
+        const projectId=req.query?.projectId || req.body?.projectId;
+        if(projectId && !(await sql`SELECT project_id FROM pos_event_booths WHERE project_id=${projectId} AND booth_id=${booth.id}`).rows.length) fail('부스의 행사가 아닙니다.',404);
+        admin={...admin,id:booth.legacy_admin_id};
+      }
       await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       if (!(await sql`SELECT id FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows.length) fail('인증이 필요합니다.', 401);
       await sql`CREATE TABLE IF NOT EXISTS pos_settlements (
@@ -33,19 +45,31 @@ export function createHandler(pool) {
         admin_id TEXT NOT NULL REFERENCES pos_admins(id), id TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
         fingerprint TEXT NOT NULL, PRIMARY KEY(admin_id,id))`;
       await initEventSettlements(sql);
+      if(booth) await reconcileBoothFoundation(sql,admin.id);
+      const mappings=booth ? await recipientMap(sql,admin.id) : [];
+      const identityRecord=row=>({...record(row),...(booth ? {recipientId:mappings.find(m=>m.project_id===row.project_id && m.legacy_creator===row.creator)?.recipient_id} : {})});
       if (req.method === 'GET') {
         const rows = await sql`SELECT s.* FROM pos_settlements s JOIN pos_projects p ON p.id=s.project_id AND p.admin_id=s.admin_id WHERE s.admin_id=${admin.id}`;
         const events=await sql`SELECT * FROM pos_event_settlements WHERE admin_id=${admin.id}`;
         let state;
         if(req.query?.projectId){if(!(await sql`SELECT id FROM pos_projects WHERE id=${req.query.projectId} AND admin_id=${admin.id}`).rows.length)fail('행사를 찾을 수 없습니다.',404);state=await eventState(sql,admin.id,req.query.projectId);}
+        const contracts=booth?await boothContracts(sql,booth.id):null;
         await client.query('COMMIT');
-        return res.status(200).json({ state, settlements: rows.rows.map(record), eventSettlements: events.rows.map(eventRecord) });
+        return res.status(200).json({ state, settlements: rows.rows.map(identityRecord), eventSettlements: events.rows.map(eventRecord), ...(booth?{boothId:booth.id,recipientMappings:mappings,contracts}:{}) });
       }
       if (req.method !== 'POST') fail('Method not allowed', 405);
       if (['saveEventCosts','closeEventSettlement','reopenEventSettlement'].includes(req.body?.action)) {
         const result=await eventSettlementCommand(sql,admin.id,req.body);await client.query('COMMIT');return res.status(200).json(result);
       }
-      const { action, projectId, creator, version, requestId, deductions, amount, paidAt, memo = '', paymentId } = req.body || {};
+      const { action, projectId, version, requestId, deductions, amount, paidAt, memo = '', paymentId } = req.body || {};
+      let creator=req.body?.creator;
+      if(req.body?.recipientId) {
+        if(typeof req.body.recipientId!=='string' || req.body.recipientId.length>200) fail('수취인 ID를 확인해주세요.');
+        if(!booth) fail('수취인 ID를 사용하려면 부스 기반 이관이 필요합니다.',409);
+        const mapped=await resolveRecipient(sql,projectId,req.body.recipientId);
+        if(creator && creator!==mapped.legacy_creator) fail('수취인과 기존 정산 대상이 일치하지 않습니다.',409);
+        creator=mapped.legacy_creator;
+      }
       if (!['saveDeductions', 'addPayment', 'reversePayment'].includes(action) || typeof projectId !== 'string' || typeof creator !== 'string' || !creator.trim() || creator !== creator.trim() || creator.length > 200 || !integer(version) || typeof requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(requestId)) fail('올바른 정산 요청이 아닙니다.');
       if (!(await sql`SELECT id FROM pos_projects WHERE id=${projectId} AND admin_id=${admin.id} FOR UPDATE`).rows.length) fail('행사를 찾을 수 없습니다.', 404);
       const fingerprint = JSON.stringify({ action, projectId, creator, version, deductions, amount, paidAt, memo, paymentId });
@@ -54,7 +78,7 @@ export function createHandler(pool) {
       if (replay) {
         if (replay.fingerprint !== fingerprint) fail('같은 요청 ID의 내용이 다릅니다.', 409);
         await client.query('COMMIT');
-        return res.status(200).json({ settlement: record(current) });
+        return res.status(200).json({ settlement: identityRecord(current) });
       }
       const closure=(await sql`SELECT * FROM pos_event_settlements WHERE admin_id=${admin.id} AND project_id=${projectId}`).rows[0];
       if (action==='saveDeductions' && closure?.closed_at) fail('마감된 정산은 수정할 수 없습니다.',409);
@@ -104,7 +128,7 @@ export function createHandler(pool) {
         ON CONFLICT(admin_id,project_id,creator) DO UPDATE SET version=EXCLUDED.version,deductions=EXCLUDED.deductions,payments=EXCLUDED.payments RETURNING *`;
       await sql`INSERT INTO pos_settlement_commands (admin_id,id,project_id,fingerprint) VALUES (${admin.id},${requestId},${projectId},${fingerprint})`;
       await client.query('COMMIT');
-      return res.status(200).json({ settlement: record(saved.rows[0]) });
+      return res.status(200).json({ settlement: identityRecord(saved.rows[0]) });
     } catch (error) {
       if (client) await client.query('ROLLBACK').catch(() => {});
       return res.status(error.status || 500).json({ error: error.message || '정산 저장에 실패했습니다.' });

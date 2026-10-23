@@ -952,3 +952,6 @@ npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공�
 - 대시보드/수익현황 공통 GET /api/settlements의500 원인은 client.sql을 분리 호출하여 메서드 내부 this.query의 this가 사라지는 문제였다. client.sql.bind(client)로 기존 pos API와 같은 연결 컨텍스트를 유지한다. DB 스키마/API 계약은 변경하지 않았다.
 - 기존 테스트의 화살표 sql 어댑터가 this 의존성을 숨겼다. 실제 드라이버처럼 sql 메서드가 this.query를 호출하도록 바꾸어 GET 조회와 차감/지급/취소·재전송·롤백 경로를 확인했다. PR 분리 소스에서 관련 정산/대시보드8개 테스트 및 npm run build 통과. 기존500kB 초과 청크 경고가 있다.
 - 운영 DB 조회/스키마 변경·배포는 수행하지 않았다. 전체 테스트·실브라우저 UI-01/02/03 및 배포 후 인증된 GET 조회는 미실행이다. 운영 반영에는 PR 병합 후 서버 재배포가 필요하다.
+
+## 작가 작업 공간 Draft PR (2026-10-23)
+개별 권한·재고 배치·멱등성·격리 전환 및 롤백 테스트와 빌드는 수행했다. PR 분리 후 최종 전체 테스트는 대기 중이며 실제 브라우저·다기기·운영 DB 전환 검증은 미실행이다. 검증 상세는 ../artist-booth-transition/08-workspace-implementation.md를 참조한다.
