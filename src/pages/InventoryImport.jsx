@@ -3,7 +3,7 @@ import { columns, exampleWorkbook, readProducts } from '../utils/productWorkbook
 import { prepareProductImage } from '../utils/productImage';
 import { uploadInventoryImage } from '../utils/uploadProductImage';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
-export default function InventoryImport({api,adminId,navigate,review = false,onRegistered,saveImage}) {
+export default function InventoryImport({api,adminId,navigate,review = false,onRegistered,saveImage,ready=true}) {
  const submitLock=useRef(false),pending=useRef(null),active=useRef(true),hasDraft=useRef(false);
  useEffect(()=>{active.current=true;return()=>{active.current=false;};},[]);
  useEffect(()=>{if(review && !hasDraft.current)navigate('/inventory/import',true);},[review,navigate]);
@@ -22,9 +22,9 @@ export default function InventoryImport({api,adminId,navigate,review = false,onR
   if(!active.current)return;
   setRows([]);clear();onRegistered?.(savedData);if(failed.length)throw new Error('상품 등록 완료, 이미지 저장 실패: '+failed.join(', '));
   await navigate('inventory');
- }catch(e){if(pending.current){if(e.status>=400 && e.status<500)pending.current=null;else setUncertain(true);}if(active.current)setError(e.message);}finally{if(active.current)setBusy(false);submitLock.current=false;}};
+ }catch(e){if(pending.current){if(e.status>=400 && e.status<500){pending.current=null;setUncertain(false);}else setUncertain(true);}if(active.current)setError(e.message);}finally{if(active.current)setBusy(false);submitLock.current=false;}};
  return <section className="product-management inventory-import-page">
-  {review ? <header className="inventory-import-toolbar"><a className="management-back" href="#/inventory/import" onClick={event=>{if(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button!==0)return;event.preventDefault();navigate('/inventory/import');}}>← 엑셀 업로드로</a><button type="button" className="management-add inventory-import-submit" disabled={busy || !rows.length} onClick={save}>{uncertain?'이전 등록 재확인':'일괄 등록'}</button></header> : <header className="inventory-import-toolbar">
+  {review ? <header className="inventory-import-toolbar"><a className="management-back" href="#/inventory/import" onClick={event=>{if(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button!==0)return;event.preventDefault();navigate('/inventory/import');}}>← 엑셀 업로드로</a><button type="button" className="management-add inventory-import-submit" disabled={busy || !ready || !rows.length} onClick={save}>{uncertain?'이전 등록 재확인':'일괄 등록'}</button></header> : <header className="inventory-import-toolbar">
     <div className="inventory-import-file-actions">
       <label className="management-upload inventory-import-upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg><span>엑셀 업로드</span><input aria-label="상품 엑셀 파일 업로드" type="file" accept=".xlsx" disabled={busy || uncertain} onChange={e=>{load(e.target.files?.[0]);e.target.value='';}}/></label>
       <button type="button" className="management-back inventory-import-template" onClick={()=>{const url=URL.createObjectURL(new Blob([exampleWorkbook()],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const a=document.createElement('a');a.href=url;a.download='상품_등록_예시.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 4v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg><span>예시 엑셀 다운로드</span></button>
@@ -38,7 +38,7 @@ export default function InventoryImport({api,adminId,navigate,review = false,onR
         ['상품명','필수 · 200자 이내','딸기 키링'],
         ['굿즈 종류','선택 · 상품의 종류','키링'],
         ['캐릭터','선택 · 캐릭터 이름','딸기'],
-        ['제작자','선택 · 작가 또는 제작자 이름','작가명'],
+        ['제작자','선택 · 제작자 또는 제작자 이름','제작자명'],
         ['작품/시리즈','선택 · 작품명 또는 시리즈명','오리지널'],
         ['재고','0 이상의 정수 · 빈칸은 0개','10'],
         ['판매가','0 이상의 정수(원) · 빈칸은 0원','5000'],

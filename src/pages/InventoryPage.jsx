@@ -1,6 +1,6 @@
 import InventoryImport from './InventoryImport';
 import StockMovementForm from '../components/StockMovementForm';
-import RegistrationDateForm from '../components/RegistrationDateForm';
+import { dateValue } from '../components/RegistrationDateForm';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
 import { confirmAction } from '../utils/confirmAction';
 import InventoryTransferRecovery from '../components/InventoryTransferRecovery';
@@ -49,7 +49,8 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     return value*sort.direction || a.id.localeCompare(b.id);
   });
   const sortBy = key => {setSort(current=>({key,direction:current.key===key?-current.direction:1}));setPage(1);};
-  const tool = routeHash.split('?')[0] === '#/inventory/import' ? 'import' : routeHash.split('?')[0] === '#/inventory/movements' ? 'movements' : null;
+  const importReview = routeHash.split('?')[0] === '#/inventory/import/review';
+  const tool = (routeHash.split('?')[0] === '#/inventory/import' || importReview) ? 'import' : routeHash.split('?')[0] === '#/inventory/movements' ? 'movements' : null;
   const changeSearch = next => { setSearch(next); setPage(1); };
   const changeDraft = (key, value) => setDraft(current => ({ ...current, [key]: key === 'stock' ? (value === '' ? '' : Number(value)) : value }));
   const [busy, setBusy] = useState(false);
@@ -124,8 +125,9 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
       const product = { ...draft };
       if (pendingMoves || uncertain) throw new Error('이전 재고 이동 결과를 먼저 확인해주세요.');
       if (allocationError) throw new Error(allocationError);
+      if (view === 'detail' && (totalStock === '' || !Number.isInteger(Number(totalStock)) || Number(totalStock) < 0 || Number(totalStock) > 2147483647)) throw new Error('총재고는 0 이상의 정수로 입력해주세요.');
       const allocationPlan = view === 'detail' ? { totalStock: Number(totalStock), allocations: allocationRows.map(row => ({ projectId: row.project_id, productId: row.product_id, quantity: Number(row.quantity), stock: Number(row.stock), initialStock: Number(row.initial_stock), dataRevision: row.data_revision ?? null })) } : undefined;
-      let data = await api('saveInventory', { product, ...(allocationPlan ? { allocationPlan } : {}) });
+      let data = await api('saveInventory', { product, ...(Object.hasOwn(draft, 'registrationDate') ? { registrationDate: draft.registrationDate } : {}), ...(allocationPlan ? { allocationPlan } : {}) });
       let saved = data.inventory.find(item => item.id === draft.id);
       setItems(data.inventory); setAllocationEvents(data.inventoryEvents || []); setDraft({ ...saved });
       if (image) {
@@ -170,31 +172,31 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
       navigate('inventory');
     });
   };
-  const dateScope = useRef(null);
-  dateScope.current = `${adminId}:${routeHash}`;
-  const saveDate = async date => {
-    const scope = dateScope.current;
-    const inventoryId = draft.id;
-    if (busy) return false;
-    setBusy(true);
-    try {
-      const data = await api('updateInventoryRegistrationDate', { inventoryId: draft.id, version: draft.version, date });
-      if (dateScope.current !== scope) return false;
-      const latest = data.inventory.find(item => item.id === inventoryId);
-      setItems(data.inventory); setDraft(current => current?.id === inventoryId ? { ...current, createdAt: latest.createdAt, version: latest.version } : current);
-      return true;
-    } finally { setBusy(false); }
-  };
   return <main className="page-content inventory-page">
     <header className="inventory-page-header">
       <nav className="inventory-breadcrumb" aria-label="현재 위치"><ol>
         <li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고관리</a></li>
         <li aria-hidden="true">/</li>
-        {view !== 'list' && <><li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고 목록</a></li><li aria-hidden="true">/</li></>}
-        <li><h1 aria-current="page" tabIndex={-1}>{tool === 'import' ? '엑셀 일괄 등록' : tool === 'movements' ? '외부 판매·로스' : view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상세정보'}</h1></li>
+        {view !== 'list' && !tool && <><li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고 목록</a></li><li aria-hidden="true">/</li></>}
+        {importReview && <><li><a href="#/inventory/import" onClick={event=>{if(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button!==0)return;event.preventDefault();navigate('/inventory/import');}}>엑셀 일괄 등록</a></li><li aria-hidden="true">/</li></>}
+        <li><h1 aria-current="page" tabIndex={-1}>{importReview ? '업로드 완료 · 편집' : tool === 'import' ? '엑셀 일괄 등록' : tool === 'movements' ? '외부 판매·로스' : view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상세정보'}</h1></li>
       </ol></nav>
       {view !== 'list' && <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
     </header>
+    <nav className="inventory-section-nav menu-tabs" aria-label="재고관리 하위 메뉴">
+      {[
+        ['list', '/inventory', '재고 목록'],
+        ['import', '/inventory/import', '엑셀 일괄 등록'],
+        ['movements', '/inventory/movements', '외부 판매·로스'],
+        ['new', '/inventory/new', '+ 상품 추가'],
+      ].map(([key, path, label]) => {
+        const selected = tool ? tool === key : view === 'new' ? key === 'new' : key === 'list';
+        return <a key={key} href={`#${path}`} className={`inventory-section-link${selected ? ' is-active' : ''}${key === 'new' ? ' inventory-section-add' : ''}`} aria-current={selected ? (importReview || (!tool && view === 'detail') ? 'location' : 'page') : undefined} onClick={event => {
+          if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+          event.preventDefault(); navigate(key === 'list' ? 'inventory' : path);
+        }}>{label}</a>;
+      })}
+    </nav>
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
     {deletionNotice && <div role="status" className="inventory-card"><p>{deletionNotice}</p><button type="button" className="management-back" onClick={() => setDeletionNotice('')}>닫기</button></div>}
@@ -204,7 +206,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     </div>}
     {uncertain && <div role="status" className="inventory-card"><p>이전에 요청한 재고 이동의 완료 여부를 확인해주세요.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(resolvePending)}>이전 이동 결과 확인</button></div>}
     <InventoryTransferRecovery adminId={adminId} api={api} onBlocked={setPendingMoves} onInventory={inventory => { setItems(inventory); setDraft(current => current ? inventory.find(row => row.id === current.id) || null : null); }} />
-    {ready && tool === 'import' && <InventoryImport api={api} adminId={adminId} />}
+    {ready && tool === 'import' && <InventoryImport api={api} adminId={adminId} navigate={navigate} review={importReview} onRegistered={data=>{setItems(data.inventory);setAllocationEvents(data.inventoryEvents || []);}} />}
     {ready && tool === 'movements' && <StockMovementForm adminId={adminId} api={api} items={items} onChange={data=>setItems(data.inventory)} />}
     <section hidden={Boolean(tool) || (!ready && !error)} className={`product-management ${view !== 'detail' ? 'inventory-list-content' : ''}`}>
       {view === 'list' ? <>
@@ -227,7 +229,6 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
           {(search.product || filterCount > 0 || query) && <button type="button" className="inventory-search-reset" onClick={() => { setQuery(''); changeSearch(emptySearch()); }}>검색 조건 초기화</button>}
           </div>
         </form>
-        <div className="inventory-table-actions"><button className="management-back" onClick={()=>navigate('/inventory/import')}>엑셀 일괄 등록</button><button className="management-back" onClick={()=>navigate('/inventory/movements')}>외부 판매·로스</button><button type="button" className="management-add" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => navigate('/inventory/new')}>+ 상품 추가</button></div>
         <div className="management-table-wrap"><table className="management-table inventory-management-table">
           <caption className="sr-only">상품명과 제작자, 캐릭터와 작품/시리즈, 판매 수량과 잔여 수량 및 총재고, 등록일</caption>
           <thead><tr>{[['name','상품명 / 제작자'],[null,'캐릭터 / 작품/시리즈'],['remainingStock','재고'],['createdAt','등록일']].map(([key,label]) => <th scope="col" key={label} aria-sort={key && sort.key===key ? sort.direction===1?'ascending':'descending':undefined}>{key ? <button onClick={()=>sortBy(key)}>{label}{sort.key===key ? sort.direction===1?' ↑':' ↓':''}</button>:label}</th>)}</tr></thead>
@@ -248,20 +249,8 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
             {view === 'detail' && <button type="button" className="inventory-delete-button" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={remove}>상품 삭제</button>}
           </div>
         </div>
-        <div className="management-product-body">
-          <div className="management-image">
-            <ProductImage imageUrl={preview || draft.imageUrl} name={draft.name} />
-            <label className="management-upload product-image-upload"><span>{preparing ? '이미지 축소 중…' : image || draft.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label="상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
-            {(image || draft.imageUrl) && <button type="button" className="product-image-remove" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => { setImage(null); uploadedImage.current = null; changeDraft('imageUrl', null); }}>이미지 제거</button>}
-          </div>
-          <form id="inventory-product-form" onSubmit={save} className="management-details">
-            <InventoryProductFields showPricing draft={draft} products={items} onChange={changeDraft} disabled={busy || preparing || uncertain || pendingMoves || !ready} />
-            {view === 'new' && <label className="management-field"><span>최초 입고 수량</span><Input aria-label="최초 입고 수량" required type="number" min="0" max="2147483647" step="1" value={draft.stock} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('stock', value)} /></label>}
-          </form>
-        </div>
-        {view === 'detail' && <RegistrationDateForm createdAt={draft.createdAt} onSave={saveDate} disabled={busy || uncertain || pendingMoves || !ready} />}
         {view === 'detail' && <section className="inventory-history">
-          <div className="inventory-allocation-heading"><h4>행사별 재고 배정 관리</h4><div className="inventory-stock-summary"><div className="management-field"><span>총재고</span><output className="inventory-readonly-quantity" aria-label="총재고">{won(totalStock)}개</output></div><div className="management-field"><span>미배정재고</span><output className="inventory-readonly-quantity" aria-label="미배정재고">{won(Number(totalStock) - allocationSum)}개</output></div></div></div>
+          <div className="inventory-allocation-heading"><h4>행사별 재고 배정 관리</h4><div className="inventory-stock-summary"><label className="management-field"><span>총재고</span><Input form="inventory-product-form" aria-label="총재고" required type="number" min={allocationSum} max="2147483647" step="1" value={totalStock} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('totalStock', value === '' ? '' : Number(value))} /></label><div className="management-field"><span>미배정재고</span><output className="inventory-readonly-quantity" aria-label="미배정재고">{won(Number(totalStock) - allocationSum)}개</output></div></div></div>
           {allocationError && <p role="alert" className="inventory-error">{allocationError}</p>}
           <div className="management-table-wrap"><table className="management-table inventory-allocation-table"><thead><tr><th>행사</th><th>행사 배정 수량</th><th>판매 수량</th><th>남은 수량</th></tr></thead><tbody>{allocationRows.map(row => {
             const sold = savedItem?.history.find(history => history.projectId === row.project_id && history.productId === row.product_id)?.soldQty || 0;
@@ -276,6 +265,17 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
           })}</tbody></table></div>
           {!allocationRows.length && <p className="management-note">등록된 행사가 없습니다.</p>}
         </section>}
+        <div className="management-product-body">
+          <div className="management-image">
+            <ProductImage imageUrl={preview || draft.imageUrl} name={draft.name} />
+            <label className="management-upload product-image-upload"><span>{preparing ? '이미지 축소 중…' : image || draft.imageUrl ? '이미지 수정' : '이미지 등록'}</span><input aria-label="상품 이미지 등록 또는 수정" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; chooseImage(file); }} /></label>
+            {(image || draft.imageUrl) && <button type="button" className="product-image-remove" disabled={busy || preparing || uncertain || pendingMoves || !ready} onClick={() => { setImage(null); uploadedImage.current = null; changeDraft('imageUrl', null); }}>이미지 제거</button>}
+          </div>
+          <form id="inventory-product-form" onSubmit={save} className="management-details">
+            <InventoryProductFields showPricing draft={draft} products={items} onChange={changeDraft} disabled={busy || preparing || uncertain || pendingMoves || !ready} registrationDate={view === 'detail' ? (draft.registrationDate ?? dateValue(draft.createdAt)) : undefined} />
+            {view === 'new' && <label className="management-field"><span>최초 입고 수량</span><Input aria-label="최초 입고 수량" required type="number" min="0" max="2147483647" step="1" value={draft.stock} disabled={busy || preparing || uncertain || pendingMoves || !ready} onChange={value => changeDraft('stock', value)} /></label>}
+          </form>
+        </div>
         {view === 'detail' && <section className="inventory-history"><h4>행사별 판매 이력</h4><p className="management-note">보존된 판매 내역 기준이며 취소된 판매는 제외합니다. 링크를 누르면 해당 행사로 전환해 판매 내역을 엽니다.</p>
           <StockMovementForm adminId={adminId} api={api} items={items} inventoryId={draft.id} onChange={data=>{setItems(data.inventory);setDraft(data.inventory.find(i=>i.id===draft.id));}} />
           <div className="management-table-wrap"><table className="management-table"><thead><tr><th scope="col">행사</th><th scope="col">판매 수량</th><th scope="col">판매 내역</th></tr></thead><tbody>{(draft.history || []).map(history => <tr key={history.projectId}><td><a className="event-text-link" href={`#/products?projectId=${encodeURIComponent(history.projectId)}`} onClick={event => {

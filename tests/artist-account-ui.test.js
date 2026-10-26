@@ -12,7 +12,7 @@ async function harness() {
   const request=async(url,options)=>{
     if(!options)return data;
     const command=JSON.parse(options.body);calls.push(command);
-    if(command.action==='previewArtistInvitation')return {invitation:{artistName:'작가',boothName:'부스',expiresAt:'2099-01-01'}};
+    if(command.action==='previewArtistInvitation')return {invitation:{artistName:'제작자',boothName:'부스',expiresAt:'2099-01-01'}};
     if(command.action==='acceptArtistInvitation')return {linked:true};
     throw new Error('unexpected action');
   };
@@ -36,7 +36,7 @@ test('artist linking UI previews first, requires consent and clears it when the 
   const form=h.render().find(n=>n.type==='form'&&nodes(n).some(child=>child.type==='button'&&child.props.children==='연결 내용 확인'));
   await form.props.onSubmit({preventDefault(){}});
   await new Promise(resolve=>setImmediate(resolve));
-  const button=()=>h.render().find(n=>n.type==='button'&&n.props.children==='작가 연결 수락');
+  const button=()=>h.render().find(n=>n.type==='button'&&n.props.children==='제작자 연결 수락');
   assert.equal(button().props.disabled,true);
   h.render().find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}});
   assert.equal(button().props.disabled,false);
@@ -47,6 +47,6 @@ test('artist linking UI previews first, requires consent and clears it when the 
   assert.equal(button().props.disabled,true);
   h.render().find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}});
   await button().props.onClick();
-  assert.deepEqual(h.calls.at(-1),{action:'acceptArtistInvitation',payload:{token:'b'.repeat(64),acceptSharedStock:true}});
+  assert.deepEqual(h.calls.at(-1),{action:'acceptArtistInvitation',payload:{token:'b'.repeat(64),acceptSharedStock:true,allowOperatorStock:true}});
   assert.equal(input().props.value,'');assert.equal(button(),undefined);
 });

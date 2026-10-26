@@ -36,6 +36,7 @@ export function createHandler(pool) {
         admin={...admin,id:booth.legacy_admin_id};
       }
       await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+      await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       if (!(await sql`SELECT id FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows.length) fail('인증이 필요합니다.', 401);
       await sql`CREATE TABLE IF NOT EXISTS pos_settlements (
         admin_id TEXT NOT NULL REFERENCES pos_admins(id), project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
@@ -52,12 +53,13 @@ export function createHandler(pool) {
         const rows = await sql`SELECT s.* FROM pos_settlements s JOIN pos_projects p ON p.id=s.project_id AND p.admin_id=s.admin_id WHERE s.admin_id=${admin.id}`;
         const events=await sql`SELECT * FROM pos_event_settlements WHERE admin_id=${admin.id}`;
         let state;
-        if(req.query?.projectId){if(!(await sql`SELECT id FROM pos_projects WHERE id=${req.query.projectId} AND admin_id=${admin.id}`).rows.length)fail('행사를 찾을 수 없습니다.',404);state=await eventState(sql,admin.id,req.query.projectId);}
+        if(req.query?.projectId){if(!(await sql`SELECT id FROM pos_projects WHERE id=${req.query.projectId} AND admin_id=${admin.id} AND deleted_at IS NULL`).rows.length)fail('행사를 찾을 수 없습니다.',404);state=await eventState(sql,admin.id,req.query.projectId);}
         const contracts=booth?await boothContracts(sql,booth.id):null;
         await client.query('COMMIT');
         return res.status(200).json({ state, settlements: rows.rows.map(identityRecord), eventSettlements: events.rows.map(eventRecord), ...(booth?{boothId:booth.id,recipientMappings:mappings,contracts}:{}) });
       }
       if (req.method !== 'POST') fail('Method not allowed', 405);
+      if(req.body?.projectId&&(await sql`SELECT id FROM pos_projects WHERE id=${req.body.projectId} AND deleted_at IS NOT NULL`).rows.length)fail('삭제된 행사입니다.',404);
       if (['saveEventCosts','closeEventSettlement','reopenEventSettlement'].includes(req.body?.action)) {
         const result=await eventSettlementCommand(sql,admin.id,req.body);await client.query('COMMIT');return res.status(200).json(result);
       }
@@ -94,10 +96,10 @@ export function createHandler(pool) {
       for (const sale of sales) for (const line of sale.lines || []) for (const entry of settlementMoneyEntries(line, byId, bundles)) {
         if ((String(entry.creator || '').trim() || '미지정') === creator) { gross += entry.amount; found = true; }
       }
-      if (!found && !current && !closure?.snapshot?.rows.some(row=>row.creator===creator)) fail('판매 내역에 없는 작가입니다.', 404);
+      if (!found && !current && !closure?.snapshot?.rows.some(row=>row.creator===creator)) fail('판매 내역에 없는 제작자입니다.', 404);
       gross = Math.round(gross);
       const frozen=closure?.closed_at ? closure.snapshot.rows.find(row=>row.creator===creator) : null;
-      if(closure?.closed_at && !frozen)fail('마감 내역에 없는 작가입니다.',404);
+      if(closure?.closed_at && !frozen)fail('마감 내역에 없는 제작자입니다.',404);
       if(frozen)gross=frozen.gross;
       let nextDeductions = current?.deductions || [];
       const payments = [...(current?.payments || [])];

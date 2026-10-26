@@ -3,7 +3,7 @@ export const columns=[['name','상품명'],['goodsType','굿즈 종류'],['vtube
 const xml=s=>new DOMParser().parseFromString(s,'application/xml');
 const escape=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 export function exampleWorkbook(){
- const rows=[columns.map(c=>c[1]),['딸기 키링','키링','딸기','작가명','오리지널',10,5000,2000]];
+ const rows=[columns.map(c=>c[1]),['딸기 키링','키링','딸기','제작자명','오리지널',10,5000,2000]];
  const files={
  '[Content_Types].xml':'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
  '_rels/.rels':'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',

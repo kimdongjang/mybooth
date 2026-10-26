@@ -1,3 +1,4 @@
+import PaymentToast from './components/PaymentToast';
 import LoadingState from './components/LoadingState';
 import RevenuePage from './pages/RevenuePage';
 import { settlementEntries } from './utils/settlementEntries';
@@ -6,12 +7,10 @@ import AccountPage from './pages/AccountPage';
 import ArtistStockPage from './pages/ArtistStockPage';
 import PersonalInventory from './pages/PersonalInventory';
 import PersonalOverview from './pages/PersonalOverview';
-import BoothWorkspace from './pages/BoothWorkspace';
 import {createApiContractContext} from './utils/apiContractContext';
 import { allowNavigation, useUnsavedChanges } from './hooks/useUnsavedChanges';
 import { sessionStore, saveProjectList, readProjectList, isNative } from './platform/mobile';
 import InventoryPage from './pages/InventoryPage';
-import GettingStarted from './components/GettingStarted';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import SalesPage from './pages/SalesPage';
@@ -20,13 +19,14 @@ import SettlementPage from './pages/SettlementPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectManagementPage from './pages/ProjectManagementPage';
 import ProjectRestorePage from './pages/ProjectRestorePage';
-import { AppHeader } from './components/PageLayout';
+import { AppHeader, PageIntro, PageTabs } from './components/PageLayout';
 import { Input } from './components/PosUI';
 import { pagePaths, pageTitles, projectPages, pageForHash, productIdForHash, usePageRoute } from './hooks/usePageRoute';
-import { uid, won, creatorNameOf, productNameFromFields, productNameWithoutCreator, normalizeProductForClient, compareProductSaleNumber } from './utils/productDisplay';
+import { uid, won, creatorNameOf, eventCreatorNameOf, productNameFromFields, productNameWithoutCreator, normalizeProductForClient, compareProductSaleNumber } from './utils/productDisplay';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { orderRepository } from './database/orderRepository';
 import { stateRepository } from './database/stateRepository';
+import { localData } from './data/localFirst';
 import { useSync } from './hooks/useSync';
 import { createLocalOrderId } from './utils/orderId';
 
@@ -55,6 +55,7 @@ export default function App() {
   const [projectLoading, setProjectLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [paymentToast,setPaymentToast]=useState(null);
   const [projects, setProjects] = useState([]);
   const [workspace,setWorkspace]=useState({profiles:[],booths:[],events:[]});
   const [selectedProject, setSelectedProject] = useState(null);
@@ -64,12 +65,13 @@ export default function App() {
   const [newProjectName, setNewProjectName] = useState('');
   const [routePage, setScreen, routeHash] = usePageRoute();
   const routeParams = new URLSearchParams(routeHash.split('?')[1] || '');
-  const linkedProjectId = ['pos','project','log', 'settings'].includes(routePage) ? routeParams.get('projectId') : null;
+  const linkedProjectId = ['pos','project','projectSettlement','log', 'settings'].includes(routePage) ? routeParams.get('projectId') : null;
   const routeProductId = routePage === 'settings' ? productIdForHash(routeHash) || routeParams.get('productId') || '' : '';
-  const screen = selectedProject || linkedProjectId || ['restore', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(routePage) ? (['restore','projectBackup'].includes(routePage) ? 'account' : routePage) : 'projects';
+  const screen = selectedProject || linkedProjectId || ['restore', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(routePage) ? routePage : 'projects';
   const [orderExpanded, setOrderExpanded] = useState(false);
 
 
+  useEffect(()=>{setPaymentToast(null);},[screen,selectedProject?.id,adminId]);
   useEffect(() => { setOrderExpanded(false); }, [screen, selectedProject?.id]);
   useEffect(() => {
     if (!token) {
@@ -84,7 +86,6 @@ export default function App() {
       if(routePage==='pos'&&!p.canSell||projectPages.includes(routePage)&&!p.canManage||['settings','bundleNew','productNew'].includes(routePage)&&!p.canConfigure&&!p.ownerIds?.length){setScreen('log',true);return;}
     }
     if(routePage==='artistStock'){setScreen('inventory',true);return;}
-    if(routePage==='productNew'&&selectedProject){setScreen('settings',true);return;}
     if (!selectedProject && !linkedProjectId && !['projects', 'projectNew', 'restore', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(routePage)) setScreen('projects', true);
     else if (!pageForHash(routeHash)) setScreen(screen, true);
     document.title = `${pageTitles[screen]} · WithBooth`;
@@ -123,6 +124,7 @@ export default function App() {
     if (!token || typeof BroadcastChannel === 'undefined') return;
     const channel = new BroadcastChannel('pos-project-lifecycle');
     channel.onmessage = ({ data }) => {
+      if(data.action==='eventDeleted'&&data.projectId){setProjects(current=>current.filter(p=>p.id!==data.projectId));setWorkspace(current=>({...current,events:current.events.filter(p=>p.id!==data.projectId)}));if(selectedProject?.id===data.projectId){activeScope.current=`${token||''}:`;setSelectedProject(null);setReadyScope(null);setProducts([]);setBundles([]);setSales([]);setCart([]);sessionStore.removeItem(SELECTED_PROJECT_KEY);setScreen('projects');}void stateRepository.remove(data.projectId);return;}
       if(data.action==='sharedStockChanged'&&data.projectIds?.includes(selectedProject?.id)){void loadState();return;}
       if(data.adminId===adminId && data.action==='settlementChanged'){setSelectedProject(current=>current?.id===data.projectId?{...current,settlementClosedAt:data.closedAt}:current);if(selectedProject?.id===data.projectId)setCart([]);void stateRepository.setSettlementClosedAt(data.projectId,data.closedAt);return;}
       if (data.adminId !== adminId || !data.projectId || !['archiveProject', 'unarchiveProject'].includes(data.action)) return;
@@ -148,7 +150,7 @@ export default function App() {
     setSales(nextSales);
     setDataRevision(data.dataRevision || null);
     const nextArchivedAt = (fromCache && selectedProject.archivedAt) || data.archivedAt || null;
-    setSelectedProject(current => current?.id === selectedProject.id ? { ...current, boothId: data.boothId || null, archivedAt: nextArchivedAt, settlementClosedAt: data.settlementClosedAt || null } : current);
+    setSelectedProject(current => current?.id === selectedProject.id ? { ...current, boothId: data.boothId ?? current.boothId ?? null, archivedAt: nextArchivedAt, settlementClosedAt: data.settlementClosedAt || null } : current);
     if (nextArchivedAt || data.settlementClosedAt) setCart([]);
     setReadyScope(scope);
   };
@@ -162,6 +164,7 @@ export default function App() {
     setToken(null);
     setAdminId('');
     setProjects([]);
+    setWorkspace({profiles:[],booths:[],events:[]});
     setSelectedProject(null);
     setProducts([]);
     setBundles([]);
@@ -169,18 +172,17 @@ export default function App() {
     setCart([]);
   };
 
-  const loadState = async () => {
+  const loadState = async ({background=false}={}) => {
     if (!selectedProject?.id) return;
     if(selectedProject.permissions&&!selectedProject.permissions.canSell&&!selectedProject.permissions.canConfigure){setReadyScope(scope);setProducts([]);setBundles([]);setSales([]);setLoading(false);return;}
-    setLoading(true);
-    setError('');
+    if(!background){setLoading(true);setError('');}
     try {
+      const cached = await stateRepository.getForActor(selectedProject.id, adminId);
+      if (activeScope.current !== scope) return;
+      const usableCache=cached&&(!['pxwiu2t','s4fjgga'].includes(selectedProject.id)||cached.dataRevision);
+      if(usableCache&&!background)await applyState(cached,true);
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        const cached = await stateRepository.getForActor(selectedProject.id, adminId);
-        if (activeScope.current !== scope) return;
-        if (cached && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
-          await applyState(cached, true);
-          setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
+        if (usableCache) {
           return;
         }
         setError('오프라인 상태입니다. 저장된 데이터가 없어 상품을 불러올 수 없습니다.');
@@ -217,21 +219,32 @@ export default function App() {
     }
   };
 
-  const loadProjects = async () => {
+  const loadProjects = async ({background=false}={}) => {
     if (!token) return;
-    setProjectLoading(true);
-    setError('');
-    try {
-      await requestJson('/api/pos');
-      const data=await requestJson('/api/booths?workspace=home');
-      if (activeToken.current !== token) return;
+    if(!background){setProjectLoading(true);setError('');}
+    const isCurrent=()=>activeToken.current===token;
+    const accept=data=>{
+      if(!isCurrent()||!data)return;
       setWorkspace(data);
-      const nextProjects = data.events || [];
-      saveProjectList(adminId, nextProjects);
+      const nextProjects=data.events||[];
+      saveProjectList(adminId,nextProjects);
       setProjects(nextProjects);
-      const rememberedId = sessionStore.getItem(SELECTED_PROJECT_KEY);
-      const remembered = nextProjects.find((project) => project.id === rememberedId);
-      setSelectedProject((current) => nextProjects.find((project) => project.id === current?.id) || remembered || null);
+      const remembered=nextProjects.find(project=>project.id===sessionStore.getItem(SELECTED_PROJECT_KEY));
+      setSelectedProject(current=>nextProjects.find(project=>project.id===current?.id)||remembered||null);
+    };
+    const reject=err=>{
+      if(!isCurrent())return;
+      if([401,403,404].includes(err.status)){
+        setWorkspace({profiles:[],booths:[],events:[]});setProjects([]);setSelectedProject(null);
+        setProducts([]);setBundles([]);setSales([]);setReadyScope(null);
+      }
+      if(err.status===401)void logout();
+      else if(!background||err.status)setError(err.message);
+    };
+    try {
+      const result=await localData.read({scope:{actorId:adminId},resource:'workspace',fetchRemote:()=>requestJson('/api/booths?workspace=home'),isCurrent});
+      accept(result.value);
+      if(result.source==='local')void result.refresh.then(accept).catch(reject);
     } catch (err) {
       if (activeToken.current !== token) return;
       if (err.status === 401 || String(err.message).includes('인증')) logout();
@@ -242,7 +255,7 @@ export default function App() {
           const remembered = cached.find(project => project.id === sessionStore.getItem(SELECTED_PROJECT_KEY));
           setSelectedProject(remembered || null);
           setError('오프라인 상태입니다. 저장된 행사 목록을 사용합니다.');
-        } else setError(err.message);
+        } else reject(err);
       }
     } finally {
       setProjectLoading(false);
@@ -256,13 +269,19 @@ export default function App() {
     setProjectLoading(true);
     setError('');
     try {
-      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ boothId:e?.currentTarget?.elements?.namedItem('boothId')?.value,action: 'createProject', payload: { name: newProjectName.trim() } }) });
+      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ protocolVersion:2,boothId:e?.currentTarget?.elements?.namedItem('boothId')?.value,action: 'createProject', payload: { name: newProjectName.trim() } }) });
       const project = data.project;
       clearRegistration();
       setNewProjectName('');
-      await loadProjects();
       const home=await requestJson('/api/booths?workspace=home');
-      selectProject(home.events.find(p=>p.id===project.id)||project);
+      const created=home.events.find(p=>p.id===project.id);
+      if(!created)throw new Error('행사는 저장되었지만 목록을 확인하지 못했습니다. 행사 목록을 새로 불러와주세요.');
+      if(activeToken.current!==token)return;
+      setWorkspace(home);
+      await localData.put({actorId:adminId},'workspace',home);
+      setProjects(home.events);
+      saveProjectList(adminId,home.events);
+      selectProject(created);
     } catch (err) {
       alert(err.message);
       setError(err.message);
@@ -277,25 +296,31 @@ export default function App() {
     if (project && ['deleteProject', 'archiveProject', 'duplicateProject', 'backupProject'].includes(action) && await orderRepository.countWaiting(project.id)) {
       throw new Error('이 기기에 미동기화 주문이 있습니다. 해당 프로젝트에서 동기화를 완료한 후 다시 진행해주세요.');
     }
-    const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ projectId: project?.id, action, payload }) });
+    const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ protocolVersion:2,boothId:project?.boothId || payload.boothId,projectId: project?.id, action, payload }) });
     if (activeToken.current !== token) return;
     if (action === 'backupProject') {
-      downloadBlob(JSON.stringify(data.backup), 'application/json;charset=utf-8;', `project_${project.id}_${new Date().toISOString().slice(0, 10)}.json`);
+      downloadBlob(JSON.stringify(data.backup), 'application/json;charset=utf-8;', `${project.name.replace(/[<>:"/\\|?*]/g,'_')}_${new Intl.DateTimeFormat('sv-SE').format(new Date())}.json`);
       return data;
     }
-    await loadProjects();
+    const home=await requestJson('/api/booths?workspace=home');
+    if(activeToken.current!==token)return;
+    setWorkspace(home);setProjects(home.events);saveProjectList(adminId,home.events);
+    await localData.put({actorId:adminId},'workspace',home);
+    const nextProjects=home.events;
     if (action === 'deleteProject') {
       if (selectedProject?.id === project.id) {
+        activeScope.current=`${token||''}:`;setReadyScope(null);
         setSelectedProject(null);
         sessionStore.removeItem(SELECTED_PROJECT_KEY);
         setProducts([]); setBundles([]); setSales([]); setCart([]);
         setScreen('projects');
       }
       await stateRepository.remove(project.id);
+      if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'eventDeleted',projectId:project.id});channel.close();}
     } else if (project) {
-      setSelectedProject(current => current?.id === project.id ? ({...current,...data.projects.find(item => item.id === project.id)}) : current);
+      setSelectedProject(current => current?.id === project.id ? ({...current,...nextProjects.find(item => item.id === project.id)}) : current);
       if (['archiveProject', 'unarchiveProject'].includes(action)) {
-        const value = data.projects.find(item => item.id === project.id)?.archivedAt || null;
+        const value = nextProjects.find(item => item.id === project.id)?.archivedAt || null;
         if (activeScope.current === scope && selectedProject?.id === project.id) setCart([]);
         await stateRepository.setArchivedAt(project.id, value);
         if (typeof BroadcastChannel !== 'undefined') {
@@ -305,7 +330,7 @@ export default function App() {
         }
       }
     }
-    return { ...data, project: data.projects?.find(item => item.id === data.project?.id) || data.project };
+    return { ...data, project: nextProjects.find(item => item.id === data.project?.id) || data.project };
   };
 
   const releaseProject = async () => {
@@ -343,7 +368,19 @@ export default function App() {
   }, [token, projectLoading, linkedProjectId, projects, selectedProject?.id]);
 
   useEffect(() => { if (token) loadProjects(); }, [token, screen === 'projects', screen === 'dashboard', screen === 'revenue']);
+  useEffect(()=>{
+    if(!token)return;
+    const refresh=()=>{void loadProjects({background:true});};
+    const timer=window.setInterval(refresh,10_000);window.addEventListener('online',refresh);
+    return()=>{window.clearInterval(timer);window.removeEventListener('online',refresh);};
+  },[token,adminId]);
   useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id]);
+  useEffect(()=>{
+    if(!token||!selectedProject?.id)return;
+    const refresh=()=>{void loadState({background:true});};
+    const timer=window.setInterval(refresh,10_000);window.addEventListener('online',refresh);
+    return()=>{window.clearInterval(timer);window.removeEventListener('online',refresh);};
+  },[token,selectedProject?.id,adminId]);
 
   const login = async (credentials) => {
     const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify(credentials) });
@@ -409,10 +446,10 @@ export default function App() {
   sharedStockContext.current={projects,selectedProject,scope,applyState};
   const sharedStockRequest=useCallback(async(url,options)=>{
     if(!options||options.method!=='POST')return requestJson(url,options);
-    if(!navigator.onLine)throw new Error('작가 재고 변경은 인터넷 연결이 필요합니다.');
+    if(!navigator.onLine)throw new Error('제작자 재고 변경은 인터넷 연결이 필요합니다.');
     const {payload={}}=JSON.parse(options.body);
     const before=sharedStockContext.current;
-    const projectIds=[...new Set([...before.projects.map(p=>p.id),payload.projectId,payload.fromProjectId].filter(Boolean))];
+    const projectIds=[...new Set([...before.projects.map(p=>p.id),...(payload.allocations||[]).map(a=>a.projectId),payload.projectId,payload.currentProjectId,payload.fromProjectId].filter(Boolean))];
     if((await Promise.all(projectIds.map(id=>orderRepository.countWaiting(id)))).some(Boolean))throw Object.assign(new Error('미동기화 주문을 먼저 동기화해주세요.'),{status:409});
     if(activeToken.current!==token)throw Object.assign(new Error('로그인 계정이 변경되었습니다.'),{status:403});
     const queueVersion=before.selectedProject?await stateRepository.queueVersion(before.selectedProject.id):null;
@@ -425,7 +462,7 @@ export default function App() {
     }
     if(typeof BroadcastChannel!=='undefined'){
       const channel=new BroadcastChannel('pos-project-lifecycle');
-      channel.postMessage({action:'sharedStockChanged',projectIds:[...new Set([payload.projectId,payload.fromProjectId,...(data.inventory?.allocations||[]).map(a=>a.projectId)].filter(Boolean))]});channel.close();
+      channel.postMessage({action:'sharedStockChanged',projectIds:[...new Set([payload.projectId,payload.currentProjectId,payload.fromProjectId,...(data.inventory?.allocations||[]).map(a=>a.projectId)].filter(Boolean))]});channel.close();
     }
     return data;
   },[token]);
@@ -563,7 +600,7 @@ export default function App() {
       setProducts(nextProducts);
       setSales(nextSales);
       setCart([]);
-      alert(`${method === 'cash' ? '현금' : '계좌이체'} 결제가 완료되었습니다.\n결제 금액: ${won(total)}원`);
+      setPaymentToast({message:`${method === 'cash' ? '현금' : '계좌이체'} 결제가 완료되었습니다. ${won(total)}원`});
       void refreshAndSyncOrders();
     } catch (err) {
       alert(err.message || '로컬 주문 저장에 실패했습니다.');
@@ -596,24 +633,6 @@ export default function App() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(a.href);
-  };
-  const backupOrdersJson = async () => {
-    const orders = await orderRepository.getAll(selectedProject.id);
-    downloadBlob(JSON.stringify(orders, null, 2), 'application/json;charset=utf-8;', `orders_backup_${new Date().toISOString().slice(0, 10)}.json`);
-  };
-  const backupOrdersCsv = async () => {
-    const orders = await orderRepository.getAll(selectedProject.id);
-    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = orders.map((order) => [
-      order.id,
-      order.localOrderId,
-      order.createdAt,
-      order.syncStatus,
-      order.retryCount,
-      order.lastSyncAt || '',
-      JSON.stringify(order.payload),
-    ].map(escapeCsv).join(','));
-    downloadBlob(`\uFEFFid,localOrderId,createdAt,syncStatus,retryCount,lastSyncAt,payload\n${rows.join('\n')}`, 'text/csv;charset=utf-8;', `orders_backup_${new Date().toISOString().slice(0, 10)}.csv`);
   };
   const voidSale = async (sale) => {
     if (readOnly) return alert('보관된 행사에서는 거래를 취소할 수 없습니다.');
@@ -657,7 +676,7 @@ export default function App() {
     transfer: sales.filter((x) => x.method === 'transfer').reduce((s, x) => s + x.total, 0),
   };
 
-  const creators = useMemo(() => [...new Set(products.map(creatorNameOf))].sort((a, b) => a.localeCompare(b, 'ko-KR')), [products]);
+  const creators = useMemo(() => [...new Set(products.map(eventCreatorNameOf))].sort((a, b) => a.localeCompare(b, 'ko-KR')), [products]);
   const productsById = useMemo(() => Object.fromEntries(products.map((product) => [product.id, product])), [products]);
   const saleLineCreators = useCallback((line) => {
     if (line.creatorName) return [line.creatorName];
@@ -670,10 +689,10 @@ export default function App() {
   }, [bundles, productsById]);
   const saleLineProductEntries = useCallback(line => settlementEntries(line, productsById, bundles), [bundles, productsById]);
   const visibleProducts = useMemo(() => {
-    const filtered = creatorFilter === 'all' ? products : products.filter((p) => creatorNameOf(p) === creatorFilter);
+    const filtered = creatorFilter === 'all' ? products : products.filter((p) => eventCreatorNameOf(p) === creatorFilter);
     return [...filtered].sort(compareProductSaleNumber);
   }, [creatorFilter, products]);
-  const bundleCreators = useCallback((bundle) => [...new Set((bundle?.items || []).map((item) => creatorNameOf(productsById[item.productId])))], [productsById]);
+  const bundleCreators = useCallback((bundle) => [...new Set((bundle?.items || []).map((item) => eventCreatorNameOf(productsById[item.productId])))], [productsById]);
   const visibleBundles = useMemo(() => {
     if (creatorFilter === 'all') return bundles;
     return bundles.filter((bundle) => bundleCreators(bundle).includes(creatorFilter));
@@ -707,7 +726,7 @@ export default function App() {
 
   if (!token) return routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />;
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
-    <GettingStarted key={token} scope={`${screen}:${selectedProject?.id || ""}`} />
+    <PaymentToast notice={paymentToast} onDismiss={setPaymentToast}/>
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onReleaseProject={releaseProject} releaseDisabled={saving || loading || projectLoading} />
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
     {readOnly && !['inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">{selectedProject?.settlementClosedAt?'정산 마감 · 읽기 전용입니다.':'보관된 행사 · 읽기 전용입니다.'} <button type="button" className="event-text-link" onClick={() => setScreen(selectedProject?.settlementClosedAt?'log':'projectArchive')}>{selectedProject?.settlementClosedAt?'정산 마감 관리 →':'비밀번호로 보관 해제 →'}</button></div>}
@@ -718,18 +737,17 @@ export default function App() {
     {screen === 'inventory' && <PersonalInventory key={adminId} request={sharedStockRequest} routeHash={routeHash} navigate={setScreen} />}
     {screen === 'artistStock' && <ArtistStockPage key={adminId} request={sharedStockRequest} initialProjectId={selectedProject?.id} />}
     {screen === 'account' && <AccountPage adminId={adminId} request={requestJson} logout={logout} beforeDelete={async () => { if (loading || projectLoading || saving || !navigator.onLine) throw new Error('온라인에서 행사 목록을 모두 불러온 뒤 다시 시도해주세요.'); const fresh = await requestJson('/api/pos'); if ((await Promise.all(fresh.projects.map(project => orderRepository.countWaiting(project.id)))).some(Boolean)) throw new Error('모든 행사의 미동기화 주문을 먼저 동기화해주세요.'); }} />}
-    {screen==='projects'&&<BoothWorkspace request={requestJson} beforeClose={async()=>{if((await Promise.all(projects.map(p=>orderRepository.countWaiting(p.id)))).some(Boolean))throw new Error('미동기화 주문을 먼저 처리해주세요.');}} onChange={loadProjects}/>}
-    {['projects', 'projectNew'].includes(screen) && <ProjectsPage creating={screen === 'projectNew'} booths={workspace.booths} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onSelectProject={selectProject} navigate={setScreen} />}
+    {['projects', 'projectNew','projectDuplicate'].includes(screen) && <ProjectsPage creating={screen !== 'projects'} booths={workspace.booths} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onManageProject={manageProject} onSelectProject={selectProject} navigate={setScreen} />}
 
-    {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} request={requestJson} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
+    {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} request={requestJson} beforeAccessChange={async action=>{if(action==='removeEventArtist'&&await orderRepository.countWaiting(selectedProject.id))throw Object.assign(new Error('미동기화 주문을 먼저 처리해주세요.'),{status:409});}} onAccessChange={async()=>{await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'sharedStockChanged',projectIds:[selectedProject.id]});channel.close();}}} onSettlementChange={async () => {const data=await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'settlementChanged',adminId,projectId:selectedProject.id,closedAt:data.settlementClosedAt});channel.close();}}} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
 
-    {screen === 'restore' && <ProjectRestorePage key={selectedProject?.id || 'standalone'} project={selectedProject} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
+    {screen === 'restore' && <ProjectRestorePage key={selectedProject?.id || 'standalone'} booths={workspace.booths} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
 
     {screen === 'pos' && <SalesPage project={selectedProject} readOnly={readOnly} purchaseTab={purchaseTab} setPurchaseTab={setPurchaseTab} visibleProducts={visibleProducts} visibleBundles={visibleBundles} creators={creators} creatorFilter={creatorFilter} setCreatorFilter={setCreatorFilter} availableStock={availableStock} bundleAvailable={bundleAvailable} addProduct={addProduct} addBundle={addBundle} cart={cart} setCart={setCart} orderExpanded={orderExpanded} setOrderExpanded={setOrderExpanded} total={total} updateCartQty={updateCartQty} saving={saving} finalizeSale={finalizeSale} />}
 
-    {screen==='settings'&&selectedProject.permissions?.canConfigure&&<nav className="page-tabs"><button onClick={()=>setSettingsTab('products')}>상품·재고</button><button onClick={()=>setSettingsTab('bundles')}>세트 관리</button></nav>}
-    {screen==='settings'&&settingsTab!=='bundles'&&<PersonalInventory key={`${adminId}:${selectedProject.id}`} request={sharedStockRequest} routeHash={routeHash} navigate={setScreen} event={selectedProject}/>}
-    {(screen==='bundleNew'||screen==='settings'&&settingsTab==='bundles')&&selectedProject.permissions?.canConfigure && <ProductsPage adminId={adminId} inventoryApi={inventoryApi} dataRevision={dataRevision} projectName={selectedProject.name} initialProductId={routeProductId} registerProduct={product => inventoryApi('createEventProduct', { projectId: selectedProject.id, dataRevision, product })} creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={async (page, tab = 'bundles') => { if (!await allowNavigation()) return; setSettingsTab(tab); await setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} backupOrdersJson={backupOrdersJson} backupOrdersCsv={backupOrdersCsv} />}
+    {screen==='settings'&&selectedProject.permissions?.canConfigure&&<div className="event-settings-tabs"><PageIntro hideTitle title="행사 판매 설정"><PageTabs id="event-settings" label="행사 판매 설정 메뉴" tabs={[["products","행사 판매 설정"],["bundles","세트 관리"]]} selected={settingsTab} onSelect={setSettingsTab}/></PageIntro></div>}
+    {(screen==='productNew'||screen==='settings'&&settingsTab!=='bundles')&&<PersonalInventory key={`${adminId}:${selectedProject.id}`} request={sharedStockRequest} routeHash={routeHash} navigate={setScreen} event={selectedProject} eventProducts={products} onRemoveEventProduct={id=>mutate('removeProduct',{productId:id})}/>}
+    {(screen==='bundleNew'||screen==='settings'&&settingsTab==='bundles')&&selectedProject.permissions?.canConfigure && <ProductsPage adminId={adminId} inventoryApi={inventoryApi} dataRevision={dataRevision} projectName={selectedProject.name} initialProductId={routeProductId} registerProduct={product => inventoryApi('createEventProduct', { projectId: selectedProject.id, dataRevision, product })} creatingProduct={screen === 'productNew'} creatingBundle={screen === 'bundleNew'} navigate={async (page, tab = 'bundles') => { if (!await allowNavigation()) return; setSettingsTab(tab); await setScreen(page); }} readOnly={readOnly} key={selectedProject.id} projectId={selectedProject.id} settingsTab={settingsTab} setSettingsTab={setSettingsTab} saving={saving} mutate={mutate} products={products} bundles={bundles} sales={sales} persistProducts={persistProducts} persistBundles={persistBundles} bundleName={bundleName} setBundleName={setBundleName} bundleRows={bundleRows} setBundleRows={setBundleRows} bundlePrice={bundlePrice} setBundlePrice={setBundlePrice} addBundleToSettings={addBundleToSettings} />}
 
     {screen==='log'&&selectedProject&&!selectedProject.permissions?.canSettle&&<PersonalOverview request={requestJson} projectId={selectedProject.id}/>}
     {screen === 'log' && selectedProject?.permissions?.canSettle && <SettlementPage key={`${screen}:${selectedProject.id}:${routeParams.get('productId') || ''}`} initialProductId={linkedProjectId ? routeParams.get('productId') || '' : ''} initialProductSearch={linkedProjectId ? routeParams.get('productName') || '' : ''} reportOnly={screen === 'revenue'} initialTab={screen === 'log' && routeParams.get('productId') ? 'history' : 'summary'} request={requestJson} projectId={selectedProject.id} products={products} bundles={bundles} onSettlementChange={async () => {const data=await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'settlementChanged',adminId,projectId:selectedProject.id,closedAt:data.settlementClosedAt});channel.close();}}} readOnly={readOnly} stats={stats} sales={sales} visibleSales={visibleSales} logCreatorFilter={logCreatorFilter} setLogCreatorFilter={setLogCreatorFilter} creatorSalesSummary={creatorSalesSummary} selectedCreatorSummary={selectedCreatorSummary} exportCsv={exportCsv} clearSalesWithPassword={clearSalesWithPassword} saleLineCreators={saleLineCreators} saleLineProductEntries={saleLineProductEntries} voidSale={voidSale} />}

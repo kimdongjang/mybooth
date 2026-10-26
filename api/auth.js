@@ -4,10 +4,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { mode = 'login', id, password, email, nickname } = req.body || {};
+    const { mode = 'login', id, password, email, nickname,allowOperatorStock=true } = req.body || {};
 
     if (mode === 'signup') {
-      const admin = await createAdmin(id, password, email, nickname);
+      const admin = await createAdmin(id, password, email, nickname,allowOperatorStock);
       return res.status(201).json({ token: createToken(admin.id), admin });
     }
 

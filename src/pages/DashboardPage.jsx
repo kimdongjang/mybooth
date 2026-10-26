@@ -70,7 +70,7 @@ export default function DashboardPage({ request }) {
             <Bar value={event.sellThrough} max={100} label={`${event.name} 소진율`} />
           </a>)}
         </div></section>
-        <section className="dashboard-card account-dashboard-creators"><div className="dashboard-card-heading"><h2>작가별 누적 판매 Top 10</h2><span className="dashboard-caption">작가명 기준 합산</span></div>
+        <section className="dashboard-card account-dashboard-creators"><div className="dashboard-card-heading"><h2>제작자별 누적 판매 Top 10</h2><span className="dashboard-caption">제작자명 기준 합산</span></div>
           {summary.creators.length ? summary.creators.slice(0, 10).map(creator => <details className="account-dashboard-creator" key={creator.name}><summary><div className="account-dashboard-rank-heading"><strong>{creator.name}</strong><span>{won(Math.round(creator.amount))}원 · {won(creator.qty)}개</span></div><Bar value={creator.amount} max={summary.creators[0].amount} label={`${creator.name} 누적 판매액`} /></summary><ul>{creator.events.map(event => <li key={event.id}><a href={settlementLink(event.id)}><span>{event.name}</span><strong>{won(Math.round(event.amount))}원</strong></a></li>)}</ul></details>) : <p className="account-dashboard-empty">아직 판매가 없어요</p>}
         </section>
         </div><div className="account-dashboard-side">

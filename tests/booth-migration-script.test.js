@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, unlink, rmdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
-import { exportLegacyAccount, rehearseLegacyAccount, applyLegacyAccount, verifyLegacyAccount } from '../scripts/migrateLegacyBooth.mjs';
+import { otherDataFingerprints, exportLegacyAccount, rehearseLegacyAccount, applyLegacyAccount, verifyLegacyAccount } from '../scripts/migrateLegacyBooth.mjs';
 import {prepareContractRetirement,applyContractRetirement,verifyContractRetirement} from '../scripts/retireLegacyContracts.mjs';
 import {migrateLegacyBooth} from '../api/lib/boothFoundation.js';
 import {initContractRetirement} from '../api/lib/contractRetirement.js';
@@ -154,5 +154,16 @@ test('storage replacement rejects stale source and a mid-rename failure restores
   assert.equal((await f.db.query("SELECT to_regclass('pos_booths') AS name")).rows[0].name,null);
   await f.db.query("UPDATE pos_inventory SET stock=stock+1 WHERE admin_id='a'");
   await assert.rejects(applyStorageReplacement(f.db,{...prepared,directory:f.directory}),e=>e.code==='SOURCE_CHANGED');
+ }finally{await f.close();}
+});
+
+
+test('other-account fingerprints normalize only an absent nullable deletion marker and detect real deletion changes',async()=>{
+ const f=await fixture();try{
+  const before=await otherDataFingerprints(f.db,'a');
+  await f.db.query('ALTER TABLE pos_projects ADD COLUMN deleted_at TIMESTAMPTZ');
+  assert.deepEqual(await otherDataFingerprints(f.db,'a'),before);
+  await f.db.query("UPDATE pos_projects SET deleted_at=NOW() WHERE admin_id='b'");
+  assert.notDeepEqual(await otherDataFingerprints(f.db,'a'),before);
  }finally{await f.close();}
 });

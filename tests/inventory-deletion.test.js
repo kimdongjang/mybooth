@@ -18,7 +18,7 @@ async function harness(allocations = []) {
       useEffect: (effect, next) => { const i = effectIndex++; if (!deps[i] || next.some((v,j) => deps[i][j] !== v)) { deps[i] = next; effects.push(effect); } },
     },
     'react/jsx-runtime': { Fragment: 'fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    '../components/RegistrationDateForm': { default:'../components/RegistrationDateForm', dateValue: value => value ? value.slice(0,10) : '' },
+    '../components/RegistrationDateForm': { dateValue: value => value ? value.slice(0,10) : '' },
     '../utils/productImage': { prepareProductImage: async file => file },
     '../utils/uploadProductImage': { uploadInventoryImage: async (...args) => { uploads.push(args); return { url: 'https://test.public.blob.vercel-storage.com/inventory/a/original/image.png' }; } },
     '../utils/inventorySearch': { filterInventory: items => items },
@@ -128,7 +128,7 @@ test('inventory saves common fields and the allocation plan together, with alert
   assert.equal(nodes(tree).some(node => node.props?.label === '누적 입고 수량'), false);
   assert.equal(nodes(tree).some(node => node.props?.['aria-label'] === '창고 보관 수량'), false);
   assert.equal(nodes(tree).some(node => node.props?.children === '배정·회수할 행사'), false);
-  assert.equal(nodes(tree).find(node => node.props?.['aria-label'] === '총재고').type, 'output');
+  assert.equal(nodes(tree).find(node => node.props?.['aria-label'] === '총재고').type, 'Input');
   nodes(h.render()).find(node => node.props?.['aria-label'] === '행사 배정 수량').props.onChange('7');
   await nodes(h.render()).find(node => node.type === 'form' && node.props.id === 'inventory-product-form').props.onSubmit({ preventDefault() {} });
   const plan = h.calls.find(call => call.action === 'saveInventory').payload.allocationPlan;
@@ -215,13 +215,20 @@ test('new inventory header shares breadcrumb and omits unissued code; image remo
  assert.equal(h.uploads.length,0);
 });
 
-test('registration date save sends inventory version and preserves unsaved product edits',async()=>{
+test('single inventory submit saves date, common fields and edited total together in visual order',async()=>{
  const h=await harness();const seen=[];
- h.props.api=async(action,payload)=>{seen.push({action,payload});return{inventory:[{...h.item,createdAt:'2024-02-29T00:00:00.000Z',version:8}]};};
- nodes(h.render()).find(n=>String(n.type).endsWith('/InventoryProductFields')).props.onChange('name','미저장 이름');
- const form=nodes(h.render()).find(n=>String(n.type).endsWith('/RegistrationDateForm'));
- assert.equal(await form.props.onSave('2024-02-29'),true);
- assert.equal(seen[0].action,'updateInventoryRegistrationDate');assert.equal(seen[0].payload.version,7);assert.equal(seen[0].payload.inventoryId,h.item.id);
- const fields=nodes(h.render()).find(n=>String(n.type).endsWith('/InventoryProductFields'));
- assert.equal(fields.props.draft.name,'미저장 이름');assert.equal(fields.props.draft.version,8);
+ h.props.api=async(action,payload)=>{seen.push({action,payload});return{inventory:[{...h.item,name:payload.product.name,totalStock:12,createdAt:'2024-02-29T00:00:00.000Z',version:8}]};};
+ let tree=nodes(h.render());
+ const fields=tree.find(n=>String(n.type).endsWith('/InventoryProductFields'));
+ fields.props.onChange('name','수정 이름');
+ fields.props.onChange('registrationDate','2024-02-29');
+ tree.find(n=>n.props?.['aria-label']==='총재고').props.onChange('12');
+ tree=nodes(h.render());
+ assert.ok(tree.findIndex(n=>n.props?.className==='inventory-history')<tree.findIndex(n=>n.props?.className==='management-product-body'));
+ assert.equal(tree.some(n=>String(n.type).endsWith('/RegistrationDateForm')),false);
+ await tree.find(n=>n.type==='form'&&n.props.id==='inventory-product-form').props.onSubmit({preventDefault(){}});
+ assert.equal(seen.length,1);assert.equal(seen[0].action,'saveInventory');
+ assert.equal(seen[0].payload.product.version,7);assert.equal(seen[0].payload.product.name,'수정 이름');
+ assert.equal(seen[0].payload.registrationDate,'2024-02-29');assert.equal(seen[0].payload.allocationPlan.totalStock,12);
+ assert.equal(nodes(h.render()).find(n=>String(n.type).endsWith('/InventoryProductFields')).props.draft.version,8);
 });

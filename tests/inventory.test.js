@@ -423,7 +423,7 @@ test('event genre edits share the common source, preserve clearing and backups, 
     assert.equal(backup.data.tables.pos_products[0].genre, '행사 장르');
     const copied = await invoke('duplicateProject', event, { password: 'test-password', name: '장르 복제' });
     assert.equal((await invoke(null, copied.body.project.id)).body.products[0].genre, '행사 장르');
-    assert.equal((await invoke('restoreProject',null,{})).status,410);
+    assert.equal((await invoke('restoreProject',null,{})).status,403);
     product = saved.body.products[0];
     assert.equal((await invoke('saveEventProduct', null, { projectId: event, productId: product.id, inventoryVersion: product.inventoryVersion, product: { ...product, genre: {} } })).status, 400);
     assert.equal((await invoke(null, event)).body.products[0].genre, '행사 장르');

@@ -1,3 +1,4 @@
+import * as stockDelegation from '../api/lib/stockDelegation.js';
 import * as storageContract from '../api/lib/storageContract.js';
 import {replaceStorageNames,restoreStorageNames,storageShape} from '../api/lib/storageMigration.js';
 import * as eventAccess from '../api/lib/eventAccess.js';
@@ -29,7 +30,7 @@ async function fixture() {
     const mod=new vm.SourceTextModule(await readFile(new URL(`../api/${file}`,import.meta.url),'utf8'),{context});
     await mod.link(specifier=>{
       const exports=specifier==='@vercel/postgres'?{sql:pool}:specifier.endsWith('/auth.js')?auth:
-        specifier.endsWith('/storageContract.js')?storageContract:specifier.endsWith('/eventAccess.js')?eventAccess:specifier.endsWith('/boothFoundation.js')?foundation:specifier.endsWith('/artistLinking.js')?artistLinking:specifier.endsWith('/artistStock.js')?artistStock:specifier.endsWith('/contractRetirement.js')?contractRetirement:specifier.endsWith('/accountInventory.js')?accountInventory:
+        specifier.endsWith('/stockDelegation.js')?stockDelegation:specifier.endsWith('/storageContract.js')?storageContract:specifier.endsWith('/eventAccess.js')?eventAccess:specifier.endsWith('/boothFoundation.js')?foundation:specifier.endsWith('/artistLinking.js')?artistLinking:specifier.endsWith('/artistStock.js')?artistStock:specifier.endsWith('/contractRetirement.js')?contractRetirement:specifier.endsWith('/accountInventory.js')?accountInventory:
         specifier.endsWith('/eventSettlement.js')?eventSettlement:specifier.endsWith('/settlementEntries.js')?{settlementMoneyEntries}:defaults;
       return new vm.SyntheticModule(Object.keys(exports),function(){for(const [key,value] of Object.entries(exports))this.setExport(key,value);},{context});
     });
@@ -57,6 +58,42 @@ async function fixture() {
   };
   return{db,sql,invoke,migrate,event,item};
 }
+
+test('new-client event creation establishes its operator booth and appears in workspace while preserving earlier source data',async()=>{
+ const f=await fixture();try{
+  const before=await foundation.legacySnapshot(f.sql,'a');
+  const created=await f.invoke('pos','createProject',{},'a',{body:{action:'createProject',protocolVersion:2,payload:{name:'새 행사'}}});
+  assert.equal(created.status,201,JSON.stringify(created.body));assert.ok(created.body.project.boothId);
+  const home=await f.invoke('booths',null,{},'a',{query:{workspace:'home'}});assert.equal(home.status,200,JSON.stringify(home.body));
+  const event=home.body.events.find(e=>e.id===created.body.project.id);assert.ok(event);assert.equal(event.permissions.operator,true);assert.equal(event.permissions.canManage,true);assert.equal(event.permissions.canSell,true);
+  assert.ok(home.body.events.some(e=>e.id===f.event),'previous unlinked own event is preserved and linked');
+  const other=await f.invoke('booths',null,{},'b',{query:{workspace:'home'}});assert.equal(other.body.events.some(e=>e.id===event.id),false);
+  const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.inventory,before.inventory);assert.deepEqual(after.sales,before.sales);assert.deepEqual(after.settlements,before.settlements);
+  const second=await f.invoke('pos','createProject',{},'a',{body:{action:'createProject',protocolVersion:2,boothId:event.boothId,payload:{name:'두 번째 행사'}}});assert.equal(second.status,201,JSON.stringify(second.body));
+  const refreshed=await f.invoke('booths',null,{},'a',{query:{workspace:'home'}});assert.equal(refreshed.body.events.find(e=>e.id===second.body.project.id).permissions.operator,true);
+  const denied=await f.invoke('pos','createProject',{},'b',{body:{action:'createProject',protocolVersion:2,boothId:event.boothId,payload:{name:'권한 없음'}}});assert.equal(denied.status,403);
+ }finally{await f.db.close();}
+});
+
+test('artist movement history keeps personal scope, memo and stable IDs without changing event sales',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const profile=(await f.sql`SELECT id,owner_id FROM pos_artist_profiles ORDER BY id`).rows[0];
+  const invite=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:profile.id});
+  assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:invite.body.invitation.token,acceptSharedStock:true},'b')).status,200);
+  const created=await f.invoke('booths','createArtistStock',{ownerId:profile.owner_id,name:'외부 판매 상품',quantity:10,price:0,requestId:crypto.randomUUID()},'b');assert.equal(created.status,200,JSON.stringify(created.body));
+  const item=created.body.inventory;
+  const sales=(await foundation.legacySnapshot(f.sql,'a')).sales;
+  const payload={ownerId:profile.owner_id,id:item.id,version:item.version,quantity:2,reason:'external',memo:'윗치폼 판매',requestId:crypto.randomUUID()};
+  const saved=await f.invoke('booths','recordArtistStockLoss',payload,'b');assert.equal(saved.status,200,JSON.stringify(saved.body));assert.equal(saved.body.inventory.warehouse,8);
+  assert.deepEqual((await f.invoke('booths','recordArtistStockLoss',payload,'b')).body,saved.body);
+  const history=await f.invoke('booths',null,{},'b',{query:{artists:'movements',ownerId:profile.owner_id}});assert.equal(history.status,200,JSON.stringify(history.body));assert.equal(history.body.movements.length,1);
+  assert.equal(history.body.movements[0].request.inventoryId,item.id);assert.equal(history.body.movements[0].request.memo,'윗치폼 판매');assert.equal(history.body.movements[0].request.productName,'외부 판매 상품');
+  assert.equal((await f.invoke('booths',null,{},'c',{query:{artists:'movements',ownerId:profile.owner_id}})).status,403);
+  assert.equal((await f.invoke('booths','recordArtistStockLoss',{...payload,version:saved.body.inventory.version,memo:'x'.repeat(501),requestId:crypto.randomUUID()},'b')).status,400);
+  assert.deepEqual((await foundation.legacySnapshot(f.sql,'a')).sales,sales);
+ }finally{await f.db.close();}
+});
 
 test('contract retirement requires scope, owner, password, a fresh report and queue checks; reopening preserves subsequent transactions',async()=>{
   const f=await fixture();try{
@@ -387,7 +424,7 @@ test('migrated legacy POS preserves sale IDs, replay/void and historical recipie
     assert.equal((await f.db.query('SELECT stock_qty FROM pos_products WHERE project_id=$1',[f.event])).rows[0].stock_qty,8);
     const foreign=await f.invoke('pos',null,{},'b',{query:{boothId,projectId:f.event}});assert.equal(foreign.status,403);
     const wrongEvent=await f.invoke('pos',null,{},'a',{query:{boothId,projectId:'foreign'}});assert.equal(wrongEvent.status,404);
-    for(const action of ['restoreAccount','deleteAccount','deleteProject','clearSales']) {
+    for(const action of ['restoreAccount','deleteAccount','clearSales']) {
       const res=await f.invoke('pos',action,{projectId:f.event},'a',{body:{action,projectId:action==='restoreAccount'||action==='deleteAccount'?undefined:f.event,payload:{}}});
       assert.equal(res.status,409,action+JSON.stringify(res.body));
     }
@@ -597,5 +634,438 @@ test('booth information and common member changes are scoped, replayable and own
   assert.equal((await f.invoke('booths','saveBoothManagement',{...grant,status:'ended',expectedRole:'manager',expectedStatus:'active',requestId:crypto.randomUUID()})).status,200);
   assert.equal((await f.invoke('booths',null,{},'b',{query:{workspace:'booth',boothId}})).status,403);
   assert.deepEqual(foundation.foundationReport(await foundation.legacySnapshot(f.sql,'a')),before);
+ }finally{await f.db.close();}
+});
+
+
+test('event product direct artist and administrator choices register atomically, replay and link later without changing stock',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const query={workspace:'stockParticipants',projectId:f.event,boothId};
+  const choices=await f.invoke('booths',null,{},'a',{query});assert.equal(choices.status,200,JSON.stringify(choices.body));
+  assert.ok(choices.body.profiles.some(p=>p.owner_id==='admin:a'));
+  const payload={boothId,projectId:f.event,artistName:'직접 작가',name:'직접 상품',goodsType:'키링',price:0,quantity:4,requestId:crypto.randomUUID()};
+  const registered=await f.invoke('booths','registerEventArtistProduct',payload);assert.equal(registered.status,200,JSON.stringify(registered.body));
+  const item=registered.body.inventory;assert.equal(item.creatorName,'직접 작가');assert.equal(item.totalStock,4);assert.equal(item.allocations[0].remaining,4);
+  const replay=await f.invoke('booths','registerEventArtistProduct',payload);assert.equal(replay.status,200);assert.equal(replay.body.inventory.id,item.id);
+  assert.equal((await f.invoke('booths','registerEventArtistProduct',{...payload,name:'다른 상품'})).status,409);
+  const view=await f.invoke('booths',null,{},'a',{query:{workspace:'access',projectId:f.event,boothId}});
+  const profile=view.body.profiles.find(p=>p.owner_id===item.ownerId);assert.ok(profile);assert.equal(profile.status,'active');assert.equal(profile.linked_user_id,null);
+  const invitation=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:profile.id});assert.equal(invitation.status,200);
+  assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:invitation.body.invitation.token,acceptSharedStock:true},'b')).status,200);
+  const linked=await f.invoke('booths',null,{},'b',{query:{artists:'stock',ownerId:item.ownerId}});assert.equal(linked.status,200);assert.equal(linked.body.inventory.find(p=>p.id===item.id).totalStock,4);
+  const admin=await f.invoke('booths','registerEventArtistProduct',{...payload,artistName:undefined,ownerId:'admin:a',requestId:crypto.randomUUID()});assert.equal(admin.status,200,JSON.stringify(admin.body));
+  assert.equal((await f.sql`SELECT linked_user_id FROM pos_artist_profiles WHERE owner_id=${admin.body.inventory.ownerId}`).rows[0].linked_user_id,'a');
+  assert.equal((await f.invoke('booths','registerEventArtistProduct',{...payload,requestId:crypto.randomUUID()},'c')).status,403);
+  const bad=await f.invoke('booths','registerEventArtistProduct',{...payload,artistName:'롤백 작가',quantity:-1,requestId:crypto.randomUUID()});assert.equal(bad.status,400);
+  assert.equal((await f.sql`SELECT id FROM pos_stock_owners WHERE display_name='롤백 작가'`).rows.length,0);
+  const latest=await f.invoke('booths',null,{},'a',{query});assert.equal(latest.body.profiles.find(p=>p.owner_id===item.ownerId).catalog,true);
+ }finally{await f.db.close();}
+});
+
+
+test('event detail saves original fields and event-only price atomically and scopes loss history',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const created=await f.invoke('booths','registerEventArtistProduct',{boothId,projectId:f.event,artistName:'상세 작가',name:'원본 상품',goodsType:'키링',price:1000,quantity:10,requestId:crypto.randomUUID()});assert.equal(created.status,200,JSON.stringify(created.body));
+  const item=created.body.inventory;
+  const payload={ownerId:item.ownerId,boothId,id:item.id,projectId:f.event,version:item.version,product:{name:'수정 상품',goodsType:'키링',vtuberName:'캐릭터',genre:'장르',creatorName:item.creatorName,price:2000},requestId:crypto.randomUUID()};
+  const saved=await f.invoke('booths','saveEventArtistProduct',payload);assert.equal(saved.status,200,JSON.stringify(saved.body));
+  assert.equal(saved.body.inventory.name,'수정 상품');assert.equal(saved.body.inventory.price,1000);assert.equal(saved.body.inventory.allocations[0].price,2000);assert.equal(saved.body.inventory.totalStock,10);
+  const retry=await f.invoke('booths','saveEventArtistProduct',payload);assert.equal(retry.status,200);assert.deepEqual(retry.body,saved.body);
+  assert.equal((await f.invoke('booths','saveEventArtistProduct',{...payload,product:{...payload.product,price:3000}})).status,409);
+  assert.equal((await f.invoke('booths','saveEventArtistProduct',{...payload,requestId:crypto.randomUUID()})).status,409);
+  const loss=await f.invoke('booths','recordArtistStockLoss',{ownerId:item.ownerId,boothId,id:item.id,projectId:f.event,version:saved.body.inventory.version,quantity:1,reason:'damage',memo:'메모',requestId:crypto.randomUUID()});assert.equal(loss.status,200,JSON.stringify(loss.body));
+  const query={artists:'movements',ownerId:item.ownerId,boothId,projectId:f.event};
+  const history=await f.invoke('booths',null,{},'a',{query});assert.equal(history.status,200,JSON.stringify(history.body));assert.equal(history.body.movements.length,1);assert.equal(history.body.movements[0].request.inventoryId,item.id);assert.equal(history.body.movements[0].request.memo,'메모');
+  assert.equal((await f.invoke('booths',null,{},'c',{query})).status,403);
+  assert.equal((await f.invoke('booths','saveEventArtistProduct',{...payload,version:loss.body.inventory.version,product:{...payload.product,creatorName:'다른 작가'},requestId:crypto.randomUUID()})).status,400);
+  const rollback={...payload,version:loss.body.inventory.version,product:{...payload.product,name:'롤백 이름',price:4000},requestId:crypto.randomUUID()};
+  await f.db.exec("CREATE FUNCTION fail_detail_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.result->>'action'='saveEventArtistProduct' THEN RAISE EXCEPTION 'fixture failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER fail_detail_receipt BEFORE INSERT ON pos_shared_stock_commands FOR EACH ROW EXECUTE FUNCTION fail_detail_receipt()");
+  assert.equal((await f.invoke('booths','saveEventArtistProduct',rollback)).status,500);
+  const original=(await f.sql`SELECT product,version FROM pos_inventory WHERE admin_id=${item.custodianId} AND id=${item.inventoryId}`).rows[0];assert.equal(original.product.name,'수정 상품');assert.equal(original.version,loss.body.inventory.version);
+  await f.db.exec('DROP TRIGGER fail_detail_receipt ON pos_shared_stock_commands');
+  const recovered=await f.invoke('booths','saveEventArtistProduct',rollback);assert.equal(recovered.status,200,JSON.stringify(recovered.body));assert.equal(recovered.body.inventory.allocations[0].price,4000);
+
+ }finally{await f.db.close();}
+});
+
+
+test('event manager searches and links an unlinked artist, counts products and assigns event-scoped participant/assistant roles',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  await f.sql`UPDATE pos_admins SET nickname='찾을작가',email='artist@example.test' WHERE id='b'`;
+  const query={workspace:'access',projectId:f.event,boothId};
+  const view=await f.invoke('booths',null,{},'a',{query});assert.equal(view.status,200,JSON.stringify(view.body));
+  const profile=view.body.profiles.find(p=>!p.linked_user_id&&p.status==='active');assert.ok(profile);assert.equal(profile.product_count,1);
+  const search={workspace:'searchAccounts',projectId:f.event,boothId,q:'찾을'};
+  const found=await f.invoke('booths',null,{},'a',{query:search});assert.equal(found.status,200,JSON.stringify(found.body));assert.equal(found.body.accounts[0].id,'b');assert.equal(found.body.accounts[0].email,undefined);
+  assert.equal((await f.invoke('booths',null,{},'c',{query:search})).status,403);
+  assert.equal((await f.invoke('booths',null,{},'a',{query:{...search,q:'a'}})).status,400);
+  assert.equal((await f.invoke('booths',null,{},'a',{query:{...search,q:'artist@example.test'}})).body.accounts[0].id,'b');
+  const before=await foundation.legacySnapshot(f.sql,'a');
+  const payload={projectId:f.event,boothId,profileId:profile.id,targetUserId:'b',requestId:crypto.randomUUID()};
+  await f.db.exec("CREATE FUNCTION reject_operator_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='profile_linked_by_operator' THEN RAISE EXCEPTION 'fixture failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER reject_operator_link BEFORE INSERT ON pos_artist_link_audit FOR EACH ROW EXECUTE FUNCTION reject_operator_link()");
+  assert.equal((await f.invoke('booths','linkEventArtistAccount',payload)).status,500);
+  assert.equal((await f.sql`SELECT linked_user_id FROM pos_artist_profiles WHERE id=${profile.id}`).rows[0].linked_user_id,null);
+  await f.db.exec('DROP TRIGGER reject_operator_link ON pos_artist_link_audit');
+  const linked=await f.invoke('booths','linkEventArtistAccount',payload);assert.equal(linked.status,200,JSON.stringify(linked.body));
+  assert.deepEqual((await f.invoke('booths','linkEventArtistAccount',payload)).body,linked.body);
+  assert.equal((await f.invoke('booths','linkEventArtistAccount',{...payload,targetUserId:'c'})).status,409);
+  assert.equal((await f.invoke('booths','linkEventArtistAccount',{...payload,targetUserId:'c',requestId:crypto.randomUUID()})).status,409);
+  const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.inventory,before.inventory);assert.deepEqual(after.sales,before.sales);
+  const refreshed=await f.invoke('booths',null,{},'a',{query});assert.equal(refreshed.body.profiles.find(p=>p.id===profile.id).nickname,'찾을작가');
+  let access=await f.invoke('booths','saveEventAccess',{projectId:f.event,boothId,targetUserId:'b',role:'seller',status:'active',version:0,requestId:crypto.randomUUID()});assert.equal(access.status,200,JSON.stringify(access.body));
+  let permission=await eventAccess.eventPermissions(f.sql,'b',f.event);assert.equal(permission.permissions.canSell,true);assert.equal(permission.permissions.canConfigure,false);assert.equal(permission.permissions.canManage,false);
+  access=await f.invoke('booths','saveEventAccess',{projectId:f.event,boothId,targetUserId:'b',role:'assistant',status:'active',version:1,requestId:crypto.randomUUID()});assert.equal(access.status,200);
+  permission=await eventAccess.eventPermissions(f.sql,'b',f.event);assert.equal(permission.permissions.canConfigure,true);assert.equal(permission.permissions.canManage,false);
+  assert.equal((await f.invoke('booths',null,{},'b',{query:search})).status,403);
+  const extra=await f.invoke('booths','registerEventArtistProduct',{projectId:f.event,boothId,artistName:'역할 작가',name:'권한 상품',goodsType:'키링',quantity:0,price:0,requestId:crypto.randomUUID()});assert.equal(extra.status,200);
+  const extraProfile=(await f.sql`SELECT id FROM pos_artist_profiles WHERE owner_id=${extra.body.inventory.ownerId}`).rows[0];
+  const withRole=await f.invoke('booths','linkEventArtistAccount',{projectId:f.event,boothId,profileId:extraProfile.id,targetUserId:'c',role:'assistant',requestId:crypto.randomUUID()});assert.equal(withRole.status,200,JSON.stringify(withRole.body));
+  const linkedPermission=await eventAccess.eventPermissions(f.sql,'c',f.event);assert.equal(linkedPermission.permissions.canConfigure,true);assert.equal(linkedPermission.permissions.canManage,false);
+
+ }finally{await f.db.close();}
+});
+
+
+test('event artist search/add is atomic, replayable and grants only the selected event role without copying stock',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const home=await f.invoke('booths','createArtistProfile',{name:'검색 작가'},'b');assert.equal(home.status,200,JSON.stringify(home.body));
+  const profile=home.body.profiles[0];
+  const query={workspace:'searchArtists',projectId:f.event,boothId,q:'검색'};
+  const found=await f.invoke('booths',null,{},'a',{query});assert.equal(found.status,200,JSON.stringify(found.body));assert.equal(found.body.artists[0].id,profile.id);assert.equal(found.body.artists[0].registered,false);
+  assert.equal((await f.invoke('booths',null,{},'c',{query})).status,403);
+  const before=await foundation.legacySnapshot(f.sql,'a');
+  const payload={projectId:f.event,boothId,profileId:profile.id,role:'assistant',requestId:crypto.randomUUID()};
+  await f.db.exec("CREATE FUNCTION reject_artist_add() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.result->>'added'='true' THEN RAISE EXCEPTION 'fixture failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER reject_artist_add BEFORE INSERT ON pos_event_access_commands FOR EACH ROW EXECUTE FUNCTION reject_artist_add()");
+  assert.equal((await f.invoke('booths','addEventArtist',payload)).status,500);
+  assert.equal((await f.sql`SELECT owner_id FROM pos_event_artists WHERE project_id=${f.event} AND owner_id=${profile.owner_id}`).rows.length,0);
+  assert.equal((await f.sql`SELECT user_id FROM pos_event_staff WHERE project_id=${f.event} AND user_id='b'`).rows.length,0);
+  await f.db.exec('DROP TRIGGER reject_artist_add ON pos_event_access_commands');
+  const added=await f.invoke('booths','addEventArtist',payload);assert.equal(added.status,200,JSON.stringify(added.body));
+  assert.deepEqual((await f.invoke('booths','addEventArtist',payload)).body,added.body);
+  assert.equal((await f.invoke('booths','addEventArtist',{...payload,role:'seller'})).status,409);
+  assert.equal((await f.invoke('booths','addEventArtist',{...payload,requestId:crypto.randomUUID()})).status,409);
+  const permission=await eventAccess.eventPermissions(f.sql,'b',f.event);assert.equal(permission.permissions.canConfigure,true);assert.equal(permission.permissions.canManage,false);
+  assert.equal((await f.invoke('booths',null,{},'a',{query})).body.artists[0].registered,true);
+  const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.inventory,before.inventory);assert.deepEqual(after.sales,before.sales);
+  assert.equal((await f.invoke('booths','addEventArtist',{...payload,requestId:crypto.randomUUID()},'c')).status,403);
+ }finally{await f.db.close();}
+});
+
+
+test('event product creator mapping changes only future attribution, supports unlink and preserves source stock and historical sales',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const candidates=await f.invoke('booths',null,{},'a',{query:{workspace:'stockParticipants',projectId:f.event,boothId}});const source=candidates.body.profiles.find(p=>p.catalog);
+  const stock=await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId:source.owner_id,boothId,projectId:f.event}});let item=stock.body.inventory[0];
+  const other=await f.invoke('booths','registerEventArtistProduct',{projectId:f.event,boothId,artistName:'새 제작자',name:'대상 상품',goodsType:'키링',quantity:0,price:0,requestId:crypto.randomUUID()});assert.equal(other.status,200);
+  const target=other.body.inventory.ownerId;
+  const sold=await f.invoke('pos','finalizeSale',{},'a',{body:{action:'finalizeSale',boothId,projectId:f.event,protocolVersion:2,actorId:'a',payload:{localOrderId:'before-creator-change',method:'cash',total:0,cart:[{type:'product',id:item.allocations[0].productId,qty:1,unitPrice:0}]}}});assert.equal(sold.status,200,JSON.stringify(sold.body));
+  const fresh=await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId:source.owner_id,boothId,projectId:f.event}});item=fresh.body.inventory.find(row=>row.id===item.id);
+  const before=await foundation.legacySnapshot(f.sql,'a');
+  const payload={ownerId:item.ownerId,boothId,id:item.id,version:item.version,projectId:f.event,creatorOwnerId:target,requestId:crypto.randomUUID()};
+  const changed=await f.invoke('booths','setEventProductCreator',payload);assert.equal(changed.status,200,JSON.stringify(changed.body));
+  const identity=await foundation.productIdentity(f.sql,f.event,item.allocations[0].productId,boothId);assert.equal(identity.ownerId,target);
+  assert.deepEqual((await f.invoke('booths','setEventProductCreator',payload)).body,changed.body);
+  assert.equal((await f.invoke('booths','setEventProductCreator',{...payload,creatorOwnerId:item.ownerId})).status,409);
+  const sourceOwner=(await f.sql`SELECT owner_id FROM pos_inventory_owners WHERE admin_id=${item.custodianId} AND inventory_id=${item.inventoryId}`).rows[0];assert.equal(sourceOwner.owner_id,item.ownerId);
+  const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.sales,before.sales);assert.equal(changed.body.inventory.totalStock,item.totalStock);assert.equal(changed.body.inventory.creatorName,item.creatorName);
+  const decorated=await foundation.decorateEventProducts(f.sql,'a',f.event,[{id:item.allocations[0].productId}]);assert.equal(decorated[0].eventCreator.name,'새 제작자');assert.equal(decorated[0].eventCreator.linked,false);
+  const unlinked=await f.invoke('booths','setEventProductCreator',{...payload,version:changed.body.inventory.version,creatorOwnerId:null,requestId:crypto.randomUUID()});assert.equal(unlinked.status,200,JSON.stringify(unlinked.body));
+  assert.equal((await foundation.decorateEventProducts(f.sql,'a',f.event,[{id:item.allocations[0].productId}]))[0].eventCreator,null);
+  const again=await f.invoke('booths','setEventProductCreator',{...payload,version:unlinked.body.inventory.version,creatorOwnerId:item.ownerId,requestId:crypto.randomUUID()});assert.equal(again.status,200);
+  assert.equal((await f.invoke('booths','setEventProductCreator',{...payload,version:again.body.inventory.version,creatorOwnerId:'outsider',requestId:crypto.randomUUID()})).status,403);
+  assert.equal((await f.invoke('booths','setEventProductCreator',{...payload,version:again.body.inventory.version,requestId:crypto.randomUUID()},'c')).status,403);
+  const revision=(await f.sql`SELECT revision FROM pos_event_archives WHERE project_id=${f.event}`).rows[0];assert.ok(revision.revision.startsWith('creator:'));
+ }finally{await f.db.close();}
+});
+
+
+test('stock delegation preference immediately blocks operator quantities but preserves reads, sales, cancellations and 30/25 allocation floors',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const p=(await f.sql`SELECT id,owner_id FROM pos_artist_profiles ORDER BY id LIMIT 1`).rows[0];
+  const invite=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:p.id});
+  assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:invite.body.invitation.token,acceptSharedStock:true,allowOperatorStock:false},'b')).status,200);
+  const readPrefs=await f.invoke('booths',null,{},'b',{query:{workspace:'stockPreference'}});assert.equal(readPrefs.body.allowOperatorStock,false);
+  const created=await f.invoke('booths','createArtistStock',{ownerId:p.owner_id,name:'하한 상품',price:100,quantity:30,requestId:crypto.randomUUID()},'b');assert.equal(created.status,200,JSON.stringify(created.body));
+  let item=created.body.inventory;
+  const stock=async()=>{const r=await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId:p.owner_id,boothId}});assert.equal(r.status,200,JSON.stringify(r.body));return r.body;};
+  const adjust=(total,reason='correction',actor='a')=>f.invoke('booths','adjustArtistStock',{ownerId:p.owner_id,boothId,id:item.id,version:item.version,totalStock:total,reason,requestId:crypto.randomUUID()},actor);
+  assert.equal((await adjust(31,'receipt')).status,403);
+  const preference=async allowed=>{const r=await f.invoke('booths','saveStockPreference',{allowOperatorStock:allowed,requestId:crypto.randomUUID()},'b');assert.equal(r.status,200,JSON.stringify(r.body));};
+  await preference(true);
+  const e2=(await f.invoke('pos','createProject',{name:'B 행사'})).body.project.id;
+  assert.equal((await f.invoke('booths','saveEventAccess',{boothId,projectId:e2,ownerId:p.owner_id,status:'active',version:0,requestId:crypto.randomUUID()})).status,200);
+  const allocation=async(projectId,quantity)=>{const r=await f.invoke('booths','setArtistAllocation',{ownerId:p.owner_id,boothId,id:item.id,version:item.version,projectId,quantity,price:100,requestId:crypto.randomUUID()});if(r.status===200)item=r.body.inventory;return r;};
+  assert.equal((await allocation(f.event,10)).status,200);assert.equal((await allocation(e2,20)).status,200);
+  const productA=item.allocations.find(row=>row.projectId===f.event).productId,productB=item.allocations.find(row=>row.projectId===e2).productId;
+  const sell=(eventId,productId,qty,key)=>f.invoke('pos','finalizeSale',{},'a',{body:{action:'finalizeSale',projectId:eventId,boothId,protocolVersion:2,actorId:'a',payload:{localOrderId:key,method:'cash',total:100*qty,cart:[{type:'product',id:productId,qty,unitPrice:100}]}}});
+  assert.equal((await sell(f.event,productA,10,'floor-sale-a')).status,200);
+  await f.sql`UPDATE pos_projects SET archived_at=NOW() WHERE id=${f.event}`;
+  item=(await stock()).inventory.find(row=>row.id===item.id);assert.equal(item.minimumTotalStock,30);
+  assert.equal((await adjust(29)).status,400);const thirty=await adjust(30);assert.equal(thirty.status,200);item=thirty.body.inventory;
+  await preference(false);const read=await stock();assert.equal(read.quantityEditable,false);
+  assert.equal((await adjust(40,'receipt')).status,403);assert.equal((await allocation(e2,15)).status,403);
+  assert.equal((await f.invoke('booths','recordArtistStockLoss',{ownerId:p.owner_id,boothId,id:item.id,projectId:e2,version:item.version,quantity:1,reason:'loss',requestId:crypto.randomUUID()})).status,403);
+  const priceOnly=await f.invoke('booths','saveEventArtistProduct',{ownerId:p.owner_id,boothId,id:item.id,version:item.version,projectId:e2,product:{...item,price:100},requestId:crypto.randomUUID()});
+  assert.equal(priceOnly.status,200,JSON.stringify(priceOnly.body));item=priceOnly.body.inventory;
+  assert.equal((await sell(e2,productB,1,'preference-off-sale')).status,200);
+  const sale=(await f.sql`SELECT id FROM pos_sales WHERE project_id=${e2}`).rows[0];
+  assert.equal((await f.invoke('pos','voidSale',{},'a',{body:{action:'voidSale',projectId:e2,boothId,protocolVersion:2,actorId:'a',payload:{id:sale.id,localOrderId:'preference-off-void'}}})).status,200);
+  item=(await stock()).inventory.find(row=>row.id===item.id);assert.equal((await adjust(32,'receipt','b')).status,200);
+  await preference(true);item=(await stock()).inventory.find(row=>row.id===item.id);
+  assert.equal((await allocation(e2,15)).status,200);assert.equal(item.minimumTotalStock,25);
+  const reduced=await adjust(25);assert.equal(reduced.status,200,JSON.stringify(reduced.body));assert.equal(reduced.body.inventory.totalStock,25);
+ }finally{await f.db.close();}
+});
+
+test('search registration requires artist participation confirmation before operator stock writes and keeps existing opt-out on account linking',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const home=await f.invoke('booths','createArtistProfile',{name:'확인 작가'},'b');const profile=home.body.profiles[0];
+  const created=await f.invoke('booths','createArtistStock',{ownerId:profile.owner_id,name:'참여 상품',quantity:10,price:0,requestId:crypto.randomUUID()},'b');assert.equal(created.status,200);
+  const added=await f.invoke('booths','addEventArtist',{boothId,projectId:f.event,profileId:profile.id,role:'assistant',requestId:crypto.randomUUID()});assert.equal(added.status,200);
+  const item=created.body.inventory;
+  const adjust=()=>f.invoke('booths','adjustArtistStock',{ownerId:profile.owner_id,boothId,id:item.id,version:item.version,totalStock:11,reason:'receipt',requestId:crypto.randomUUID()});
+  assert.equal((await adjust()).status,403);
+  const confirm={ownerId:profile.owner_id,boothId,requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke('booths','confirmStockParticipation',confirm,'a')).status,403);
+  assert.equal((await f.invoke('booths','confirmStockParticipation',confirm,'b')).status,200);
+  assert.equal((await adjust()).status,200);
+  const off={allowOperatorStock:false,requestId:crypto.randomUUID()};assert.equal((await f.invoke('booths','saveStockPreference',off,'b')).status,200);
+  assert.equal((await f.invoke('booths','saveStockPreference',off,'b')).status,200);
+  assert.equal((await f.invoke('booths','saveStockPreference',{...off,allowOperatorStock:true},'b')).status,409);
+  const proxy=await f.invoke('booths','createBoothArtist',{boothId,name:'기존 허용 보존'});
+  await f.invoke('booths','saveEventAccess',{boothId,projectId:f.event,ownerId:(await f.sql`SELECT owner_id FROM pos_artist_profiles WHERE id=${proxy.body.profileId}`).rows[0].owner_id,status:'active',version:0,requestId:crypto.randomUUID()});
+  assert.equal((await f.invoke('booths','linkEventArtistAccount',{boothId,projectId:f.event,profileId:proxy.body.profileId,targetUserId:'b',requestId:crypto.randomUUID()})).status,200);
+  assert.equal((await f.invoke('booths',null,{},'b',{query:{workspace:'stockPreference'}})).body.allowOperatorStock,false);
+ }finally{await f.db.close();}
+});
+
+
+test('artist product removal preserves history, blocks active event products and replays safely',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const home=await f.invoke('booths','createArtistProfile',{name:'삭제 작가'},'b');const ownerId=home.body.profiles[0].owner_id;
+  const created=await f.invoke('booths','createArtistStock',{ownerId,name:'삭제 상품',quantity:10,price:0,requestId:crypto.randomUUID()},'b');const item=created.body.inventory;
+  const payload={ownerId,id:item.id,version:item.version,requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke('booths','removeArtistStock',payload,'c')).status,403);
+  const before=await foundation.legacySnapshot(f.sql,'b');
+  const removed=await f.invoke('booths','removeArtistStock',payload,'b');assert.equal(removed.status,200,JSON.stringify(removed.body));
+  assert.deepEqual((await f.invoke('booths','removeArtistStock',payload,'b')).body,removed.body);
+  const stock=await f.invoke('booths',null,{},'b',{query:{artists:'stock',ownerId}});assert.equal(stock.body.inventory.length,0);
+  const after=await foundation.legacySnapshot(f.sql,'b');assert.deepEqual(after.sales,before.sales);assert.equal(after.inventory[0].stock,before.inventory[0].stock);
+  const profile=(await f.sql`SELECT p.owner_id FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE o.origin_booth_id IS NOT NULL LIMIT 1`).rows[0];
+  const existing=await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId:profile.owner_id,boothId}});const active=existing.body.inventory.find(i=>i.allocations.length);
+  assert.equal((await f.invoke('booths','removeArtistStock',{ownerId:profile.owner_id,boothId,id:active.id,version:active.version,requestId:crypto.randomUUID()})).status,409);
+ }finally{await f.db.close();}
+});
+
+
+test('creator-only registration has stable receipts and no selling role, and direct creator account linking preserves original inventory',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const home=await f.invoke('booths','createArtistProfile',{name:'검색 제작자'},'b');const existing=home.body.profiles[0];
+  const added=await f.invoke('booths','addEventArtist',{projectId:f.event,boothId,profileId:existing.id,role:'none',requestId:crypto.randomUUID()});assert.equal(added.status,200,JSON.stringify(added.body));
+  assert.equal((await f.sql`SELECT user_id FROM pos_event_staff WHERE project_id=${f.event} AND user_id='b'`).rows.length,0);
+  const relation=(await f.sql`SELECT stock_management_confirmed FROM pos_booth_artists WHERE booth_id=${boothId} AND owner_id=${existing.owner_id}`).rows[0];assert.equal(relation.stock_management_confirmed,false);
+  const rollback={projectId:f.event,boothId,name:'롤백 제작자',requestId:crypto.randomUUID()};
+  await f.db.exec(`CREATE FUNCTION fail_creator_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id='${rollback.requestId}' THEN RAISE EXCEPTION 'injected receipt failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER fail_creator_receipt BEFORE INSERT ON pos_event_access_commands FOR EACH ROW EXECUTE FUNCTION fail_creator_receipt()`);
+  assert.equal((await f.invoke('booths','createEventCreator',rollback)).status,500);
+  assert.equal((await f.sql`SELECT id FROM pos_stock_owners WHERE display_name='롤백 제작자'`).rows.length,0);
+  await f.db.exec('DROP TRIGGER fail_creator_receipt ON pos_event_access_commands');
+  assert.equal((await f.invoke('booths','createEventCreator',rollback)).status,200);
+  const payload={projectId:f.event,boothId,name:'직접 제작자',requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke('booths','createEventCreator',payload,'c')).status,403);
+  const made=await f.invoke('booths','createEventCreator',payload);assert.equal(made.status,200,JSON.stringify(made.body));
+  assert.deepEqual((await f.invoke('booths','createEventCreator',payload)).body,made.body);
+  assert.equal((await f.invoke('booths','createEventCreator',{...payload,name:'변경'})).status,409);
+  const stock=await f.invoke('booths','registerEventArtistProduct',{projectId:f.event,boothId,ownerId:made.body.ownerId,name:'제작자 상품',goodsType:'키링',price:0,quantity:5,requestId:crypto.randomUUID()});assert.equal(stock.status,200,JSON.stringify(stock.body));
+  const before=await foundation.legacySnapshot(f.sql,'a');
+  const linked=await f.invoke('booths','linkEventArtistAccount',{projectId:f.event,boothId,profileId:made.body.profileId,targetUserId:'b',requestId:crypto.randomUUID()});assert.equal(linked.status,200,JSON.stringify(linked.body));
+  const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.inventory,before.inventory);assert.deepEqual(after.sales,before.sales);
+  assert.equal((await f.sql`SELECT user_id FROM pos_event_staff WHERE project_id=${f.event} AND user_id='b'`).rows.length,0);
+ }finally{await f.db.close();}
+});
+
+
+test('linked administrator with a legacy unspecified display is visible in event creator choices and detail without rewriting originals',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const query={workspace:'stockParticipants',projectId:f.event,boothId};
+  const initial=await f.invoke('booths',null,{},'a',{query});const creator=initial.body.profiles.find(p=>p.catalog);
+  await f.sql`UPDATE pos_admins SET nickname='어드민' WHERE id='a'`;
+  await f.sql`UPDATE pos_artist_profiles SET status='linked',linked_user_id='a' WHERE owner_id=${creator.owner_id}`;
+  await f.sql`INSERT INTO pos_owner_members(owner_id,user_id) VALUES(${creator.owner_id},'a') ON CONFLICT DO NOTHING`;
+  await f.sql`UPDATE pos_stock_owners SET display_name='미지정' WHERE id=${creator.owner_id}`;
+  const before=await foundation.legacySnapshot(f.sql,'a');
+  const choices=await f.invoke('booths',null,{},'a',{query});assert.equal(choices.status,200,JSON.stringify(choices.body));
+  const admin=choices.body.profiles.find(p=>p.owner_id===creator.owner_id);assert.equal(admin.display_name,'어드민');assert.equal(admin.linked_user_id,'a');assert.ok(admin.profile_id);
+  const product=(await f.sql`SELECT product_id FROM pos_event_product_identities WHERE project_id=${f.event} AND owner_id=${creator.owner_id}`).rows[0];
+  const detail=await foundation.decorateEventProducts(f.sql,'a',f.event,[{id:product.product_id}]);assert.equal(detail[0].eventCreator.name,'어드민');assert.equal(detail[0].eventCreator.linked,true);
+  const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.inventory,before.inventory);assert.deepEqual(after.sales,before.sales);
+ }finally{await f.db.close();}
+});
+
+
+test('inventory allocation plan atomically returns ended stock, adjusts total and reallocates; errors roll back and replay preserves history',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const made=await f.invoke('booths','registerEventArtistProduct',{projectId:f.event,boothId,artistName:'계획 제작자',name:'계획 상품',price:0,quantity:30,goodsType:'키링',requestId:crypto.randomUUID()});assert.equal(made.status,200);let item=made.body.inventory;
+  const ownerId=item.ownerId,other=(await f.invoke('pos','createProject',{name:'B 행사'})).body.project.id;
+  assert.equal((await f.invoke('booths','saveEventAccess',{projectId:other,boothId,ownerId,status:'active',version:0,requestId:crypto.randomUUID()})).status,200);
+  const allocation=async(projectId,quantity)=>{const result=await f.invoke('booths','setArtistAllocation',{ownerId,boothId,id:item.id,version:item.version,projectId,quantity,price:0,requestId:crypto.randomUUID()});assert.equal(result.status,200,JSON.stringify(result.body));item=result.body.inventory;};
+  await allocation(f.event,10);await allocation(other,20);
+  const sold=await f.invoke('pos','finalizeSale',{},'a',{body:{action:'finalizeSale',projectId:f.event,boothId,protocolVersion:2,actorId:'a',payload:{localOrderId:'plan-sale',method:'cash',total:0,cart:[{type:'product',id:item.allocations.find(a=>a.projectId===f.event).productId,qty:7,unitPrice:0}]}}});assert.equal(sold.status,200);
+  await f.sql`UPDATE pos_projects SET archived_at=NOW() WHERE id=${f.event}`;
+  const read=async()=>{const result=await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId,boothId}});assert.equal(result.status,200);return result.body;};
+  let view=await read();item=view.inventory[0];assert.equal(view.events.find(e=>e.id===f.event).canReturn,true);
+  const payload={ownerId,boothId,id:item.id,version:item.version,totalStock:40,allocations:[{projectId:f.event,quantity:7},{projectId:other,quantity:30}],requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke('booths','saveArtistStockPlan',payload,'c')).status,403);
+  const saved=await f.invoke('booths','saveArtistStockPlan',payload);assert.equal(saved.status,200,JSON.stringify(saved.body));item=saved.body.inventory;
+  assert.equal(item.totalStock,40);assert.equal(item.warehouse,3);assert.equal(item.minimumTotalStock,37);assert.equal(item.stockSummary.sold,7);assert.equal(item.stockSummary.eventRemaining,30);
+  assert.deepEqual((await f.invoke('booths','saveArtistStockPlan',payload)).body,saved.body);
+  assert.equal((await f.invoke('booths','saveArtistStockPlan',{...payload,totalStock:41})).status,409);
+  view=await read();assert.equal(view.history.some(h=>saved.body.commandIds.includes(h.id)),false);assert.equal(view.history.find(h=>h.id===payload.requestId).changes.length,2);
+  assert.equal((await f.invoke('booths','saveArtistStockPlan',{...payload,version:item.version,totalStock:20,requestId:crypto.randomUUID()})).status,400);
+  assert.equal((await f.invoke('booths','saveEventStockSchedule',{projectId:other,boothId,startsOn:'2000-01-01',endsOn:'2000-01-02',requestId:crypto.randomUUID()})).status,200);
+  const invalid={...payload,version:item.version,totalStock:50,allocations:[{projectId:other,quantity:31}],requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke('booths','saveArtistStockPlan',invalid)).status,409);assert.equal((await read()).inventory[0].totalStock,40);
+  const rollback={...payload,version:item.version,totalStock:35,allocations:[{projectId:other,quantity:25}],requestId:crypto.randomUUID()};
+  await f.db.exec(`CREATE FUNCTION fail_stock_plan() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id='${rollback.requestId}' THEN RAISE EXCEPTION 'injected plan receipt failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER fail_stock_plan BEFORE INSERT ON pos_shared_stock_commands FOR EACH ROW EXECUTE FUNCTION fail_stock_plan()`);
+  assert.equal((await f.invoke('booths','saveArtistStockPlan',rollback)).status,500);assert.equal((await read()).inventory[0].totalStock,40);
+  await f.db.exec('DROP TRIGGER fail_stock_plan ON pos_shared_stock_commands');
+  const retried=await f.invoke('booths','saveArtistStockPlan',rollback);assert.equal(retried.status,200,JSON.stringify(retried.body));assert.equal(retried.body.inventory.totalStock,35);assert.equal(retried.body.inventory.minimumTotalStock,32);
+  const profile=(await f.sql`SELECT id FROM pos_artist_profiles WHERE owner_id=${ownerId}`).rows[0];
+  assert.equal((await f.invoke('booths','linkEventArtistAccount',{projectId:f.event,boothId,profileId:profile.id,targetUserId:'b',requestId:crypto.randomUUID()})).status,200);
+  assert.equal((await f.invoke('booths','saveStockPreference',{allowOperatorStock:false,requestId:crypto.randomUUID()},'b')).status,200);
+  assert.equal((await f.invoke('booths','saveArtistStockPlan',{ownerId,boothId,id:item.id,version:retried.body.inventory.version,totalStock:36,allocations:[],requestId:crypto.randomUUID()})).status,403);
+  assert.equal((await read()).inventory[0].totalStock,35);
+
+ }finally{await f.db.close();}
+});
+
+
+test('event-focused inventory edits total and current allocation together while preserving every other event',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const created=await f.invoke('booths','registerEventArtistProduct',{projectId:f.event,boothId,artistName:'상세 제작자',name:'상세 재고',goodsType:'키링',price:0,quantity:20,requestId:crypto.randomUUID()});assert.equal(created.status,200);let item=created.body.inventory;const ownerId=item.ownerId;
+  const other=(await f.invoke('pos','createProject',{name:'다른 행사'})).body.project.id;
+  await f.invoke('booths','saveEventAccess',{projectId:other,boothId,ownerId,status:'active',version:0,requestId:crypto.randomUUID()});
+  const returned=await f.invoke('booths','setArtistAllocation',{ownerId,boothId,id:item.id,version:item.version,projectId:f.event,quantity:10,requestId:crypto.randomUUID()});assert.equal(returned.status,200);item=returned.body.inventory;
+  const assigned=await f.invoke('booths','setArtistAllocation',{ownerId,boothId,id:item.id,version:item.version,projectId:other,quantity:10,requestId:crypto.randomUUID()});assert.equal(assigned.status,200);item=assigned.body.inventory;
+  const payload={ownerId,boothId,id:item.id,version:item.version,currentProjectId:f.event,totalStock:30,allocations:[{projectId:f.event,quantity:15}],requestId:crypto.randomUUID()};
+  const saved=await f.invoke('booths','saveArtistStockPlan',payload);assert.equal(saved.status,200,JSON.stringify(saved.body));item=saved.body.inventory;
+  assert.equal(item.totalStock,30);assert.equal(item.warehouse,5);assert.equal(item.allocations.find(a=>a.projectId===other).initial,10);
+  assert.deepEqual((await f.invoke('booths','saveArtistStockPlan',payload)).body,saved.body);
+  const audit=(await f.sql`SELECT project_id FROM pos_shared_stock_commands WHERE id=${payload.requestId}`).rows[0];assert.equal(audit.project_id,f.event);
+  assert.equal((await f.invoke('booths','saveArtistStockPlan',{...payload,version:item.version,allocations:[{projectId:other,quantity:5}],requestId:crypto.randomUUID()})).status,403);
+  const insufficient=await f.invoke('booths','saveArtistStockPlan',{...payload,version:item.version,totalStock:30,allocations:[{projectId:f.event,quantity:25}],requestId:crypto.randomUUID()});assert.equal(insufficient.status,400);
+  const read=await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId,boothId}});assert.equal(read.body.inventory[0].totalStock,30);assert.equal(read.body.inventory[0].allocations.find(a=>a.projectId===other).initial,10);
+  await f.db.query("INSERT INTO pos_event_settlements(admin_id,project_id,closed_at,snapshot) VALUES('a',$1,NOW(),$2::jsonb)",[f.event,JSON.stringify({rows:[]})]);
+  assert.equal((await f.invoke('booths','saveArtistStockPlan',{...payload,version:item.version,totalStock:31,allocations:[],requestId:crypto.randomUUID()})).status,409);
+  assert.deepEqual((await f.invoke('booths','saveArtistStockPlan',payload)).body,saved.body);
+
+ }finally{await f.db.close();}
+});
+
+
+test('migrated event templates preserve original stock links and restored events isolate unlinked creators and stock',async()=>{
+ const f=await fixture();try{
+  await f.migrate();const booth=(await foundation.migratedBooth(f.sql,'a')).id;
+  // Linked source identity must never be adopted just because the backup has the same name.
+  const source=(await f.sql`SELECT i.owner_id,l.inventory_id FROM pos_event_product_identities i JOIN pos_inventory_links l ON l.project_id=i.project_id AND l.product_id=i.product_id WHERE i.project_id=${f.event}`).rows[0];
+  await f.sql`UPDATE pos_artist_profiles SET linked_user_id='a',status='linked' WHERE owner_id=${source.owner_id}`;
+  const command=(action,payload,projectId,actor='a')=>f.invoke('pos',action,{},actor,{body:{action,protocolVersion:2,boothId:booth,projectId,payload}});
+  const sale=await f.invoke('pos','finalizeSale',{},'a',{body:{action:'finalizeSale',protocolVersion:2,actorId:'a',boothId:booth,projectId:f.event,payload:{localOrderId:crypto.randomUUID(),method:'cash',total:0,cart:[{type:'product',id:'p',qty:1,unitPrice:0}]}}});assert.equal(sale.status,200,JSON.stringify(sale.body));
+  const before=(await f.sql`SELECT * FROM pos_inventory WHERE admin_id='a' AND id=${source.inventory_id}`).rows[0];
+  const copy=await command('duplicateProject',{name:'새 구성',password:'test-password',requestId:crypto.randomUUID()},f.event);assert.equal(copy.status,201,JSON.stringify(copy.body));
+  const copyLink=(await f.sql`SELECT inventory_id FROM pos_inventory_links WHERE project_id=${copy.body.project.id}`).rows[0];assert.equal(copyLink.inventory_id,source.inventory_id);
+  await artistStock.initArtistStock(f.sql);
+  await f.sql`INSERT INTO pos_event_stock_policy(project_id,starts_on,ends_on) VALUES(${f.event},'2026-10-23','2026-10-24')`;
+  await f.sql`INSERT INTO pos_event_settlements(admin_id,project_id,version,costs,snapshot,closed_at,history) VALUES('a',${f.event},1,'[{"label":"임대료","memo":"","split":"equal","type":"fixed","value":500}]'::jsonb,'{"rows":[{"creator":"작가","gross":0,"fees":500,"net":-500,"shares":[]}]}'::jsonb,NOW(),'[]')`;
+  const exported=await command('backupProject',{password:'test-password'},f.event);assert.equal(exported.status,200,JSON.stringify(exported.body));
+  const restored=await command('restoreProject',{name:'복원',backup:exported.body.backup,password:'test-password',requestId:crypto.randomUUID()});assert.equal(restored.status,201,JSON.stringify(restored.body));
+  const id=restored.body.project.id;
+  const proxy=(await f.sql`SELECT p.linked_user_id,i.owner_id,l.inventory_id FROM pos_event_product_identities i JOIN pos_artist_profiles p ON p.owner_id=i.owner_id JOIN pos_inventory_links l ON l.project_id=i.project_id AND l.product_id=i.product_id WHERE i.project_id=${id}`).rows[0];
+  const closure=(await f.sql`SELECT * FROM pos_event_settlements WHERE project_id=${id}`).rows[0];assert.equal(closure.costs[0].value,500);assert.ok(closure.closed_at);
+  const recipient=(await f.sql`SELECT r.legacy_creator FROM pos_event_product_identities i JOIN pos_recipients r ON r.id=i.recipient_id WHERE i.project_id=${id}`).rows[0];assert.equal(closure.snapshot.rows[0].creator,recipient.legacy_creator);
+  const restoredSale=(await f.sql`SELECT lines FROM pos_sales WHERE project_id=${id}`).rows[0];assert.equal(restoredSale.lines[0].ownerId,proxy.owner_id);assert.equal(restoredSale.lines[0].settlementCreator,recipient.legacy_creator);
+  assert.equal((await f.sql`SELECT ends_on::text AS day FROM pos_event_stock_policy WHERE project_id=${id}`).rows[0].day,'2026-10-24');
+  assert.equal(proxy.linked_user_id,null);assert.notEqual(proxy.owner_id,source.owner_id);assert.notEqual(proxy.inventory_id,source.inventory_id);
+  assert.deepEqual((await f.sql`SELECT * FROM pos_inventory WHERE admin_id='a' AND id=${source.inventory_id}`).rows[0],before);
+  const home=await f.invoke('booths',null,{},'a',{query:{workspace:'home'}});assert.equal(home.body.events.find(e=>e.id===id).permissions.canManage,true);assert.ok(home.body.events.find(e=>e.id===id).archivedAt);
+  assert.equal((await command('backupProject',{password:'test-password'},f.event,'b')).status,403);
+ }finally{await f.db.close();}
+});
+
+
+test('event deletion returns only its remaining stock, preserves consumption and other events, and rolls back on failure',async()=>{
+ const f=await fixture();try{
+  await f.migrate();const boothId=(await foundation.migratedBooth(f.sql,'a')).id;
+  const command=(action,payload,projectId=f.event,actor='a')=>f.invoke('pos',action,{},actor,{body:{action,protocolVersion:2,actorId:actor,boothId,projectId,payload}});
+  const other=(await command('duplicateProject',{name:'다른 행사',password:'test-password'})).body.project.id;
+  const ownerId=(await f.sql`SELECT owner_id FROM pos_inventory_owners WHERE inventory_id=${f.item.id}`).rows[0].owner_id;
+  let stock=(await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId,boothId}})).body.inventory[0];
+  const plan=await f.invoke('booths','saveArtistStockPlan',{ownerId,boothId,id:stock.id,version:stock.version,totalStock:20,allocations:[{projectId:f.event,quantity:10},{projectId:other,quantity:5}],requestId:crypto.randomUUID()});assert.equal(plan.status,200,JSON.stringify(plan.body));
+  const sale=await command('finalizeSale',{localOrderId:crypto.randomUUID(),method:'cash',total:0,cart:[{type:'product',id:'p',qty:2,unitPrice:0}]});assert.equal(sale.status,200,JSON.stringify(sale.body));
+  const sales=(await f.sql`SELECT * FROM pos_sales WHERE project_id=${f.event}`).rows;
+  await f.sql`INSERT INTO pos_event_settlements(admin_id,project_id,closed_at,snapshot) VALUES('a',${f.event},NOW(),'{"rows":[]}'::jsonb)`;
+  const payload={password:'test-password',confirmName:'원본 행사'};
+  assert.equal((await command('deleteProject',{...payload,password:'wrong'})).status,403);
+  assert.equal((await command('deleteProject',payload,f.event,'b')).status,403);
+  await f.db.exec("CREATE FUNCTION fail_event_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.deleted_at IS NOT NULL THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_event_delete BEFORE UPDATE ON pos_projects FOR EACH ROW EXECUTE FUNCTION fail_event_delete()");
+  assert.equal((await command('deleteProject',payload)).status,500);
+  assert.equal((await f.sql`SELECT stock_qty FROM pos_products WHERE project_id=${f.event}`).rows[0].stock_qty,8);
+  await f.db.exec('DROP TRIGGER fail_event_delete ON pos_projects');
+  const removed=await command('deleteProject',payload);assert.equal(removed.status,200,JSON.stringify(removed.body));assert.equal(removed.body.projects.some(p=>p.id===f.event),false);
+  assert.equal((await command('deleteProject',payload)).status,200);
+  const home=await f.invoke('booths',null,{},'a',{query:{workspace:'home'}});assert.equal(home.body.events.some(p=>p.id===f.event),false);
+  assert.equal((await f.invoke('pos',null,{},'a',{query:{boothId,projectId:f.event}})).status,404);
+  assert.equal((await command('finalizeSale',{localOrderId:crypto.randomUUID(),method:'cash',total:0,cart:[{type:'product',id:'p',qty:1,unitPrice:0}]})).status,404);
+  stock=(await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId,boothId}})).body.inventory[0];
+  assert.equal(stock.totalStock,20);assert.equal(stock.warehouse,13);assert.equal(stock.minimumTotalStock,7);assert.equal(stock.allocations.some(a=>a.projectId===f.event),false);assert.equal(stock.allocations.find(a=>a.projectId===other).initial,5);
+  assert.deepEqual((await f.sql`SELECT * FROM pos_sales WHERE project_id=${f.event}`).rows,sales);
+  assert.ok((await f.sql`SELECT closed_at FROM pos_event_settlements WHERE project_id=${f.event}`).rows[0].closed_at);
+ }finally{await f.db.close();}
+});
+
+test('removing an event creator detaches current mappings without changing original stock, other events or historical sales',async()=>{
+ const f=await fixture();try{
+  await f.migrate();const boothId=(await foundation.migratedBooth(f.sql,'a')).id;
+  const access=await f.invoke('booths',null,{},'a',{query:{workspace:'access',projectId:f.event,boothId}});const profile=access.body.profiles.find(p=>p.product_count===1);
+  const linked=await f.invoke('booths','linkEventArtistAccount',{projectId:f.event,boothId,profileId:profile.id,targetUserId:'b',role:'seller',requestId:crypto.randomUUID()});assert.equal(linked.status,200,JSON.stringify(linked.body));
+  const command=(action,payload)=>f.invoke('pos',action,{},'a',{body:{action,boothId,projectId:f.event,protocolVersion:2,actorId:'a',payload}});
+  const other=(await command('duplicateProject',{name:'다른 행사',password:'test-password'})).body.project.id;
+  assert.equal((await command('finalizeSale',{localOrderId:crypto.randomUUID(),method:'cash',total:0,cart:[{type:'product',id:'p',qty:1,unitPrice:0}]})).status,200);
+  const inventory=(await f.sql`SELECT * FROM pos_inventory WHERE admin_id='a' AND id=${f.item.id}`).rows[0];const sales=(await f.sql`SELECT * FROM pos_sales WHERE project_id=${f.event}`).rows;
+  const payload={projectId:f.event,boothId,ownerId:profile.owner_id,version:profile.version,requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke('booths','removeEventArtist',payload,'c')).status,403);
+  const result=await f.invoke('booths','removeEventArtist',payload);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal((await f.invoke('booths','removeEventArtist',payload)).status,200);
+  const after=(await f.sql`SELECT * FROM pos_inventory WHERE admin_id='a' AND id=${f.item.id}`).rows[0];assert.deepEqual(after.product,inventory.product);assert.equal(after.stock,inventory.stock);
+  assert.equal((await f.sql`SELECT stock_qty FROM pos_products WHERE project_id=${f.event}`).rows[0].stock_qty,9);
+  const state=await f.invoke('pos',null,{},'a',{query:{boothId,projectId:f.event}});assert.equal(state.status,200);assert.equal(state.body.products[0].eventCreator,null);
+  assert.equal((await f.invoke('pos',null,{},'a',{query:{boothId,projectId:other}})).body.products[0].eventCreator.ownerId,profile.owner_id);
+  assert.deepEqual((await f.sql`SELECT * FROM pos_sales WHERE project_id=${f.event}`).rows,sales);
+  const candidates=await f.invoke('booths',null,{},'a',{query:{workspace:'stockParticipants',projectId:f.event,boothId}});assert.equal(candidates.body.profiles.find(p=>p.owner_id===profile.owner_id).stockOnly,true);
+  const stockView=await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId:profile.owner_id,boothId}});assert.equal(stockView.status,200,JSON.stringify(stockView.body));assert.equal(stockView.body.inventory[0].allocations.find(a=>a.projectId===f.event).remaining,9);assert.ok(stockView.body.events.some(e=>e.id===f.event));
+  const creatorAccess=await eventAccess.eventPermissions(f.sql,'b',f.event);assert.equal(creatorAccess.permissions.canSell,false);assert.equal(creatorAccess.permissions.canReadOwnHistory,true);
+ }finally{await f.db.close();}
+});
+
+test('event information saves name and schedule together with password and rejects invalid or unauthorized requests atomically',async()=>{
+ const f=await fixture();try{
+  await f.migrate();const boothId=(await foundation.migratedBooth(f.sql,'a')).id;
+  const payload={name:'변경한 행사',startsOn:'2026-11-01',endsOn:'2026-11-02',password:'test-password'};
+  const save=(data,actor='a')=>f.invoke('pos','updateProjectInfo',{},actor,{body:{action:'updateProjectInfo',boothId,projectId:f.event,payload:data}});
+  assert.equal((await save({...payload,password:'wrong'})).status,403);assert.equal((await save(payload,'b')).status,403);
+  assert.equal((await save({...payload,endsOn:'2026-10-01'})).status,400);assert.equal((await f.sql`SELECT name FROM pos_projects WHERE id=${f.event}`).rows[0].name,'원본 행사');
+  const result=await save(payload);assert.equal(result.status,200,JSON.stringify(result.body));
+  const access=await f.invoke('booths',null,{},'a',{query:{workspace:'access',projectId:f.event,boothId}});assert.equal(access.body.schedule.starts_on,'2026-11-01');assert.equal(result.body.projects.find(p=>p.id===f.event).name,payload.name);
+  assert.equal((await save({...payload,startsOn:'',endsOn:''})).status,200);assert.equal((await f.sql`SELECT project_id FROM pos_event_stock_policy WHERE project_id=${f.event}`).rows.length,0);
  }finally{await f.db.close();}
 });

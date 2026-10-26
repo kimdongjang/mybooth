@@ -26,11 +26,60 @@ const load = path => import(sourceUrl(new URL(path, import.meta.url).href));
 const { db } = await load('../src/database/dexie.ts');
 const { stateRepository: states } = await load('../src/database/stateRepository.ts');
 const { orderRepository: orders } = await load('../src/database/orderRepository.ts');
+const {LocalFirstStore}=await load('../src/data/localFirst.ts');
 const initial = { products: [{ id: 'p', stock: 5 }], bundles: [], sales: [], dataRevision: null };
 const sold = { ...initial, products: [{ id: 'p', stock: 4 }], sales: [{ id: 'sale' }] };
 const order = { projectId: 'a', localOrderId: 'sale', createdAt: '2026-10-15', payload: { projectId: 'a' }, syncStatus: 'PENDING', retryCount: 0 };
 
-test('v3 to v4 upgrade preserves legacy payloads and binds cached state only after owner-confirmed remote reads',async()=>{
+test('local-first reads return durable cache before the remote result, isolate scope and revoke denied data',async()=>{
+ await db.open();const store=new LocalFirstStore(db,()=>true),scope={actorId:'artist-a',boothId:'booth-a'};
+ try{
+  await store.put(scope,'list',[1]);let release;const response=new Promise(resolve=>release=resolve);
+  const result=await store.read({scope,resource:'list',fetchRemote:()=>response});assert.equal(result.source,'local');assert.deepEqual(result.value,[1]);
+  assert.equal(await store.get({actorId:'artist-b',boothId:'booth-a'},'list'),undefined);assert.equal(await store.get({...scope,boothId:'booth-b'},'list'),undefined);
+  release([2]);assert.deepEqual(await result.refresh,[2]);assert.deepEqual(await store.get(scope,'list'),[2]);
+  const offline=new LocalFirstStore(db,()=>false);const cached=await offline.read({scope,resource:'list',fetchRemote:()=>{throw new Error('must not fetch');}});assert.deepEqual(cached.value,[2]);await assert.rejects(cached.refresh,/인터넷/);
+  const denied=await store.read({scope,resource:'list',fetchRemote:async()=>{throw Object.assign(new Error('forbidden'),{status:403});}});await assert.rejects(denied.refresh,/forbidden/);assert.equal(await store.get(scope,'list'),undefined);
+ }finally{await db.delete();await db.open();}
+});
+
+test('local-first create/update/delete commands commit atomically and protect pending projections from stale reads',async()=>{
+ const store=new LocalFirstStore(db,()=>true),scope={actorId:'a',projectId:'event'};
+ store.register('edit',{offline:'queue',execute:async()=>{},reduce:(rows,p)=>p.remove?rows.filter(r=>r.id!==p.id):[...rows.filter(r=>r.id!==p.id),p]});
+ try{
+  await store.put(scope,'items',[]);let release;const response=new Promise(resolve=>release=resolve);
+  const read=await store.read({scope,resource:'items',fetchRemote:()=>response});
+  await store.mutate({scope,resource:'items',operation:'edit',payload:{id:'p',quantity:1}});
+  await store.mutate({scope,resource:'items',operation:'edit',payload:{id:'p',quantity:2}});
+  release([]);assert.deepEqual(await read.refresh,[{id:'p',quantity:2}]);assert.equal((await store.pending('a')).length,2);
+  const fail=()=>{throw new Error('quota');};db.table('resources').hook('updating',fail);
+  await assert.rejects(store.mutate({scope,resource:'items',operation:'edit',payload:{id:'p',remove:true}}),/quota/);db.table('resources').hook('updating').unsubscribe(fail);
+  assert.equal((await store.pending('a')).length,2);assert.deepEqual(await store.get(scope,'items'),[{id:'p',quantity:2}]);
+  await store.mutate({scope,resource:'items',operation:'edit',payload:{id:'p',remove:true}});assert.deepEqual(await store.get(scope,'items'),[]);
+  await assert.rejects(store.put(scope,'items',[]),/미동기화/);
+ }finally{await db.delete();await db.open();}
+});
+
+test('resource replay preserves IDs after uncertain responses, resumes SYNCING, blocks conflicts and ignores another actor',async()=>{
+ const descriptor=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+ Object.defineProperty(globalThis,'navigator',{configurable:true,value:{locks:{request:async(_name,_options,fn)=>fn({})}}});
+ const scope={actorId:'a',projectId:'event'},sent=[];let attempt=0;
+ const store=new LocalFirstStore(db,()=>true);
+ store.register('edit',{offline:'queue',reduce:(rows,p)=>[...rows,p],execute:async(_scope,_payload,id)=>{sent.push(id);if(attempt++===0)throw new Error('response lost');}});
+ try{
+  await store.put(scope,'items',[]);const command=await store.mutate({scope,resource:'items',operation:'edit',payload:'p'});
+  await store.sync('b');assert.equal(sent.length,0);await store.sync('a');assert.equal((await store.pending('a'))[0].status,'FAILED');
+  const row=(await store.pending('a'))[0];await db.table('resourceCommands').update(row.sequence,{status:'SYNCING'});
+  await store.sync('a');assert.deepEqual(sent,[command.id,command.id]);assert.equal((await store.pending('a')).length,0);
+  store.register('conflict',{offline:'queue',reduce:rows=>rows,execute:async()=>{throw Object.assign(new Error('stale version'),{status:409});}});
+  await store.mutate({scope,resource:'items',operation:'conflict',payload:{}});await store.mutate({scope,resource:'items',operation:'edit',payload:'later'});
+  await store.sync('a');assert.equal((await store.pending('a'))[0].status,'CONFLICT');await store.sync('a');assert.equal(sent.length,2);
+  let current=true,release;await store.put({actorId:'old'},'other',[]);
+  const read=await store.read({scope:{actorId:'old'},resource:'other',isCurrent:()=>current,fetchRemote:()=>new Promise(resolve=>release=resolve)});current=false;release(['late']);await assert.rejects(read.refresh,/변경/);assert.deepEqual(await store.get({actorId:'old'},'other'),[]);
+ }finally{if(descriptor)Object.defineProperty(globalThis,'navigator',descriptor);else delete globalThis.navigator;await db.delete();await db.open();}
+});
+
+test('v3 to v5 upgrade preserves legacy payloads and binds cached state only after owner-confirmed remote reads',async()=>{
   await db.delete();
   const legacy=new Dexie(db.name);
   legacy.version(3).stores({orders:'++id, projectId, [projectId+syncStatus], [projectId+localOrderId], localOrderId, createdAt, syncStatus, retryCount, lastSyncAt',posState:'key, projectId, updatedAt'});
@@ -39,7 +88,7 @@ test('v3 to v4 upgrade preserves legacy payloads and binds cached state only aft
   legacy.close();
   try {
     await db.open();
-    assert.equal(db.verno,4);assert.deepEqual((await orders.getAll('a'))[0].payload,order.payload);
+    assert.equal(db.verno,5);assert.deepEqual((await orders.getAll('a'))[0].payload,order.payload);
     assert.equal((await orders.getAll('a'))[0].localOrderId,'sale');
     assert.equal(await states.getForActor('a','a'),null,'unbound legacy cache is not shown offline as a different user');
     await assert.rejects(states.acceptRemote('a',{...initial,actorId:'b',legacyActorId:'a'}),/원래 계정/);

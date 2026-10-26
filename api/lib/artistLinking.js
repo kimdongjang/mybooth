@@ -1,3 +1,4 @@
+import {initStockDelegation} from './stockDelegation.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { initBoothFoundation, authorizeBooth, migratedBooth, migrateLegacyBooth, legacySnapshot, foundationReport } from './boothFoundation.js';
 import { eventState } from './eventSettlement.js';
@@ -78,7 +79,7 @@ export async function createFirstBooth(sql,userId,payload) {
   const source=await legacySnapshot(sql,userId);
   if(source.projects.length || source.inventory.length) fail('기존 자료가 있는 계정은 먼저 호환 이관을 진행해주세요.');
   const profile=(await sql`SELECT owner_id FROM pos_artist_profiles WHERE linked_user_id=${userId} AND status='linked' ORDER BY id LIMIT 1`).rows[0];
-  if(!profile) fail('작가 프로필을 먼저 만들어주세요.');
+  if(!profile) fail('제작자 프로필을 먼저 만들어주세요.');
   const result=await migrateLegacyBooth(sql,userId,{dryRun:false,expectedFingerprint:foundationReport(source).fingerprint});
   await sql`UPDATE pos_booths SET name=${displayName} WHERE id=${result.boothId}`;
   await sql`INSERT INTO pos_booth_artists(booth_id,owner_id,status) VALUES(${result.boothId},${profile.owner_id},'active') ON CONFLICT DO NOTHING`;
@@ -88,7 +89,7 @@ export async function createFirstBooth(sql,userId,payload) {
 export async function createBoothArtist(sql,userId,{boothId,name:displayName}) {
   await authorizeBooth(sql,userId,boothId,'manage');
   const key=name(displayName);
-  if(key==='미지정') fail('실제 작가명을 입력해주세요.',400);
+  if(key==='미지정') fail('실제 제작자명을 입력해주세요.',400);
   // Same mapping as legacy reconciliation; a later source item cannot spawn a
   // second identity for the explicitly created proxy artist.
   const ownerId=`owner:${digest(JSON.stringify([boothId,key]))}`;
@@ -118,7 +119,7 @@ export async function issueArtistInvitation(sql,userId,{boothId,profileId}) {
   const profile=(await sql`SELECT p.*,o.display_name FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id
     JOIN pos_booth_artists a ON a.owner_id=p.owner_id AND a.booth_id=${boothId}
     WHERE p.id=${profileId} AND a.status='proxy' AND o.origin_booth_id=${boothId} FOR UPDATE OF p`).rows[0];
-  if(!profile || profile.status!=='unlinked') fail('초대할 미연동 작가를 확인해주세요.');
+  if(!profile || profile.status!=='unlinked') fail('초대할 미연동 제작자를 확인해주세요.');
   if(profile.display_name==='미지정') fail('미지정 자료의 소유자를 먼저 확인해주세요.');
   // Reissue revokes every outstanding token for this profile in this booth.
   const superseded=(await sql`UPDATE pos_artist_invitations SET revoked_at=NOW() WHERE profile_id=${profileId} AND booth_id=${boothId} AND revoked_at IS NULL AND accepted_at IS NULL RETURNING id`).rows;
@@ -151,20 +152,22 @@ async function validateInvitation(sql,invite,userId) {
   if(!issuer) fail('발급 권한이 종료된 초대입니다.');
   const participation=(await sql`SELECT owner_id FROM pos_booth_artists WHERE booth_id=${invite.booth_id}
     AND owner_id=(SELECT owner_id FROM pos_artist_profiles WHERE id=${invite.profile_id}) AND status='proxy'`).rows[0];
-  if(!participation) fail('작가 참여 상태가 변경되었습니다.');
+  if(!participation) fail('제작자 참여 상태가 변경되었습니다.');
 }
 
 export async function previewArtistInvitation(sql,userId,{token}) {
+  await initStockDelegation(sql);
   const invite=await invitationForToken(sql,token);
   await validateInvitation(sql,invite,userId);
   const profile=(await sql`SELECT p.id,p.status,p.linked_user_id,o.display_name FROM pos_artist_profiles p
     JOIN pos_stock_owners o ON o.id=p.owner_id WHERE p.id=${invite.profile_id}`).rows[0];
-  if(profile.linked_user_id && profile.linked_user_id!==userId) fail('이미 연결된 작가입니다.');
-  return {invitation:{id:invite.id,profileId:profile.id,artistName:profile.display_name,boothName:invite.booth_name,
+  if(profile.linked_user_id && profile.linked_user_id!==userId) fail('이미 연결된 제작자입니다.');
+  return {allowOperatorStock:(await sql`SELECT allow_operator_stock FROM pos_admins WHERE id=${userId}`).rows[0]?.allow_operator_stock!==false,invitation:{id:invite.id,profileId:profile.id,artistName:profile.display_name,boothName:invite.booth_name,
     expiresAt:invite.expires_at,accepted:Boolean(invite.accepted_by)}};
 }
 
 export async function acceptArtistInvitation(sql,userId,payload) {
+  await initStockDelegation(sql);
   if(payload.acceptSharedStock!==true) fail('부스와 총재고를 공동 관리하는 연결에 동의해주세요.',400);
   const candidate=await invitationForToken(sql,payload.token);
   // Match legacy POS lock order: authentication principals, then shared rows.
@@ -175,12 +178,13 @@ export async function acceptArtistInvitation(sql,userId,payload) {
   const invite=await invitationForToken(sql,payload.token);
   await validateInvitation(sql,invite,userId);
   if(invite.accepted_by===userId) return {linked:true,profileId:invite.profile_id};
+  if(payload.allowOperatorStock!==undefined){if(typeof payload.allowOperatorStock!=='boolean')fail('재고관리 허용 설정을 확인해주세요.',400);await sql`UPDATE pos_admins SET allow_operator_stock=${payload.allowOperatorStock} WHERE id=${userId}`;}
   const profile=(await sql`SELECT * FROM pos_artist_profiles WHERE id=${invite.profile_id}`).rows[0];
-  if(profile.status!=='unlinked' || profile.linked_user_id) fail('이미 연결된 작가입니다.');
+  if(profile.status!=='unlinked' || profile.linked_user_id) fail('이미 연결된 제작자입니다.');
   await sql`UPDATE pos_artist_profiles SET status='linked',linked_user_id=${userId} WHERE id=${profile.id}`;
   await sql`INSERT INTO pos_owner_members(owner_id,user_id) VALUES(${profile.owner_id},${userId}) ON CONFLICT DO NOTHING`;
   await sql`UPDATE pos_stock_owners SET kind='artist' WHERE id=${profile.owner_id}`;
-  await sql`UPDATE pos_booth_artists SET status='active' WHERE booth_id=${invite.booth_id} AND owner_id=${profile.owner_id}`;
+  await sql`UPDATE pos_booth_artists SET status='active',stock_management_confirmed=TRUE WHERE booth_id=${invite.booth_id} AND owner_id=${profile.owner_id}`;
   await sql`UPDATE pos_artist_invitations SET accepted_by=${userId},accepted_at=NOW() WHERE id=${invite.id}`;
   await audit(sql,userId,profile.id,invite.booth_id,'profile_linked',invite.id);
   return {linked:true,profileId:profile.id};

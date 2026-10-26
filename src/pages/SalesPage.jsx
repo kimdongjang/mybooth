@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PageIntro, PageTabs } from '../components/PageLayout';
 import { ItemButton } from '../components/PosUI';
-import { won, productNameWithoutCreator, creatorNameOf } from '../utils/productDisplay';
+import { won, productNameWithoutCreator, eventCreatorNameOf } from '../utils/productDisplay';
 
 export default function SalesPage({ project, readOnly, purchaseTab, setPurchaseTab, visibleProducts, visibleBundles, creators, creatorFilter, setCreatorFilter, availableStock, bundleAvailable, addProduct, addBundle, cart, setCart, orderExpanded, setOrderExpanded, total, updateCartQty, saving, finalizeSale }) {
   const [payment, setPayment] = useState(null);
@@ -38,7 +38,7 @@ export default function SalesPage({ project, readOnly, purchaseTab, setPurchaseT
           </div>
         </div>
         <div id={`purchase-panel-${purchaseTab}`} role="tabpanel" aria-labelledby={`purchase-tab-${purchaseTab}`} tabIndex={0}>
-          {purchaseTab === 'products' ? <div className="product-grid grid gap-3">{visibleProducts.map((p) => <ItemButton key={p.id} saleNumber={p.saleNumber} imageUrl={p.imageUrl} soldout={readOnly || availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={creatorNameOf(p)} onClick={() => addProduct(p)} />)}</div> : <div className="product-grid grid gap-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={readOnly || bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div>}
+          {purchaseTab === 'products' ? <div className="product-grid grid gap-3">{visibleProducts.map((p) => <ItemButton key={p.id} saleNumber={p.saleNumber} imageUrl={p.imageUrl} soldout={readOnly || availableStock(p) <= 0} stock={`남음 ${availableStock(p)}`} name={productNameWithoutCreator(p)} price={p.price} creatorName={eventCreatorNameOf(p)} onClick={() => addProduct(p)} />)}</div> : <div className="product-grid grid gap-3">{visibleBundles.map((b) => <ItemButton key={b.id} bundle soldout={readOnly || bundleAvailable(b) <= 0} stock={bundleAvailable(b) <= 0 ? '품절' : `가능 ${bundleAvailable(b)}`} name={b.name} price={b.price} onClick={() => addBundle(b)} />)}</div>}
           {!(purchaseTab === 'products' ? visibleProducts.length : visibleBundles.length) && <p className="catalog-empty">{creatorFilter !== 'all' ? `선택한 제작자의 ${purchaseTab === 'products' ? '상품' : '세트'}가 없습니다.` : purchaseTab === 'products' ? '등록된 상품이 없습니다.' : '등록된 세트가 없습니다.'}</p>}
         </div>
       </section>

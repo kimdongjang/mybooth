@@ -6,7 +6,7 @@ import ts from 'typescript';
 const nodes=n=>!n||typeof n!=='object'?[]:[n,...[n.props?.children].flat(Infinity).flatMap(nodes)];
 async function harness(){
  const states=[],refs=[],deps=[],effects=[],calls=[];let si=0,ri=0,ei=0;
- const mocks={react:{useState:v=>{const i=si++;if(!(i in states))states[i]=v;return[states[i],v=>states[i]=v];},useRef:v=>refs[ri++]||=( {current:v??{showModal(){},close(){}}} ),useEffect:(fn,d)=>{const i=ei++;if(!deps[i]||d.some((v,j)=>v!==deps[i][j])){deps[i]=d;effects.push(fn);}}},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})},'../utils/productDisplay':{won:String,productNameWithoutCreator:p=>p.name,creatorNameOf:()=>''}};
+ const mocks={react:{useState:v=>{const i=si++;if(!(i in states))states[i]=v;return[states[i],v=>states[i]=v];},useRef:v=>refs[ri++]||=( {current:v??{showModal(){},close(){}}} ),useEffect:(fn,d)=>{const i=ei++;if(!deps[i]||d.some((v,j)=>v!==deps[i][j])){deps[i]=d;effects.push(fn);}}},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})},'../utils/productDisplay':{won:String,productNameWithoutCreator:p=>p.name,creatorNameOf:()=>'',eventCreatorNameOf:()=>''}};
  const context=vm.createContext({});const source=await readFile(new URL('../src/pages/SalesPage.jsx',import.meta.url),'utf8');
  const m=new vm.SourceTextModule(ts.transpileModule(source,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText,{context});
  await m.link(name=>{const ex=mocks[name]||{PageIntro:'intro',PageTabs:'tabs',ItemButton:'item'};return new vm.SyntheticModule(Object.keys(ex),function(){for(const[k,v]of Object.entries(ex))this.setExport(k,v);},{context});});await m.evaluate();

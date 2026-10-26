@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Input } from './PosUI';
 
-const dateValue = value => {
+export const dateValue = value => {
   const date = new Date(value);
   if (!value || !Number.isFinite(date.getTime())) return '';
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date).map(part => [part.type, part.value]));

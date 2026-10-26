@@ -1,3 +1,4 @@
+import {assertStockDelegation,initStockDelegation} from './stockDelegation.js';
 import { createHash, randomUUID } from 'node:crypto';
 
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
@@ -10,6 +11,7 @@ const nameOf = value => String(value || '').trim() || '미지정';
 // This is an additive, explicitly invoked migration. Ordinary POS requests must
 // never migrate an entire production account as a side effect of reading it.
 export async function initBoothFoundation(sql) {
+  await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
   await sql`CREATE TABLE IF NOT EXISTS pos_booths (
     id TEXT PRIMARY KEY, legacy_admin_id TEXT NOT NULL UNIQUE REFERENCES pos_admins(id),
     name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'collaborative' CHECK(kind IN ('collaborative','enterprise')),
@@ -70,7 +72,9 @@ async function available(sql, table) {
 
 // Fixed table names only; data from the caller is always parameterized.
 export async function legacySnapshot(sql, adminId) {
-  const projects = (await sql`SELECT * FROM pos_projects WHERE admin_id=${adminId} ORDER BY id`).rows;
+  // An additive nullable deletion marker must not look like a source-data
+  // mutation when an older schema is migrated. Non-null markers remain hashed.
+  const projects = (await sql`SELECT * FROM pos_projects WHERE admin_id=${adminId} ORDER BY id`).rows.map(row=>({...row,deleted_at:row.deleted_at??null}));
   const inventory = (await sql`SELECT * FROM pos_inventory WHERE admin_id=${adminId} ORDER BY id`).rows;
   const products = (await sql`SELECT p.* FROM pos_products p JOIN pos_projects e ON e.id=p.project_id WHERE e.admin_id=${adminId} ORDER BY p.project_id,p.id`).rows;
   const bundles = (await sql`SELECT p.* FROM pos_bundles p JOIN pos_projects e ON e.id=p.project_id WHERE e.admin_id=${adminId} ORDER BY p.project_id,p.id`).rows;
@@ -241,11 +245,11 @@ export async function productIdentity(sql,projectId,productId,boothId) {
 
 export async function decorateEventProducts(sql,adminId,projectId,products) {
   if(!await migratedBooth(sql,adminId)) return products;
-  const mappings=(await sql`SELECT i.product_id,i.owner_id,i.recipient_id,r.legacy_creator
-    FROM pos_event_product_identities i JOIN pos_recipients r ON r.id=i.recipient_id
+  const mappings=(await sql`SELECT i.product_id,i.owner_id,i.recipient_id,r.legacy_creator,o.display_name,p.linked_user_id,u.nickname
+    FROM pos_event_product_identities i JOIN pos_recipients r ON r.id=i.recipient_id JOIN pos_stock_owners o ON o.id=i.owner_id LEFT JOIN pos_artist_profiles p ON p.owner_id=i.owner_id LEFT JOIN pos_admins u ON u.id=p.linked_user_id AND u.deleted_at IS NULL
     WHERE i.project_id=${projectId}`).rows;
   return products.map(product=>{const row=mappings.find(m=>m.product_id===product.id);return row?{...product,
-    ownerId:row.owner_id,recipientId:row.recipient_id,settlementCreator:row.legacy_creator}:product;});
+    ownerId:row.owner_id,recipientId:row.recipient_id,settlementCreator:row.legacy_creator,eventCreator:row.display_name==='미지정'&&!row.linked_user_id?null:{ownerId:row.owner_id,name:row.display_name==='미지정'?(row.nickname||row.linked_user_id):row.display_name,linked:Boolean(row.linked_user_id)}}:product;});
 }
 
 const roles = {
@@ -280,7 +284,7 @@ export async function authorizeOwnerStock(sql,userId,ownerId,boothId) {
   }
   await authorizeBooth(sql,userId,boothId,'manage');
   const row=(await sql`SELECT owner_id FROM pos_booth_artists WHERE booth_id=${boothId} AND owner_id=${ownerId} AND status IN ('active','proxy') FOR UPDATE`).rows[0];
-  if(!row) fail('참여 작가의 재고가 아닙니다.',403);
+  if(!row) fail('참여 제작자의 재고가 아닙니다.',403);
 }
 
 export async function adjustOwnerStock(sql,userId,payload) {
@@ -295,6 +299,7 @@ export async function adjustOwnerStock(sql,userId,payload) {
   const booth=boothId?(await sql`SELECT legacy_admin_id FROM pos_booths WHERE id=${boothId}`).rows[0]:null;
   await sql`SELECT id FROM pos_admins WHERE id IN (${userId},${adminId},${booth?.legacy_admin_id || adminId}) ORDER BY id FOR UPDATE`;
   await authorizeOwnerStock(sql,userId,ownerId,boothId);
+  await initStockDelegation(sql);await assertStockDelegation(sql,userId,ownerId,boothId);
   const fingerprint=hash({actorId:userId,ownerId,inventoryId,boothId:boothId || null,version,totalStock,reason});
   const prior=(await sql`SELECT fingerprint,result FROM pos_owner_commands WHERE owner_id=${ownerId} AND request_id=${requestId}`).rows[0];
   if(prior){if(prior.fingerprint!==fingerprint)fail('같은 요청 ID의 내용이 다릅니다.');return prior.result;}
@@ -352,7 +357,7 @@ export async function authorizeOriginalProduct(sql,userId,adminId,inventoryId,bo
   if((await sql`SELECT owner_id FROM pos_owner_members WHERE owner_id=${row.owner_id} AND user_id=${userId}`).rows.length) return;
   const proxy=(await sql`SELECT owner_id FROM pos_booth_artists WHERE booth_id=${boothId} AND owner_id=${row.owner_id} AND status='proxy'`).rows.length;
   if(row.status==='unlinked' && row.origin_booth_id===boothId && proxy) return;
-  fail('작가 상품 정보의 수정 권한이 없습니다.',403);
+  fail('제작자 상품 정보의 수정 권한이 없습니다.',403);
 }
 
 export const legacyStockActions=['saveInventory','createEventProduct','importInventory','transferInventory','recordStockMovement'];
@@ -371,7 +376,9 @@ export async function guardLegacyStock(sql,userId,booth,action,payload,source) {
       || (payload.allocationPlan.allocations || []).some(row=>row.quantity>(before.allocations.find(a=>a.projectId===row.projectId && a.productId===row.productId)?.initial || 0))
       : Number(payload.product?.stock)!==Number(item.stock);
   }
-  if(needsActive) await authorizeOwnerStock(sql,userId,ref.owner_id,booth.id);
+  if(needsActive)await authorizeOwnerStock(sql,userId,ref.owner_id,booth.id);
+  const quantityWrite=needsActive||action==='transferInventory'||action==='recordStockMovement'||action==='saveInventory'&&Boolean(payload.allocationPlan);
+  if(quantityWrite){await initStockDelegation(sql);await assertStockDelegation(sql,userId,ref.owner_id,booth.id,!needsActive);}
 }
 
 export async function recordLegacyStockChanges(sql,userId,booth,action,before,after) {
@@ -493,13 +500,13 @@ export async function decorateSharedInventory(sql,adminId,items) {
 }
 
 export async function protectMigratedLifecycle(sql,adminId,action) {
-  if(!['deleteAccount','restoreAccount','deleteProject','clearSales'].includes(action)) return;
+  if(!['deleteAccount','restoreAccount','clearSales'].includes(action)) return;
   if(await migratedBooth(sql,adminId)) fail('부스 이력을 보존해야 하는 작업입니다. 부스 보관 또는 별도 데이터 복구 절차를 이용해주세요.');
-  if(await available(sql,'pos_shared_stock_items') && (await sql`SELECT id FROM pos_shared_stock_items WHERE admin_id=${adminId} LIMIT 1`).rows.length) fail('작가 공유 재고 이력을 보존해야 하는 작업입니다. 별도 복구 절차를 이용해주세요.');
+  if(await available(sql,'pos_shared_stock_items') && (await sql`SELECT id FROM pos_shared_stock_items WHERE admin_id=${adminId} LIMIT 1`).rows.length) fail('제작자 공유 재고 이력을 보존해야 하는 작업입니다. 별도 복구 절차를 이용해주세요.');
   if(action==='deleteAccount' && await available(sql,'pos_booths')) {
     const owner=(await sql`SELECT booth_id FROM pos_booth_members WHERE user_id=${adminId} AND role='owner' AND status='active'`).rows;
     const assets=(await sql`SELECT owner_id FROM pos_owner_members WHERE user_id=${adminId}`).rows;
-    if(owner.length || assets.length) fail('부스 소유권과 작가 자산을 정리한 뒤 탈퇴해주세요.');
+    if(owner.length || assets.length) fail('부스 소유권과 제작자 자산을 정리한 뒤 탈퇴해주세요.');
   }
 }
 
@@ -511,9 +518,15 @@ export async function lockSharedStockCustodians(sql,userId,boothId,projectId) {
   await sql`SELECT id FROM pos_admins WHERE id=ANY(${[userId,booth?.legacy_admin_id,...sources.map(s=>s.admin_id)].filter(Boolean)}::text[]) ORDER BY id FOR UPDATE`;
 }
 
-export async function guardSharedStockWrites(sql,adminId,req) {
-  if(req.method!=='POST'||!await available(sql,'pos_shared_stock_items'))return;
+export async function guardSharedStockWrites(sql,adminId,req,userId=adminId) {
+  if(req.method!=='POST')return;
   const action=req.body?.action,payload=req.body?.payload||{},projectId=req.body?.projectId||payload.projectId;
+  if(action==='deleteProject'&&await available(sql,'pos_inventory_owners')){
+    const owners=(await sql`SELECT DISTINCT o.owner_id,e.booth_id FROM pos_inventory_links l JOIN pos_inventory_owners o ON o.admin_id=l.admin_id AND o.inventory_id=l.inventory_id JOIN pos_event_booths e ON e.project_id=l.project_id JOIN pos_products p ON p.project_id=l.project_id AND p.id=l.product_id WHERE l.project_id=${projectId} AND COALESCE(p.stock_qty,p.stock)>0`).rows;
+    for(const owner of owners)await assertStockDelegation(sql,userId,owner.owner_id,owner.booth_id,true);
+    return;
+  }
+  if(!await available(sql,'pos_shared_stock_items'))return;
   if(['finalizeSale','voidSale'].includes(action)) {
     if(action==='voidSale')return;
     if((await sql`SELECT id FROM pos_sale_receipts WHERE project_id=${projectId} AND id=${payload.localOrderId||''}`).rows.length)return;
@@ -524,7 +537,7 @@ export async function guardSharedStockWrites(sql,adminId,req) {
     const ended=(await sql`SELECT i.product_id FROM pos_event_product_identities i JOIN pos_event_booths e ON e.project_id=i.project_id
       LEFT JOIN pos_booth_artists a ON a.booth_id=e.booth_id AND a.owner_id=i.owner_id
       WHERE i.project_id=${projectId} AND i.product_id=ANY(${productIds}::text[]) AND (a.status IS NULL OR a.status NOT IN ('active','proxy'))`).rows;
-    if(ended.length)fail('참여가 종료된 작가 상품은 새로 판매할 수 없습니다.',403);
+    if(ended.length)fail('참여가 종료된 제작자 상품은 새로 판매할 수 없습니다.',403);
     return;
   }
   if(!['saveInventory','transferInventory','saveEventProduct','removeInventory','recordStockMovement','replaceProducts','resetDefaults'].includes(action))return;
@@ -533,7 +546,7 @@ export async function guardSharedStockWrites(sql,adminId,req) {
     AND (${inventoryId||null}::text IS NULL OR s.inventory_id=${inventoryId||null}) LIMIT 1`).rows.length;
   const event=projectId&&(await sql`SELECT s.id FROM pos_shared_stock_items s JOIN pos_inventory_links l ON l.admin_id=s.admin_id AND l.inventory_id=s.inventory_id
     WHERE l.project_id=${projectId} AND (${payload.productId||null}::text IS NULL OR l.product_id=${payload.productId||null}) LIMIT 1`).rows.length;
-  if(source||event)fail('공유 재고는 작가 재고 화면에서 관리해주세요.');
+  if(source||event)fail('공유 재고는 제작자 재고 화면에서 관리해주세요.');
 }
 
 export function boothCapability(req) {

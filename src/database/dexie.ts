@@ -47,6 +47,11 @@ export class PosDatabase extends Dexie {
       orders: '++id, projectId, actorId, [projectId+syncStatus], [projectId+localOrderId], [actorId+projectId], localOrderId, createdAt, syncStatus, retryCount, lastSyncAt',
       posState: 'key, projectId, updatedAt',
     });
+    // Additive upgrade: existing sales, payloads and uncertain commands survive.
+    this.version(5).stores({
+      resources: 'key, actorId, scopeKey, updatedAt',
+      resourceCommands: '++sequence, &id, actorId, scopeKey, resourceKey, status',
+    });
   }
 }
 

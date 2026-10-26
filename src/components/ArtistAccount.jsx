@@ -14,6 +14,7 @@ export default function ArtistAccount({request,onCompatibility,mode='all'}) {
   const [code,setCode]=useState('');
   const [preview,setPreview]=useState(null);
   const [consent,setConsent]=useState(false);
+  const [allowOperatorStock,setAllowOperatorStock]=useState(true);
   const [issued,setIssued]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -36,34 +37,35 @@ export default function ArtistAccount({request,onCompatibility,mode='all'}) {
   const run=async work=>{if(busy)return;setBusy(true);setError('');try{await work();}catch(err){setError(err.message);}finally{setBusy(false);}};
   const operators=home?.booths.filter(b=>['owner','manager'].includes(b.role)) || [];
   return <section className="management-product">
-    <div className="management-product-header"><h2>작가·부스</h2></div>
+    <div className="management-product-header"><h2>제작자·부스</h2></div>
     <div className="account-card-body">
       {error && <p role="alert" className="inventory-error">{error}</p>}
       {home && <>
         {home.profiles.length>0 && <ul>{home.profiles.map(p=><li key={p.id}>{p.display_name}</li>)}</ul>}
         {mode!=='booth'&&!home.profiles.some(p=>!p.origin_booth_id) && <form className="account-form" onSubmit={e=>{e.preventDefault();run(async()=>{await post('createArtistProfile',{name:artistName});setArtistName('');await reload();});}}>
-          <label>작가명<Input required maxLength={80} value={artistName} onChange={setArtistName} disabled={busy}/></label>
-          <button className="management-add" disabled={busy}>내 작가 프로필 만들기</button>
+          <label>제작자명<Input required maxLength={80} value={artistName} onChange={setArtistName} disabled={busy}/></label>
+          <button className="management-add" disabled={busy}>내 제작자 프로필 만들기</button>
         </form>}
         {mode!=='profile'&&!home.booths.some(b=>b.role==='owner') && <form className="account-form" onSubmit={e=>{e.preventDefault();run(async()=>{await post('createFirstBooth',{name:boothName});setBoothName('');await reload();});}}>
           <label>부스명<Input required maxLength={80} value={boothName} onChange={setBoothName} disabled={busy}/></label>
           <button className="management-add" disabled={busy}>부스 만들기</button>
         </form>}
-        <form className="account-form" onSubmit={e=>{e.preventDefault();run(async()=>{setPreview(null);setConsent(false);const data=await post('previewArtistInvitation',{token:code.trim()});setPreview(data.invitation);});}}>
-          <label>작가 초대 코드<Input required value={code} maxLength={64} onChange={value=>{setCode(value);setPreview(null);setConsent(false);}} disabled={busy} autoComplete="off"/></label>
+        <form className="account-form" onSubmit={e=>{e.preventDefault();run(async()=>{setPreview(null);setConsent(false);const data=await post('previewArtistInvitation',{token:code.trim()});setPreview(data.invitation);setAllowOperatorStock(data.allowOperatorStock!==false);});}}>
+          <label>제작자 초대 코드<Input required value={code} maxLength={64} onChange={value=>{setCode(value);setPreview(null);setConsent(false);}} disabled={busy} autoComplete="off"/></label>
           <button className="management-add" disabled={busy}>연결 내용 확인</button>
         </form>
         {preview && <div className="account-form">
-          <dl className="account-details"><div><dt>부스</dt><dd>{preview.boothName}</dd></div><div><dt>작가</dt><dd>{preview.artistName}</dd></div><div><dt>초대 만료</dt><dd>{new Date(preview.expiresAt).toLocaleString('ko-KR')}</dd></div></dl>
-          {!preview.accepted && <><label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} disabled={busy}/>이 프로필을 내 계정에 연결하고, 참여 중인 부스 운영자와 내 총재고를 공동 관리하는 데 동의합니다.</label>
-            <button type="button" className="management-add" disabled={busy || !consent} onClick={()=>run(async()=>{await post('acceptArtistInvitation',{token:code.trim(),acceptSharedStock:consent});setCode('');setPreview(null);setConsent(false);await reload();})}>작가 연결 수락</button></>}
+          <dl className="account-details"><div><dt>부스</dt><dd>{preview.boothName}</dd></div><div><dt>제작자</dt><dd>{preview.artistName}</dd></div><div><dt>초대 만료</dt><dd>{new Date(preview.expiresAt).toLocaleString('ko-KR')}</dd></div></dl>
+          {!preview.accepted && <><label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} disabled={busy}/>이 제작자 프로필을 내 계정에 연결하는 데 동의합니다.</label>
+            <label className="stock-permission-checkbox"><input type="checkbox" checked={allowOperatorStock} disabled={busy} onChange={e=>setAllowOperatorStock(e.target.checked)}/>행사 운영자의 재고관리 허용</label>
+            <button type="button" className="management-add" disabled={busy || !consent} onClick={()=>run(async()=>{await post('acceptArtistInvitation',{token:code.trim(),acceptSharedStock:consent,allowOperatorStock});setCode('');setPreview(null);setConsent(false);await reload();})}>제작자 연결 수락</button></>}
         </div>}
         {mode!=='profile'&&operators.length>0 && <section>
-          <h3>참여 작가 초대</h3>
+          <h3>참여 제작자 초대</h3>
           <label>관리 부스<select value={boothId} disabled={busy} onChange={e=>setBoothId(e.target.value)}>{operators.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
           <form className="account-form" onSubmit={e=>{e.preventDefault();run(async()=>{await post('createBoothArtist',{boothId,name:proxyName});setProxyName('');await reload();});}}>
-            <label>참여 작가명<Input required value={proxyName} maxLength={80} onChange={setProxyName} disabled={busy}/></label>
-            <button className="management-add" disabled={busy}>미연동 작가 추가</button>
+            <label>참여 제작자명<Input required value={proxyName} maxLength={80} onChange={setProxyName} disabled={busy}/></label>
+            <button className="management-add" disabled={busy}>미연동 제작자 추가</button>
           </form>
           {participants?.profiles.map(p=><div key={p.id} className="management-fields"><span>{p.display_name} · {p.status==='linked'?'연결됨':'미연동'}</span>
             {p.status==='unlinked' && p.participation==='proxy' && p.display_name!=='미지정' && <button type="button" className="management-add" disabled={busy} onClick={()=>run(async()=>{setIssued(null);const data=await post('issueArtistInvitation',{boothId,profileId:p.id});setIssued({...data.invitation,artistName:p.display_name});await reload();})}>초대 코드 발급</button>}

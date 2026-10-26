@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import { validateAdminPassword } from './auth.js';
 import { foundationBackup, migratedBooth,protectMigratedLifecycle } from './boothFoundation.js';
 const fail = (message,status=400) => { throw Object.assign(new Error(message),{status}); };
-const tables = ['pos_projects','pos_inventory_numbers','pos_inventory','pos_products','pos_bundles','pos_sales','pos_sale_receipts','pos_inventory_links','pos_inventory_adjustments','pos_inventory_transfers','pos_stock_movements','pos_event_archives','pos_settlements','pos_settlement_commands','pos_event_settlements'];
-const owned = new Set(['pos_projects','pos_inventory_numbers','pos_inventory','pos_inventory_links','pos_inventory_adjustments','pos_inventory_transfers','pos_stock_movements','pos_settlements','pos_settlement_commands','pos_event_settlements']);
+const tables = ['pos_projects','pos_project_imports','pos_inventory_numbers','pos_inventory','pos_products','pos_bundles','pos_sales','pos_sale_receipts','pos_inventory_links','pos_inventory_adjustments','pos_inventory_transfers','pos_stock_movements','pos_event_archives','pos_settlements','pos_settlement_commands','pos_event_settlements'];
+const owned = new Set(['pos_projects','pos_project_imports','pos_inventory_numbers','pos_inventory','pos_inventory_links','pos_inventory_adjustments','pos_inventory_transfers','pos_stock_movements','pos_settlements','pos_settlement_commands','pos_event_settlements']);
 const signature = data => crypto.createHmac('sha256',process.env.AUTH_SECRET || process.env.ADMIN_PASSWORD || 'dev-pos-secret').update(JSON.stringify(data)).digest('hex');
 export async function accountSnapshot(sql,adminId,action,payload,checkPassword=validateAdminPassword) {
   await sql`SELECT id FROM pos_projects WHERE admin_id=${adminId} ORDER BY id FOR UPDATE`;
@@ -26,7 +26,7 @@ export async function accountSnapshot(sql,adminId,action,payload,checkPassword=v
   if(!await checkPassword(adminId,payload.password,sql)) fail('현재 비밀번호를 확인해주세요.',403);
   const {data,signature:provided}=payload.backup || {};
   if(!data || data.format!=='withbooth-account' || data.version!==1 || data.owner!==adminId || typeof provided!=='string' || provided!==signature(data) || Buffer.byteLength(JSON.stringify(data))>3*1024*1024 || !data.tables || Object.keys(data.tables).some(t=>!available.includes(t))) fail('현재 계정의 유효한 백업 파일이 아닙니다.');
-  for(const table of available) if(!Array.isArray(data.tables[table]) && !(['pos_settlements','pos_settlement_commands','pos_event_settlements'].includes(table) && data.tables[table]===undefined)) fail('백업 데이터가 누락되었습니다.');
+  for(const table of available) if(!Array.isArray(data.tables[table]) && !(['pos_project_imports','pos_settlements','pos_settlement_commands','pos_event_settlements'].includes(table) && data.tables[table]===undefined)) fail('백업 데이터가 누락되었습니다.');
   if(typeof payload.requestId!=='string' || !/^[a-f0-9-]{36}$/i.test(payload.requestId)) fail('복원 요청 ID가 필요합니다.');
   const prior=(await sql`SELECT fingerprint FROM pos_account_restores WHERE admin_id=${adminId} AND id=${payload.requestId}`).rows[0];
   if(prior) {if(prior.fingerprint!==provided)fail('복원 요청이 변경되었습니다.',409);return {restored:true};}

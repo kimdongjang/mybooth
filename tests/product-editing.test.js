@@ -9,6 +9,7 @@ async function harness(filename = 'components/ProductEditForm.jsx') {
   let index = 0, refIndex = 0, result = true, resolveSave;
   const context = vm.createContext({});
   const mocks = {
+    '../hooks/useUnsavedChanges': { useUnsavedChanges: () => () => {} },
     react: { useState: initial => { const i = index++; if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial; return [states[i], next => { states[i] = typeof next === 'function' ? next(states[i]) : next; }]; }, useRef: initial => refs[refIndex++] ||= { current: initial }, useId: () => 'test-input' },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     './PosUI': { Input: 'Input', Quantity: 'Quantity' }, './ProductValueInput': { default: 'ProductValueInput' },
@@ -176,4 +177,14 @@ test('shared event edits submit the baseline inventory version instead of silent
   h.props.product = { ...h.props.product, name: '다른 곳에서 수정', inventoryVersion: 9 };
   await h.render({ onSave }).props.onSubmit({ preventDefault() {} });
   assert.equal(calls[1], 4);
+});
+
+
+test('stock-only version updates preserve unsaved product fields and cancelled cross-form saves retain the draft',async()=>{
+ const h=await harness();h.props.product.inventoryVersion=1;let tree=h.render();
+ nodes(tree).find(n=>n.type==='Input'&&n.props.value==='직접 입력한 상품').props.onChange('상품 편집 중');
+ h.props.product={...h.props.product,inventoryVersion:2};
+ let before=false;await h.render({onBeforeSave:async()=>before}).props.onSubmit({preventDefault(){}});assert.equal(h.calls.length,0);
+ const calls=[];before=true;await h.render({onBeforeSave:async()=>before,onSave:async(patch,version)=>{calls.push({patch,version});return {inventoryVersion:3};}}).props.onSubmit({preventDefault(){}});
+ assert.equal(calls[0].version,2);assert.equal(calls[0].patch.name,'상품 편집 중');
 });

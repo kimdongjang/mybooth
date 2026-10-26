@@ -22,7 +22,10 @@ export async function otherDataFingerprints(db,adminId) {
     else if(table==='pos_event_archives') where="NOT (r.project_id IN (SELECT id FROM pos_projects WHERE admin_id=$1) OR COALESCE(r.snapshot->'project'->>'admin_id','')=$1)";
     else where='r.project_id IN (SELECT id FROM pos_projects WHERE admin_id<>$1)';
     // Table identifiers are a fixed local allowlist, never request/file content.
-    result[table]=(await db.query(`SELECT COUNT(*)::int AS count,md5(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),'[]'::jsonb)::text) AS fingerprint FROM ${table} r WHERE ${where}`,[adminId])).rows[0];
+    // Match legacySnapshot's nullable-column normalization without masking a
+    // real deletion marker (or any other account data change).
+    const row=table==='pos_projects'?"(to_jsonb(r)||jsonb_build_object('deleted_at',COALESCE(to_jsonb(r)->'deleted_at','null'::jsonb)))":'to_jsonb(r)';
+    result[table]=(await db.query(`SELECT COUNT(*)::int AS count,md5(COALESCE(jsonb_agg(${row} ORDER BY (${row})::text),'[]'::jsonb)::text) AS fingerprint FROM ${table} r WHERE ${where}`,[adminId])).rows[0];
   }
   if((await db.query("SELECT to_regclass('pos_meta') AS name")).rows[0].name) result.pos_meta=(await db.query("SELECT COUNT(*)::int AS count,md5(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),'[]'::jsonb)::text) AS fingerprint FROM pos_meta r")).rows[0];
   return result;

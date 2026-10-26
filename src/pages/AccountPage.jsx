@@ -1,3 +1,4 @@
+import StockManagementSettings from '../components/StockManagementSettings';
 import AccountBackup from '../components/AccountBackup';
 import ArtistAccount from '../components/ArtistAccount';
 import ContractRetirement from '../components/ContractRetirement';
@@ -45,6 +46,7 @@ export default function AccountPage({ adminId, request, logout, beforeDelete }) 
     <article className="management-product"><div className="management-product-header"><h2>계정 정보</h2><button type="button" className="management-back" disabled={busy} onClick={logout}>로그아웃</button></div><div className="account-card-body"><dl className="management-fields account-details"><div className="management-field"><dt>아이디</dt><dd>{adminId}</dd></div>{account && <div className="management-field"><dt>이메일</dt><dd>{account.email || '미등록'}</dd></div>}</dl>{account && <form onSubmit={save} className="account-form"><label className="management-field"><span>닉네임</span><Input required maxLength={30} value={nickname} onChange={setNickname} disabled={busy} /></label><button className="management-add" disabled={busy}>닉네임 저장</button></form>}
     </div></article>
     {account && <section className="management-product"><div className="management-product-header"><h2>이메일·비밀번호 변경</h2></div><form onSubmit={credentials} className="account-card-body account-form"><label>이메일<Input type="email" required value={email} onChange={setEmail} disabled={busy}/></label><label>현재 비밀번호<Input type="password" autoComplete="current-password" required value={currentPassword} onChange={setCurrentPassword} disabled={busy}/></label><label>새 비밀번호<Input type="password" autoComplete="new-password" minLength={6} maxLength={128} value={newPassword} onChange={setNewPassword} disabled={busy}/></label><label>새 비밀번호 확인<Input type="password" autoComplete="new-password" value={passwordConfirm} onChange={setPasswordConfirm} disabled={busy}/></label><button className="management-add" disabled={busy}>변경 저장</button></form></section>}
+    <StockManagementSettings request={request}/>
     <ArtistAccount mode="profile" key={adminId} request={request} onCompatibility={setArtistCompatibility} />
 
 

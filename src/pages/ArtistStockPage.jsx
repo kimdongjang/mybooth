@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useId,useRef,useState} from 'react';
 import {Input} from '../components/PosUI';
 
 function Schedule({event,busy,onSave}) {
@@ -11,9 +11,16 @@ function Schedule({event,busy,onSave}) {
   </form>;
 }
 
-export function StockItem({item,events,busy,onAdjust,onAllocate,onLoss,eventOnly=false,lossOnly=false}) {
+export function AllocationQuantity({item,event,allocation,busy,onAllocate}){
+ const initial=allocation?.initial||0,min=initial-(allocation?.remaining||0),max=initial+item.warehouse;
+ const [value,setValue]=useState(String(initial));
+ return <Input aria-label={`${event.name} 배정 수량`} type="number" min={min} max={max} step="1" required value={value} onChange={setValue} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}}} disabled={busy||!(event.operator||event.artistEditable)} onBlur={async e=>{if(!e.target.checkValidity()){e.target.reportValidity();setValue(String(initial));return;}if(Number(value)!==initial){try{const result=await onAllocate(item,{projectId:event.id,quantity:Number(value),price:allocation?.price??item.price});if(!result)setValue(String(initial));}catch{setValue(String(initial));}}}}/>;
+}
+
+export function StockItem({item,events,busy,onAdjust,onAllocate,onLoss,eventOnly=false,lossOnly=false,embedded=false}) {
   const [total,setTotal]=useState(String(item.totalStock));
-  const [reason,setReason]=useState('correction');
+  const totalFormId=useId();
+  const personal=!eventOnly&&!lossOnly;
   const [projectId,setProject]=useState(events[0]?.id||'');
   const allocation=item.allocations.find(a=>a.projectId===projectId);
   const [quantity,setQuantity]=useState(String(allocation?.initial||0));
@@ -23,28 +30,28 @@ export function StockItem({item,events,busy,onAdjust,onAllocate,onLoss,eventOnly
   const changeEvent=id=>{const next=item.allocations.find(a=>a.projectId===id);setProject(id);setQuantity(String(next?.initial||0));setPrice(String(next?.price??item.price));setFromProject('');setMoveQuantity('');};
   const event=events.find(e=>e.id===projectId);
   const editable=event&&(event.operator||event.artistEditable);
-  return <article className="management-product"><div className="management-product-header"><h2>{item.name}</h2></div><div className="account-card-body">
-    <dl className="account-details"><div><dt>관리 총재고</dt><dd>{item.totalStock}개</dd></div><div><dt>현재 잔량</dt><dd>{item.remaining}개</dd></div><div><dt>미배정</dt><dd>{item.warehouse}개</dd></div><div><dt>누적 입고</dt><dd>{item.totalReceived}개</dd></div></dl>
-    {!eventOnly&&!lossOnly&&<form className="account-form" onSubmit={e=>{e.preventDefault();onAdjust(item,{totalStock:Number(total),reason});}}>
-      <label>관리 총재고<Input type="number" min="0" step="1" required value={total} onChange={setTotal} disabled={busy}/></label>
-      <label>변경 사유<select value={reason} onChange={e=>setReason(e.target.value)} disabled={busy}><option value="correction">수량 정정</option><option value="receipt">입고</option></select></label>
-      <button className="management-add" disabled={busy}>총재고 저장</button>
+  const Container=embedded?'div':'article';
+  return <Container className={embedded?'event-inventory-controls event-stock-detail':`management-product${!eventOnly&&!lossOnly?' personal-stock-management':''}`} >{!embedded&&<div className="management-product-header"><h2>{!eventOnly&&!lossOnly?'행사별 재고 배정 관리':item.name}</h2>{personal&&<button type="submit" form={totalFormId} className="management-add" disabled={busy}>저장</button>}</div>}<div className={embedded?'event-stock-detail-body':'account-card-body'}>
+    {!eventOnly&&!personal&&<dl className="account-details"><div><dt>총재고</dt><dd>{item.totalStock}개</dd></div>{lossOnly&&<div><dt>현재 잔량</dt><dd>{item.remaining}개</dd></div>}<div><dt>미배정재고</dt><dd>{item.warehouse}개</dd></div>{lossOnly&&<div><dt>누적 입고</dt><dd>{item.totalReceived}개</dd></div>}</dl>}
+    {personal&&<form id={totalFormId} className="account-form personal-stock-total-form" onSubmit={e=>{e.preventDefault();onAdjust(item,{totalStock:Number(total),reason:Number(total)>item.totalStock?'receipt':'correction'});}}>
+      <label>총재고<Input type="number" min={item.minimumTotalStock??0} step="1" required value={total} onChange={setTotal} disabled={busy}/></label>
+      <div className="personal-stock-unallocated"><span>미배정재고</span><strong>{item.warehouse}개</strong></div>
     </form>}
-    {!lossOnly&&events.length>0&&<form className="account-form" onSubmit={e=>{e.preventDefault();onAllocate(item,{projectId,quantity:Number(quantity),price:Number(price),...(fromProjectId?{fromProjectId,moveQuantity:Number(moveQuantity)}:{})});}}>
-      <label>행사<select value={projectId} onChange={e=>changeEvent(e.target.value)} disabled={busy}>{events.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
-      {allocation&&<dl className="account-details"><div><dt>현재 배정</dt><dd>{allocation.initial}개</dd></div><div><dt>행사 잔량</dt><dd>{allocation.remaining}개</dd></div><div><dt>판매</dt><dd>{allocation.sold}개</dd></div></dl>}
-      <label>행사 배정 수량<Input type="number" min="0" step="1" required value={quantity} onChange={setQuantity} disabled={busy||!editable}/></label>
-      <label>가져올 위치<select value={fromProjectId} onChange={e=>setFromProject(e.target.value)} disabled={busy||!editable}><option value="">미배정 재고</option>{events.filter(e=>e.id!==projectId&&(e.operator||e.artistEditable)&&item.allocations.some(a=>a.projectId===e.id&&a.remaining>0)).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+    {!lossOnly&&events.length>0&&<form className="account-form personal-stock-allocation-form" onSubmit={e=>{e.preventDefault();if(personal)return;onAllocate(item,{projectId,quantity:Number(quantity),price:Number(price),...(fromProjectId?{fromProjectId,moveQuantity:Number(moveQuantity)}:{})});}}>
+      {eventOnly?<><div className="inventory-allocation-heading"><h4>행사 배정 재고 관리</h4></div><div className="management-table-wrap"><table className="management-table inventory-allocation-table"><thead><tr><th scope="col">행사</th><th scope="col">행사 배정 수량</th><th scope="col">판매 수량</th><th scope="col">남은 수량</th></tr></thead><tbody><tr><td>{event?.name}</td><td><Input aria-label={`${event?.name} 배정 수량`} type="number" min="0" step="1" required value={quantity} onChange={setQuantity} disabled={busy||!editable}/></td><td>{allocation?.sold||0}개</td><td>{allocation?.remaining||0}개</td></tr></tbody></table></div></>:<>
+      <div className="management-table-wrap"><table className="management-table inventory-allocation-table personal-allocation-table"><thead><tr><th scope="col">행사</th><th scope="col">행사 배정 수량</th><th scope="col">판매 수량</th><th scope="col">남은 수량</th></tr></thead><tbody>{events.map(row=>{const assigned=item.allocations.find(a=>a.projectId===row.id);return <tr key={row.id}><td><a className="management-name-link" href={`#/products?projectId=${encodeURIComponent(row.id)}`}>{row.name}</a>{row.archived_at&&<span className="management-note"> (보관)</span>}</td><td className="mono"><AllocationQuantity key={`${row.id}:${item.version}`} item={item} event={row} allocation={assigned} busy={busy} onAllocate={onAllocate}/></td><td className="mono">{assigned?.sold||0}개</td><td className="mono">{assigned?.remaining||0}개</td></tr>;})}</tbody></table></div>
+            </>}
+      {eventOnly&&<><label>가져올 위치<select value={fromProjectId} onChange={e=>setFromProject(e.target.value)} disabled={busy||!editable}><option value="">미배정 재고</option>{events.filter(e=>e.id!==projectId&&(e.operator||e.artistEditable)&&item.allocations.some(a=>a.projectId===e.id&&a.remaining>0)).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
       {fromProjectId&&<label>행사 간 이동 수량<Input type="number" min="1" step="1" required value={moveQuantity} onChange={value=>{setMoveQuantity(value);setQuantity(String((allocation?.initial||0)+Number(value)));}} disabled={busy||!editable}/></label>}
       <label>행사 판매가<Input type="number" min="0" step="1" required value={price} onChange={setPrice} disabled={busy||!editable}/></label>
-      <button className="management-add" disabled={busy||!editable}>행사 재고 저장</button>
+      <button className="management-add" disabled={busy||!editable}>행사 재고 저장</button></>}
     </form>}
-    <form className="account-form" onSubmit={e=>{e.preventDefault();onLoss(item,{quantity:Number(lossQuantity),reason:lossReason,...(lossProject?{projectId:lossProject}:{})});}}>
+    {(lossOnly||eventOnly)&&<form className="account-form" onSubmit={e=>{e.preventDefault();onLoss(item,{quantity:Number(lossQuantity),reason:lossReason,...(lossProject?{projectId:lossProject}:{})});}}>
       <label>차감 위치<select value={lossProject} onChange={e=>setLossProject(e.target.value)} disabled={busy}>{!eventOnly&&<option value="">미배정 재고</option>}{events.filter(e=>e.operator||e.artistEditable).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
       <label>차감 사유<select value={lossReason} onChange={e=>setLossReason(e.target.value)} disabled={busy}><option value="damage">파손</option><option value="loss">분실</option>{!lossProject&&<option value="external">외부 판매</option>}</select></label>
       <label>차감 수량<Input type="number" min="1" step="1" required value={lossQuantity} onChange={setLossQuantity} disabled={busy}/></label><button className="management-add" disabled={busy||(eventOnly&&!events.some(e=>e.id===lossProject&&(e.operator||e.artistEditable)))}>차감 기록</button>
-    </form>
-  </div></article>;
+    </form>}
+  </div></Container>;
 }
 
 export default function ArtistStockPage({request,initialProjectId}) {
@@ -81,10 +88,10 @@ export default function ArtistStockPage({request,initialProjectId}) {
   };
   const send=(action,details)=>execute({action,scope:{...scope},payload:{ownerId:scope.ownerId,...(scope.boothId?{boothId:scope.boothId}:{}),...details,requestId:crypto.randomUUID()}});
   const disabled=busy||Boolean(pending);
-  return <main className="page-content inventory-page account-page"><header className="inventory-page-header"><h1>작가 재고</h1></header><section className="product-management account-content">
+  return <main className="page-content inventory-page account-page"><header className="inventory-page-header"><h1>제작자 재고</h1></header><section className="product-management account-content">
     {error&&<p role="alert" className="inventory-error">{error}</p>}
     {pending&&!busy&&<button className="management-add" onClick={()=>execute(pending)}>같은 요청 다시 확인</button>}
-    <label>관리 작가<select value={selection} onChange={e=>{setSelection(e.target.value);setError('');}} disabled={disabled}>{options.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}</select></label>
+    <label>관리 제작자<select value={selection} onChange={e=>{setSelection(e.target.value);setError('');}} disabled={disabled}>{options.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}</select></label>
     {scope&&data&&<>
       {scope.boothId&&<label>부스 참여 코드<Input value={scope.boothId} readOnly/></label>}
       {!scope.boothId&&<form className="account-form" onSubmit={e=>{e.preventDefault();send('joinArtistBooth',{boothId:joinCode.trim()});}}><label>참여할 부스 코드<Input required value={joinCode} onChange={setJoinCode} disabled={disabled}/></label><button className="management-add" disabled={disabled}>부스 참여</button></form>}
