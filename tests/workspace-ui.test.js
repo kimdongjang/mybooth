@@ -400,7 +400,7 @@ test('personal sales search submits and resets; table sorts numeric amounts in b
 
 test('dashboard has a detailed focus and chronological upcoming list',async()=>{
  const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
- const props={data:{events:[],inventory:[],stockEvents:[]},events:[
+ const props={pinnedProjectId:'now',data:{events:[],inventory:[],stockEvents:[]},events:[
   {id:'later',name:'나중 행사',venue:'벡스코',startsOn:'2099-12-05',endsOn:'2099-12-06',permissions:{canViewPos:true}},
   {id:'now',name:'현재 행사',venue:'킨텍스',startsOn:'2020-01-01',endsOn:'2090-12-31',permissions:{canSell:true}},
   {id:'earlier',name:'먼저 행사',venue:'세텍',startsOn:'2099-01-05',endsOn:'2099-01-06',permissions:{canViewPos:true}}
@@ -440,16 +440,16 @@ test('event list puts the nearest upcoming event first without changing the sour
 });
 
 
-test('dashboard switches live focus without changing event links and limits upcoming rows to three',async()=>{
+test('dashboard follows event selection without automatic switching and limits upcoming rows to three',async()=>{
  const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:()=> '2026-10-27'}});
  const permissions={canManage:true,canSell:true,canConfigure:true,canSettle:true};
  const active=(id,last)=>({id,name:id,startsOn:'2026-10-26',endsOn:'2026-10-28',permissions,summary:{total:1000,sales:1,products:1,initialStock:10,remainingStock:9,artistCount:1,lastSaleAt:last}});
- const props={data:{events:[],inventory:[]},events:[active('old','2026-10-26'),active('new','2026-10-27'),...[1,2,3,4].map(day=>({id:`future${day}`,name:`미래${day}`,startsOn:`2026-11-0${day}`,endsOn:`2026-11-0${day}`,permissions})),{id:'unknown',name:'일정 미정 행사',permissions}]};
+ const props={pinnedProjectId:'new',data:{events:[],inventory:[]},events:[active('old','2026-10-26'),active('new','2026-10-27'),...[1,2,3,4].map(day=>({id:`future${day}`,name:`미래${day}`,startsOn:`2026-11-0${day}`,endsOn:`2026-11-0${day}`,permissions})),{id:'unknown',name:'일정 미정 행사',permissions}]};
  let tree=h.render(props);
  const focus=()=>tree.find(n=>n.props.className==='dashboard-card home-focus');
  assert.equal(nodes(focus()).find(n=>n.type==='h3').props.children,'new');
  assert.ok(nodes(focus()).some(n=>n.type==='a'&&n.props.href==='#/sales?projectId=new'));
- tree.find(n=>n.type==='button'&&n.props['aria-label']==='다음 행사').props.onClick();tree=h.render(props);
+ props.pinnedProjectId='old';tree=h.render(props);
  assert.equal(nodes(focus()).find(n=>n.type==='h3').props.children,'old');
  assert.ok(nodes(focus()).some(n=>n.type==='a'&&n.props.href==='#/sales?projectId=old'));
  let future=tree.find(n=>n.props.className==='home-upcoming-rows');assert.equal(nodes(future).filter(n=>n.type==='li').length,3);
@@ -457,6 +457,7 @@ test('dashboard switches live focus without changing event links and limits upco
  future=tree.find(n=>n.props.className==='home-upcoming-rows');assert.equal(nodes(future).filter(n=>n.type==='li').length,5);
  assert.equal(nodes(future).filter(n=>n.type==='h3').at(-1).props.children,'일정 미정 행사');
 });
+
 
 test('unlinked role changes save immediately and account linking searches accounts without role controls',async()=>{
  const calls=[];let linked=false,role=null,version=0;
@@ -541,10 +542,91 @@ test('event menu pins and unpins for viewers without exposing management actions
 });
 
 
-test('dashboard displays pinned unknown event with a pin title icon and its own links',async()=>{
+test('dashboard displays pinned unknown event with a gold star title button and its own links',async()=>{
  const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
  const tree=h.render({data:{events:[],inventory:[]},events:[{id:'pin',name:'고정 행사',permissions:{canViewPos:true}}],pinnedProjectId:'pin'});
  assert.equal(tree.find(n=>n.type==='h3').props.children,'고정 행사');
- assert.ok(tree.some(n=>n.type==='Icon'&&n.props.name==='pin'));
+ assert.ok(tree.some(n=>n.type==='Icon'&&n.props.name==='star'));
  assert.ok(tree.some(n=>n.type==='a'&&n.props.href==='#/sales?projectId=pin'));
+});
+
+test('dashboard clears the selected event on unpin and offers a focus picker button',async()=>{
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:()=> '2026-10-27'}});
+ const props={data:{events:[],inventory:[]},events:[{id:'live',name:'진행 행사',startsOn:'2026-10-26',endsOn:'2026-10-28',permissions:{canSell:true}}],pinnedProjectId:'live'};
+ let tree=h.render(props);
+ const panel=()=>nodes(tree.find(n=>n.props.className==='dashboard-card home-focus'));
+ assert.equal(panel().find(n=>n.type==='h3').props.children,'진행 행사');
+ props.pinnedProjectId='';tree=h.render(props);
+ assert.equal(panel().some(n=>n.type==='h3'),false);
+ assert.ok(panel().some(n=>n.type==='p'&&n.props.children==='집중할 행사를 선택해주세요'));
+ assert.ok(panel().some(n=>n.type==='button'&&n.props.children==='+'&&n.props['aria-haspopup']==='dialog'&&n.props['aria-label']==='집중할 행사 선택'));
+ props.pinnedProjectId='live';tree=h.render(props);
+ assert.equal(panel().find(n=>n.type==='h3').props.children,'진행 행사');
+ props.events=[];tree=h.render(props);
+ assert.ok(panel().some(n=>n.type==='p'&&n.props.children==='집중할 행사를 선택해주세요'));
+});
+
+test('dashboard picker pins visible events of every schedule without navigating or selecting a sales event',async()=>{
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:()=> '2026-10-27'}});
+ const calls=[],modal=[];
+ const props={data:{events:[{projectId:'history-only',eventName:'과거 귀속만 있는 행사',rows:[],sales:[]}],inventory:[]},events:[
+  {id:'past',name:'종료 행사',startsOn:'2020-01-01',endsOn:'2020-01-02',permissions:{canViewPos:true}},
+  {id:'unknown',name:'일정 없는 행사',permissions:{canViewPos:true}},
+  {id:'next',name:'예정 행사',startsOn:'2099-01-01',endsOn:'2099-01-02',permissions:{canViewPos:true}},
+  {id:'live',name:'진행 행사',startsOn:'2020-01-01',endsOn:'2090-01-01',permissions:{canSell:true}},
+ ],onPinProject:id=>{calls.push(id);props.pinnedProjectId=id;return true;}};
+ let tree=h.render(props);
+ const dialog=()=>tree.find(n=>n.type==='dialog');
+ dialog().props.ref.current={showModal:()=>modal.push('open'),close:()=>modal.push('close')};
+ await h.flush();
+ assert.equal(nodes(dialog()).some(n=>n.props.children==='과거 귀속만 있는 행사'),false);
+ assert.deepEqual(nodes(dialog()).filter(n=>n.type==='strong').map(n=>n.props.children),['예정 행사','진행 행사','일정 없는 행사','종료 행사']);
+ for(const [i,name] of ['진행 행사','예정 행사','일정 없는 행사','종료 행사'].entries()){
+  tree.find(n=>n.type==='button'&&(i===0?n.props['aria-label']==='집중할 행사 선택':n.props.className==='home-focus-picker-trigger')).props.onClick();
+  tree=h.render(props);await h.flush();assert.equal(modal.at(-1),'open');
+  nodes(dialog()).find(n=>n.type==='button'&&nodes(n).some(child=>child.type==='strong'&&child.props.children===name)).props.onClick();
+  tree=h.render(props);await h.flush();assert.equal(modal.at(-1),'close');
+  const panel=tree.find(n=>n.props.className==='dashboard-card home-focus');
+  assert.equal(nodes(panel).find(n=>n.type==='h3').props.children,name);
+  assert.equal(nodes(dialog()).filter(n=>n.type==='button'&&n.props['aria-pressed']===true).length,1);
+ }
+ assert.deepEqual(calls,['live','next','unknown','past']);
+ assert.deepEqual(props.events.map(row=>row.id),['past','unknown','next','live']);
+});
+
+test('dashboard picker preserves the pin on storage failure, close and Escape and excludes removed events',async()=>{
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'}});
+ const calls=[],modal=[];
+ const props={pinnedProjectId:'kept',data:{events:[],inventory:[]},events:[{id:'kept',name:'기존 행사'},{id:'other',name:'다른 행사'}],onPinProject:id=>{calls.push(id);return false;}};
+ let tree=h.render(props);const dialog=()=>tree.find(n=>n.type==='dialog');
+ dialog().props.ref.current={showModal:()=>modal.push('open'),close:()=>modal.push('close')};await h.flush();
+ const open=async()=>{tree.find(n=>n.props.className==='home-focus-picker-trigger').props.onClick();tree=h.render(props);await h.flush();};
+ await open();
+ const other=nodes(dialog()).find(n=>n.type==='button'&&nodes(n).some(child=>child.type==='strong'&&child.props.children==='다른 행사'));
+ other.props.onClick();tree=h.render(props);await h.flush();
+ assert.equal(modal.at(-1),'open');assert.ok(nodes(dialog()).some(n=>n.props.role==='alert'));assert.equal(props.pinnedProjectId,'kept');
+ nodes(dialog()).find(n=>n.type==='button'&&n.props.children==='닫기').props.onClick();tree=h.render(props);await h.flush();assert.equal(modal.at(-1),'close');
+ await open();dialog().props.onCancel();tree=h.render(props);await h.flush();assert.equal(modal.at(-1),'close');assert.deepEqual(calls,['other']);
+ props.events=props.events.filter(event=>event.id!=='other');tree=h.render(props);
+ assert.equal(nodes(dialog()).some(n=>n.type==='strong'&&n.props.children==='다른 행사'),false);assert.deepEqual(calls,['other']);
+ props.events=[];tree=h.render(props);assert.equal(tree.find(n=>n.props.className==='home-focus-picker-trigger').props.disabled,true);
+ assert.equal(nodes(dialog()).some(n=>n.type==='li'),false);
+});
+
+test('overview passes the account focus callback to the dashboard',async()=>{
+ const h=await harness('pages/PersonalOverview.jsx'),calls=[];
+ const tree=h.render({dashboard:true,pinnedProjectId:'mine',onPinProject:id=>calls.push(id),request:async()=>({events:[]})});
+ const dashboard=tree.find(n=>n.type==='PersonalDashboard');
+ dashboard.props.onPinProject('chosen');assert.deepEqual(calls,['chosen']);assert.equal(dashboard.props.pinnedProjectId,'mine');
+});
+
+test('event picker keeps focused and selected markers inside their calendar sections without duplicating cards',async()=>{
+ const h=await harness('pages/ProjectsPage.jsx');
+ const projects=[{id:'future',name:'예정',startsOn:'2099-01-01',endsOn:'2099-01-02'},{id:'live',name:'진행',startsOn:'2020-01-01',endsOn:'2090-01-01'},{id:'unknown',name:'미설정'},{id:'past',name:'종료',startsOn:'2020-01-01',endsOn:'2020-01-02'}];
+ const selected=[];const tree=h.render({projects,pinnedProjectId:'future',selectedProject:projects[0],onSelectProject:project=>selected.push(project.id)});
+ const sections=tree.filter(n=>n.type==='section'&&n.props.className?.startsWith('event-picker-group '));
+ assert.deepEqual(sections.map(n=>n.props['aria-labelledby']),['event-group-active','event-group-upcoming','event-group-unscheduled','event-group-past']);
+ assert.equal(tree.filter(n=>n.type==='article').length,4);
+ const upcoming=nodes(sections[1]);assert.ok(upcoming.some(n=>n.props.className==='event-picker-focus-label'));assert.ok(upcoming.some(n=>n.props.className==='event-picker-selected-label'));
+ upcoming.find(n=>n.type==='button'&&n.props.className==='event-picker-card').props.onClick();assert.deepEqual(selected,['future']);
 });

@@ -1,5 +1,6 @@
 import Icon from './Icon';
-import {useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
+import {eventSchedule,sortEventsBySchedule} from '../utils/eventSchedule';
 import {won} from '../utils/productDisplay';
 import {koreanDay} from '../utils/revenueSummary';
 import {dashboardEvents,dashboardFocus,dashboardAlerts} from '../utils/personalDashboard';
@@ -21,16 +22,25 @@ function Preparation({event,warehouse,compact=false}) {
  return <div className={compact?'home-preparation is-compact':'home-preparation'} aria-label={`${event.name} 준비 상태`}>{values.map(([label,value,unit])=><span key={label} className={Number(value)===0?'needs-attention':''}>{label} <strong>{won(value)}{unit}</strong>{Number(value)===0&&<span aria-label="확인 필요"> ⚠</span>}</span>)}{!compact&&warehouse>0&&metrics.allocated===0&&<p>미배정 재고 {won(warehouse)}개 · 이 행사에 배정된 재고가 없습니다.</p>}</div>;
 }
 
-export default function PersonalDashboard({pinnedProjectId='',data,error,events=[]}) {
+export default function PersonalDashboard({pinnedProjectId='',onPinProject,data,error,events=[]}) {
  const [period,setPeriod]=useState('all'),[start,setStart]=useState(''),[end,setEnd]=useState('');
- const [selected,setSelected]=useState(null),[expanded,setExpanded]=useState(false);
+ const [expanded,setExpanded]=useState(false);
+ const [choosingFocus,setChoosingFocus]=useState(false),[focusError,setFocusError]=useState('');
+ const focusDialog=useRef(null);
+ useEffect(()=>{if(choosingFocus)focusDialog.current?.showModal();else focusDialog.current?.close();},[choosingFocus]);
+ const openFocusPicker=()=>{setFocusError('');setChoosingFocus(true);};
+ const chooseFocus=id=>{
+  if(!events.some(event=>event.id===id)||!onPinProject)return;
+  if(onPinProject(id)===false){setFocusError('집중 행사 설정을 저장하지 못했습니다. 다시 선택해주세요.');return;}
+  setChoosingFocus(false);
+ };
  const today=koreanDay(new Date()),inventory=data?.inventory||[],history=data?.events||[];
  const settlements=history.flatMap(event=>(event.rows||[]).map(row=>({...row,event}))),confirmed=settlements.filter(row=>row.event.closedAt);
  const pending=sum(confirmed,'pending'),paid=sum(settlements,'paid'),warehouse=sum(inventory,'warehouse'),remaining=sum(inventory,'remaining');
  const sold=inventory.reduce((total,item)=>total+Number(item.stockSummary?.sold||0),0),eventRemaining=inventory.reduce((total,item)=>total+Number(item.stockSummary?.eventRemaining||0),0),other=inventory.reduce((total,item)=>total+Number(item.stockSummary?.other||0),0);
  const portions=[['sold','행사 판매',sold],['remaining','행사 잔여',eventRemaining],['warehouse','미배정',warehouse],...(other>0?[['other','기타 차감',other]]:[])],stockTotal=portions.reduce((total,[,,value])=>total+value,0);
  const cards=dashboardEvents(data,events,today),groups=dashboardFocus(cards,pinnedProjectId);
- const focus=groups.choices.find(event=>event.id===selected)||groups.choices[0],focusIndex=groups.choices.indexOf(focus);
+ const focus=groups.choices.find(event=>event.id===pinnedProjectId&&events.some(project=>project.id===event.id));
  const future=[...groups.upcoming,...groups.unknown].filter(event=>event.id!==focus?.id),visibleFuture=expanded?future:future.slice(0,3),past=groups.ended.filter(event=>event.id!==focus?.id);
  const alerts=dashboardAlerts(cards,warehouse).map(alert=>({
   ...alert,href:alert.type==='allocation'||alert.type==='recovery'?'#/inventory':settlementLink(alert.event.id),
@@ -51,7 +61,7 @@ export default function PersonalDashboard({pinnedProjectId='',data,error,events=
   {data&&<>
    {alerts.length>0&&<section className="home-alert-strip" aria-labelledby="home-alert-title"><h2 id="home-alert-title">지금 확인할 것</h2>{alerts.map(alert=><a key={alert.key} href={alert.href} className={alert.type==='negative'?'home-settlement-info':undefined}>{alert.text} →</a>)}</section>}
    <section className="dashboard-card home-focus" aria-labelledby="home-focus-title">
-    <div className="home-section-heading"><h2 id="home-focus-title" className="home-focus-title"><Icon name="pin"/>지금 집중할 행사</h2>{groups.choices.length>1&&<div className="home-focus-switch" role="group" aria-label="진행 중 행사 전환"><button type="button" className="management-back" aria-label="이전 행사" onClick={()=>setSelected(groups.choices[(focusIndex-1+groups.choices.length)%groups.choices.length].id)}>←</button><span aria-live="polite">{focusIndex+1}/{groups.choices.length}</span><button type="button" className="management-back" aria-label="다음 행사" onClick={()=>setSelected(groups.choices[(focusIndex+1)%groups.choices.length].id)}>→</button></div>}</div>
+    <div className="home-section-heading"><h2 id="home-focus-title" className="home-focus-title"><button type="button" className="home-focus-picker-trigger" aria-haspopup="dialog" aria-controls="home-focus-picker" onClick={openFocusPicker} disabled={!onPinProject||!events.length}><Icon name="star"/>지금 집중할 행사<span aria-hidden="true">⌄</span></button></h2></div>
     {focus?<>
      <header className="home-focus-heading"><div><h3>{focus.name}</h3><span className={`inventory-event-status is-${focus.status}`}>{statusOf(focus)}</span></div><span className="home-role">{roleOf(focus.p)}</span></header>
      <p className="home-focus-context">{focus.boothName&&<span>{focus.boothName}</span>}<span>{periodOf(focus)}</span>{focus.dayLabel&&<strong>{focus.dayLabel}</strong>}</p>{focus.venue&&<p className="home-event-venue">{focus.venue}</p>}
@@ -65,8 +75,13 @@ export default function PersonalDashboard({pinnedProjectId='',data,error,events=
      {focus.waiting>0&&<a className="home-focus-warning" href={eventLink(focus,'sales')}>⚠ 이 기기 미동기화 거래 {won(focus.waiting)}건 →</a>}
      {focus.status==='ended'&&<div className="home-ended-summary">{focus.canReport&&<span className={!focus.closed&&focus.operator?'home-focus-warning':undefined}>{focus.closed?'정산 마감 완료':focus.operator?'정산 마감 필요':'정산 미마감'}</span>}{stock?.remaining>0&&<span>회수 확인 {won(stock.remaining)}개</span>}{focus.paid!=null&&<span>{focus.netScope==='own'?'내 ':''}지급 완료 {amount(focus.paid)}</span>}{focus.pending!=null&&<span>{focus.closed?'남은 정산':'예상 정산 대기'} {amount(focus.pending)}</span>}</div>}
      <footer className="home-focus-actions">{primary&&<a className="management-add" href={primary.href}>{primary.label} →</a>}{canAllocate&&<a className="management-back" href={allocationHref}>{focus.status==='ended'?'잔여 재고 회수':'재고 배정'}</a>}{focus.canReport&&primary?.href!==settlementLink(focus.id)&&<a className="management-back" href={settlementLink(focus.id)}>정산</a>}</footer>
-    </>:<a className="management-back" href="#/projects">행사 선택 →</a>}
+    </>:<div className="home-focus-empty"><p>집중할 행사를 선택해주세요</p><button type="button" className="home-focus-add" aria-label="집중할 행사 선택" aria-haspopup="dialog" aria-controls="home-focus-picker" onClick={openFocusPicker} disabled={!onPinProject||!events.length}>+</button></div>}
    </section>
+   <dialog ref={focusDialog} id="home-focus-picker" className="app-confirm-dialog home-focus-picker" aria-labelledby="home-focus-picker-title" onCancel={()=>setChoosingFocus(false)} onClose={()=>setChoosingFocus(false)}>
+    <header><h2 id="home-focus-picker-title">집중할 행사 선택</h2><button type="button" className="management-back" onClick={()=>setChoosingFocus(false)}>닫기</button></header>
+    {focusError&&<p role="alert" className="inventory-error">{focusError}</p>}
+    <ul>{sortEventsBySchedule(events).map(project=>{const schedule=eventSchedule(project);return <li key={project.id}><button type="button" aria-pressed={pinnedProjectId===project.id} onClick={()=>chooseFocus(project.id)}><span className="home-focus-picker-name">{pinnedProjectId===project.id&&<Icon name="star"/>}<strong>{project.name}</strong></span><span className="home-focus-picker-meta"><span className={`inventory-event-status is-${schedule.status}`}>{schedule.label}</span>{schedule.period&&<span>{schedule.period}</span>}{project.boothName&&<span>{project.boothName}</span>}</span></button></li>;})}</ul>
+   </dialog>
    <section className="dashboard-card home-upcoming" aria-labelledby="home-upcoming-title"><div className="home-section-heading"><h2 id="home-upcoming-title">예정된 행사</h2><span>{future.length}개</span></div>
     {future.length?<><ol id="home-future-list" className="home-upcoming-rows">{visibleFuture.map(event=><li key={event.id}><a href={futureHref(event)}><div className="home-upcoming-name"><h3>{event.name}</h3><strong>{event.status==='upcoming'?event.dayLabel:'일정 미정'}</strong></div><p className="home-upcoming-meta">{[event.boothName,periodOf(event),roleOf(event.p)].filter(Boolean).join(' · ')}</p>{event.venue&&<p className="home-event-venue">{event.venue}</p>}<Preparation event={event} warehouse={warehouse} compact/></a></li>)}</ol>{future.length>3&&<button type="button" className="management-back home-upcoming-toggle" aria-expanded={expanded} aria-controls="home-future-list" onClick={()=>setExpanded(value=>!value)}>{expanded?'접기':`전체 보기 (${future.length})`}</button>}</>:<p className="home-upcoming-empty">{focus?.status==='upcoming'?'다음 예정 행사가 없어요. 새 행사를 만들어 보세요.':'예정된 행사가 없어요. 새 행사를 만들어 보세요.'}</p>}
     <footer className="home-upcoming-actions"><a className="management-back" href="#/projects/new">+ 새 행사</a></footer>

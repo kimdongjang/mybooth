@@ -70,10 +70,11 @@ export default function App() {
   try { savedPin=adminId?localStorage.getItem(pinKey)||'':''; } catch {}
   const pinnedProjectId=Object.hasOwn(dashboardPins,adminId)?dashboardPins[adminId]:savedPin;
   const pinDashboardProject=id=>{
-    if(!adminId||(id&&!projects.some(project=>project.id===id)))return;
+    if(!adminId||(id&&!projects.some(project=>project.id===id)))return false;
     try { if(id)localStorage.setItem(pinKey,id);else localStorage.removeItem(pinKey); }
-    catch { setError('집중 행사 설정을 저장하지 못했습니다.');return; }
+    catch { setError('집중 행사 설정을 저장하지 못했습니다.');return false; }
     setDashboardPins(previous=>({...previous,[adminId]:id}));
+    return true;
   };
   const [workspace,setWorkspace]=useState({profiles:[],booths:[],events:[]});
   const [selectedProject, setSelectedProject] = useState(null);
@@ -761,7 +762,7 @@ export default function App() {
     {readOnly && !['inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">{selectedProject?.settlementClosedAt?'정산 마감 · 읽기 전용입니다.':'보관된 행사 · 읽기 전용입니다.'} <button type="button" className="event-text-link" onClick={() => setScreen(selectedProject?.settlementClosedAt?'log':'projectArchive')}>{selectedProject?.settlementClosedAt?'정산 마감 관리 →':'비밀번호로 보관 해제 →'}</button></div>}
     {loading || projectLoading || (linkedProjectId && selectedProject?.id !== linkedProjectId) || (selectedProject && readyScope !== scope && !error) ? <main className="page-content"><LoadingState /></main> : <>
 
-    {screen === 'dashboard' && <PersonalOverview key={adminId} request={requestJson} dashboard pinnedProjectId={pinnedProjectId} events={projects} readWaitingOrders={readDashboardWaiting} />}
+    {screen === 'dashboard' && <PersonalOverview key={adminId} request={requestJson} dashboard pinnedProjectId={pinnedProjectId} onPinProject={pinDashboardProject} events={projects} readWaitingOrders={readDashboardWaiting} />}
     {screen === 'revenue' && <PersonalOverview key={adminId} request={requestJson} />}
     {screen === 'inventory' && <PersonalInventory key={adminId} request={sharedStockRequest} routeHash={routeHash} navigate={setScreen} />}
     {screen === 'artistStock' && <ArtistStockPage key={adminId} request={sharedStockRequest} initialProjectId={selectedProject?.id} />}
