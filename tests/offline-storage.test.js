@@ -42,7 +42,7 @@ test('event reads reuse IndexedDB across remounts, coalesce misses, and reuse th
   await store.put({actorId:'reader'},'workspace',{profiles:[{owner_id:'self'}]});
   assert.equal((await cache.request('/api/booths?workspace=home')).profiles[0].owner_id,'self');assert.equal(calls.length,0);
   const first=cache.request(url),second=cache.request(url);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,1);
-  release();assert.deepEqual(await first,await second);
+  release();assert.deepEqual(await first,await second);assert.equal(calls[0].options.background,true,'automatic auxiliary cache preparation never starts the global spinner');
   const reopened=createEventReadCache({scope,store,request:async()=>{throw new Error('cache must win');},isCurrent:()=>true});
   assert.equal((await reopened.request(url)).profiles[0].owner_id,'maker');
  }finally{await db.delete();await db.open();}

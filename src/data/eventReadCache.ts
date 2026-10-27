@@ -26,7 +26,7 @@ export function createEventReadCache({scope,request,isCurrent,store=localData}:{
     if(!isCurrent()||version!==generation)throw failure();
     if(workspace)return workspace;
    }
-   const result=await store.read({scope,resource,preferCache:!force,isCurrent,fetchRemote:()=>request(url,{...options,background:force||options.background===true,signal:AbortSignal.timeout(20_000)})});
+   const result=await store.read({scope,resource,preferCache:!force,isCurrent,fetchRemote:()=>request(url,{...options,background:true,signal:AbortSignal.timeout(20_000)})});
    const value=force?await result.refresh:result.value;
    if(!isCurrent()||version!==generation)throw failure();
    return value;
