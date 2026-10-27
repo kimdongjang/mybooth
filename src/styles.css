@@ -1278,7 +1278,7 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 @media(max-width:600px){.inventory-import-toolbar{align-items:stretch;flex-direction:column;padding:14px;gap:12px}.inventory-import-file-actions{display:grid;grid-template-columns:1fr;gap:8px}.inventory-import-toolbar .inventory-import-upload,.inventory-import-toolbar .inventory-import-template,.inventory-import-toolbar .inventory-import-submit{width:100%;min-height:44px}.inventory-import-guide summary{padding:14px}.inventory-import-guide-body{padding:0 14px 16px}}
 
 /* Search and filter sizing follows the inventory list, across all pages. */
-:root{--search-control-font:calc(13px + 1pt);--search-input-height:44px;--search-filter-height:40px;--search-control-radius:8px;--search-control-gap:12px}
+:root{--mobile-table-font:12.333px;--search-control-font:calc(13px + 1pt);--search-input-height:44px;--search-filter-height:40px;--search-control-radius:8px;--search-control-gap:12px}
 #root :is([role="search"],.revenue-period,.catalog-filters){gap:var(--search-control-gap)}
 #root :is([role="search"],.revenue-period,.catalog-filters) :is(label,input,select,button,summary,.filter-label),
 #root .search-control-field,
@@ -1311,9 +1311,13 @@ input, select { background: white; color: #17243b; min-height: 36px; }
 #root :is(.inventory-card,.management-product,.account-card-body,.event-panel,.event-settlement-panel,.event-danger-panel,.dashboard-card,.settlement-card,.settlement-editor,.inventory-import-page) :is(p,li,small,dt,dd,h3,h4,span),
 #root :is(.management-field,.event-field,.settlement-payment-fields) > span,
 #root :is(.management-details legend span,.inventory-import-guide-count,.inventory-import-guide-body,.event-final-costs,.filter-label,.product-creator,.product-stock,.event-status,.revenue-status){font-size:var(--search-control-font);line-height:1.5}
-/* Explicit mobile table typography; keep the surrounding controls unchanged. */
+/* Mobile inventory search controls share the table typography. */
 @media(max-width:767px),(max-width:1199px) and (hover:none) and (pointer:coarse){
- #root table{--search-control-font:12.333px}
+ #root table{--search-control-font:var(--mobile-table-font)}
+ #root .inventory-search:is([aria-label="재고 검색"],[aria-label="내 판매내역 검색"]){--search-control-font:var(--mobile-table-font);--search-input-height:36px;--search-filter-height:36px}
+ #root .inventory-search:is([aria-label="재고 검색"],[aria-label="내 판매내역 검색"]) :is(input,select){padding:6px 8px}
+ #root .inventory-search:is([aria-label="재고 검색"],[aria-label="내 판매내역 검색"]) .inventory-search-button{padding:0 10px}
+ #root .inventory-search:is([aria-label="재고 검색"],[aria-label="내 판매내역 검색"]) .inventory-search-reset{min-height:32px;padding-block:4px}
 }
 
 /* Artist-owned event settings reuse the established management list and forms. */
