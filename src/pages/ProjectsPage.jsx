@@ -4,7 +4,7 @@ import { PageIntro } from '../components/PageLayout';
 import Icon from '../components/Icon';
 import {eventSchedule,sortEventsBySchedule} from '../utils/eventSchedule';
 
-export default function ProjectsPage({ creating, booths=[], projects, selectedProject, newProjectName, setNewProjectName, onCreateProject, onManageProject, onSelectProject, navigate }) {
+export default function ProjectsPage({ pinnedProjectId='', onPinProject, creating, booths=[], projects, selectedProject, newProjectName, setNewProjectName, onCreateProject, onManageProject, onSelectProject, navigate }) {
   const [mode,setMode]=useState('empty'),[sourceId,setSourceId]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [venue,setVenue]=useState(''),[startsOn,setStart]=useState(''),[endsOn,setEnd]=useState('');
   const pending=useRef(null);
@@ -31,7 +31,7 @@ export default function ProjectsPage({ creating, booths=[], projects, selectedPr
           <span className="event-muted">생성일 {new Date(project.createdAt).toLocaleDateString('ko-KR')}{selectedProject?.id === project.id ? ' · 현재 선택한 행사' : ''}</span>
           {project.summary && <span className="event-summary"><span>판매 {project.summary.sales.toLocaleString()}건 · {project.summary.total.toLocaleString()}원</span><span>상품 {project.summary.products.toLocaleString()}종 · 남은 재고 {project.summary.remainingStock.toLocaleString()}개</span><small>서버 동기화 완료 기준</small></span>}
           <span className="event-picker-action">{project.archivedAt?'행사 내역 열기':project.permissions?.canSell?'판매 화면 열기':project.permissions?.canViewPos?'상품 목록 열기':'내 정산 열기'} →</span>
-        </button>{project.permissions?.canManage!==false&&<details className="event-picker-more"><summary aria-label={`${project.name} 행사 메뉴`}>⋯</summary><div className="event-picker-menu"><a className="event-picker-menu-item" href={`#/project?projectId=${encodeURIComponent(project.id)}`}><Icon name="project"/>행사 관리</a><button type="button" className="event-picker-menu-item" onClick={()=>{setSourceId(project.id);setMode('copy');setNewProjectName(`${project.name} 새 행사`.slice(0,100));navigate('projectNew');}}><Icon name="projects"/>이 행사 구성으로 새 행사 만들기</button></div></details>}</article>;})}
+        </button><details className="event-picker-more"><summary aria-label={`${project.name} 행사 메뉴`}>⋯</summary><div className="event-picker-menu">{onPinProject&&<button type="button" className="event-picker-menu-item" onClick={event=>{onPinProject(pinnedProjectId===project.id?'':project.id);event.currentTarget.closest('details').open=false;}}><Icon name="pin"/>{pinnedProjectId===project.id?'집중 행사 고정 해제':'지금 집중할 행사로 지정'}</button>}{project.permissions?.canManage!==false&&<><a className="event-picker-menu-item" href={`#/project?projectId=${encodeURIComponent(project.id)}`}><Icon name="project"/>행사 관리</a><button type="button" className="event-picker-menu-item" onClick={()=>{setSourceId(project.id);setMode('copy');setNewProjectName(`${project.name} 새 행사`.slice(0,100));navigate('projectNew');}}><Icon name="projects"/>이 행사 구성으로 새 행사 만들기</button></>}</div></details></article>;})}
       </div>}
 
     </div>

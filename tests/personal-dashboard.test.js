@@ -76,3 +76,12 @@ test('attention stays absent for clear, unconfirmed, unknown and unauthorized al
  const ended=dashboardEvents({},[event('past','2026-09-01','2026-09-02')],today);
  assert.deepEqual(dashboardAlerts(ended,14),[]);
 });
+
+
+test('pinned focus overrides automatic selection for any visible schedule and missing pins fall back',()=>{
+ const cards=dashboardEvents({},[event('live','2026-10-26','2026-10-28'),event('future','2026-12-01','2026-12-02'),event('unknown',null,null),event('past','2026-10-01','2026-10-02')],today);
+ for(const id of ['future','unknown','past'])assert.deepEqual(dashboardFocus(cards,id).choices.map(row=>row.id),[id]);
+ assert.equal(dashboardFocus(cards,'inaccessible').choices[0].id,'live');
+ assert.equal(dashboardFocus(cards,'').choices[0].id,'live');
+ assert.equal(dashboardFocus([],'removed').choices.length,0);
+});

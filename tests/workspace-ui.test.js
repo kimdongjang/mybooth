@@ -145,29 +145,6 @@ test('event product list uses event detail URLs and direct entry renders the req
 });
 
 
-test('event access table shows nickname/product count, searches accounts in a dialog and links the chosen account',async()=>{
- const calls=[];let linked=false;
- const request=async(url,options)=>{
-  if(options){const command=JSON.parse(options.body);calls.push(command);linked=true;return {linked:true};}
-  if(url.includes('searchAccounts')){assert.ok(url.includes('projectId=event'));return {accounts:[{id:'account-b',nickname:'계정닉네임'}]};}
-  return {profiles:[{id:'profile',owner_id:'owner',display_name:'제작자명',nickname:linked?'계정닉네임':null,linked_user_id:linked?'account-b':null,product_count:3,status:'active',booth_status:'proxy'}],staff:[]};
- };
- const h=await harness('components/EventAccessPanel.jsx');const props={request,project:{id:'event',boothId:'booth'}};
- h.render(props);await h.flush();let tree=h.render(props);
- assert.ok(tree.some(n=>n.type==='table'));assert.ok(tree.some(n=>n.type==='td'&&n.props.children?.[0]===3));
- const select=tree.find(n=>n.type==='select');assert.equal(select.props.disabled,false);assert.deepEqual(nodes(select).filter(n=>n.type==='option'&&n.props.value!=='none').map(n=>n.props.children),['부스참여자','부관리자']);
- select.props.onChange({target:{value:'assistant'}});h.render(props);await h.flush();tree=h.render(props);
- assert.ok(tree.some(n=>n.type==='dialog'));
- tree.find(n=>n.type==='input'&&n.props.maxLength===100).props.onChange({target:{value:'계정'}});tree=h.render(props);
- await tree.find(n=>n.type==='form'&&n.props.className==='event-account-search').props.onSubmit({preventDefault(){}});tree=h.render(props);
- await tree.find(n=>n.type==='button'&&n.props.children==='연결').props.onClick();tree=h.render(props);
- assert.equal(calls[0].action,'linkEventArtistAccount');assert.equal(calls[0].payload.targetUserId,'account-b');assert.equal(calls[0].payload.profileId,'profile');assert.equal(calls[0].payload.projectId,'event');assert.equal(calls[0].payload.role,'assistant');
- assert.equal(tree.find(n=>n.type==='select').props.disabled,false);
- await tree.find(n=>n.type==='select').props.onChange({target:{value:'assistant'}});
- assert.equal(calls[1].action,'saveEventAccess');assert.equal(calls[1].payload.role,'assistant');assert.equal(calls[1].payload.targetUserId,'account-b');
-});
-
-
 test('event artist addition searches registered profiles in a popup instead of creating an unlinked name',async()=>{
  const calls=[];const request=async(url,options)=>{
   if(options){const command=JSON.parse(options.body);calls.push(command);return {added:true};}
@@ -179,9 +156,9 @@ test('event artist addition searches registered profiles in a popup instead of c
  tree.find(n=>n.type==='button'&&n.props.children==='제작자 추가').props.onClick();h.render(props);await h.flush();tree=h.render(props);
  tree.find(n=>n.type==='input'&&n.props.maxLength===100).props.onChange({target:{value:'검색'}});tree=h.render(props);
  await tree.find(n=>n.type==='form'&&n.props.className==='event-account-search').props.onSubmit({preventDefault(){}});tree=h.render(props);
- tree.find(n=>n.type==='select').props.onChange({target:{value:'assistant'}});tree=h.render(props);
+ assert.equal(nodes(tree.find(n=>n.type==='dialog')).some(n=>n.type==='select'),false);
  await tree.find(n=>n.type==='button'&&n.props.children==='등록').props.onClick();
- assert.equal(calls[0].action,'addEventArtist');assert.equal(calls[0].payload.profileId,'artist-profile');assert.equal(calls[0].payload.role,'assistant');assert.equal(calls[0].payload.projectId,'event');
+ assert.equal(calls[0].action,'addEventArtist');assert.equal(calls[0].payload.profileId,'artist-profile');assert.equal(calls[0].payload.role,'none');assert.equal(calls[0].payload.projectId,'event');
 });
 
 
@@ -244,8 +221,8 @@ test('event creator addition permits a direct name after an empty search and kee
  const calls=[];const request=async(url,options)=>{if(options){const cmd=JSON.parse(options.body);calls.push(cmd);if(calls.length===1)throw Object.assign(new Error('network'),{status:503});return {added:true};}return url.includes('searchArtists')?{artists:[]}:{profiles:[],staff:[]};};
  const h=await harness('components/EventAccessPanel.jsx'),props={request,project:{id:'e',boothId:'b'}};
  h.render(props);await h.flush();let tree=h.render(props);tree.find(n=>n.type==='button'&&n.props.children==='제작자 추가').props.onClick();h.render(props);await h.flush();tree=h.render(props);
- tree.find(n=>n.type==='input'&&n.props.placeholder==='닉네임·아이디·이메일').props.onChange({target:{value:'신규 제작자'}});tree=h.render(props);await tree.find(n=>n.type==='form'&&n.props.className==='event-account-search').props.onSubmit({preventDefault(){}});tree=h.render(props);
- assert.equal(tree.filter(n=>n.type==='li').length,0);tree.find(n=>n.type==='button'&&n.props.children==='직접 입력').props.onClick();tree=h.render(props);
+ tree.find(n=>n.type==='input'&&n.props.placeholder==='제작자 이름·닉네임·아이디·이메일').props.onChange({target:{value:'신규 제작자'}});tree=h.render(props);await tree.find(n=>n.type==='form'&&n.props.className==='event-account-search').props.onSubmit({preventDefault(){}});tree=h.render(props);
+ assert.equal(tree.filter(n=>n.type==='li').length,0);tree.find(n=>n.type==='button'&&n.props.children==='새 제작자 등록').props.onClick();tree=h.render(props);
  const form=tree.find(n=>n.type==='form'&&nodes(n).some(c=>c.type==='button'&&c.props.children==='제작자 등록'));assert.ok(form);assert.ok(nodes(form).some(n=>n.type==='input'&&n.props.value==='신규 제작자'));
  await form.props.onSubmit({preventDefault(){}});tree=h.render(props);assert.equal(calls[0].action,'createEventCreator');assert.equal(calls[0].payload.name,'신규 제작자');assert.equal(calls[0].payload.projectId,'e');
  const retry=nodes(tree.find(n=>n.type==='dialog')).find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인');assert.ok(retry);await retry.props.onClick();assert.deepEqual(calls[0],calls[1]);
@@ -479,4 +456,95 @@ test('dashboard switches live focus without changing event links and limits upco
  tree.find(n=>n.type==='button'&&n.props['aria-controls']==='home-future-list').props.onClick();tree=h.render(props);
  future=tree.find(n=>n.props.className==='home-upcoming-rows');assert.equal(nodes(future).filter(n=>n.type==='li').length,5);
  assert.equal(nodes(future).filter(n=>n.type==='h3').at(-1).props.children,'일정 미정 행사');
+});
+
+test('unlinked role changes save immediately and account linking searches accounts without role controls',async()=>{
+ const calls=[];let linked=false,role=null,version=0;
+ const view=()=>({profiles:[{id:'profile',owner_id:'owner',display_name:'제작자명',linked_user_id:linked?'account-b':null,requested_role:role,version,status:'active',booth_status:'proxy'}],staff:linked?[{user_id:'account-b',role,status:'active',version:1}]:[]});
+ const request=async(url,options)=>{
+  if(options){const command=JSON.parse(options.body);calls.push(command);if(command.action==='saveEventAccess'){role=command.payload.role;version++;return view();}linked=true;return {linked:true};}
+  if(url.includes('searchAccounts'))return {accounts:[{id:'account-b',nickname:'계정닉네임'}]};return view();
+ };
+ const h=await harness('components/EventAccessPanel.jsx'),props={request,project:{id:'event',boothId:'booth'}};
+ h.render(props);await h.flush();let tree=h.render(props);
+ await tree.find(n=>n.type==='select').props.onChange({target:{value:'assistant'}});tree=h.render(props);
+ assert.equal(calls[0].action,'saveEventAccess');assert.equal(calls[0].payload.ownerId,'owner');assert.equal(calls[0].payload.role,'assistant');assert.equal(tree.find(n=>n.type==='select').props.value,'assistant');
+ assert.equal(tree.some(n=>n.type==='input'&&n.props.maxLength===100),true);
+ tree.find(n=>n.type==='button'&&n.props.children==='+연결').props.onClick();h.render(props);await h.flush();tree=h.render(props);
+ const popup=tree.find(n=>n.type==='dialog');assert.equal(nodes(popup).some(n=>n.type==='select'),false);
+ tree.find(n=>n.type==='input'&&n.props.maxLength===100).props.onChange({target:{value:'계정'}});tree=h.render(props);
+ await tree.find(n=>n.type==='form'&&n.props.className==='event-account-search').props.onSubmit({preventDefault(){}});tree=h.render(props);
+ await tree.find(n=>n.type==='button'&&n.props.children==='연결').props.onClick();
+ assert.equal(calls[1].action,'linkEventArtistAccount');assert.equal(calls[1].payload.role,undefined);assert.equal(calls[1].payload.targetUserId,'account-b');
+});
+
+
+test('event roles save both directions with current versions and show a role dropdown in every row',async()=>{
+ const profiles=[{id:'operator',owner_id:'operator-owner',display_name:'운영자 제작자',linked_user_id:'admin',booth_role:'owner',status:'active'},
+ {id:'maker',owner_id:'maker-owner',display_name:'참여 제작자',linked_user_id:'maker-account',status:'active'}];
+ let staff=[{user_id:'maker-account',role:'seller',status:'active',version:2}],reads=0;
+ const calls=[];const request=async(url,options)=>{
+  if(!options){reads++;return {profiles,staff};}
+  const command=JSON.parse(options.body);calls.push(command);
+  assert.equal(command.action,'saveEventAccess');assert.equal(command.payload.projectId,'event');assert.equal(command.payload.boothId,'booth');assert.equal(command.payload.targetUserId,'maker-account');
+  assert.equal(command.payload.version,staff[0].version);
+  staff=[{...staff[0],role:command.payload.role,version:staff[0].version+1}];return {profiles,staff};
+ };
+ const changed=[];
+ const h=await harness('components/EventAccessPanel.jsx',{'../utils/confirmAction':{confirmAction:()=>{throw new Error('role change must not confirm');}}}),props={request,project:{id:'event',boothId:'booth'},onChange:action=>changed.push(action)};
+ h.render(props);await h.flush();let tree=h.render(props);
+ const roleSelect=()=>tree.find(n=>n.type==='select'&&n.props['aria-label']==='참여 제작자 행사 권한');
+ const operatorSelect=tree.find(n=>n.type==='select'&&n.props['aria-label']==='운영자 제작자 행사 권한');
+ assert.equal(operatorSelect.props.value,'operator');assert.equal(operatorSelect.props.disabled,true);
+ await operatorSelect.props.onChange({target:{value:'assistant'}});assert.equal(calls.length,0);
+ assert.equal(roleSelect().props.value,'seller');assert.equal(roleSelect().props.disabled,false);
+ for(const role of ['assistant','seller']){
+  const saved=roleSelect().props.onChange({target:{value:role}});tree=h.render(props);assert.equal(roleSelect().props.disabled,true);
+  await saved;tree=h.render(props);assert.equal(roleSelect().props.value,role);assert.equal(roleSelect().props.disabled,false);
+ }
+ assert.deepEqual(changed,['saveEventAccess','saveEventAccess']);assert.equal(reads,1);assert.equal(calls.length,2);assert.notEqual(calls[0].payload.requestId,calls[1].payload.requestId);
+});
+
+
+test('event role conflicts refresh the version and allow another selection',async()=>{
+ const profiles=[{id:'maker',owner_id:'owner',display_name:'제작자',linked_user_id:'account',status:'active'}];
+ let version=1,conflict=true;const calls=[];
+ const request=async(url,options)=>{
+  if(options?.method!=='POST')return {profiles,staff:[{user_id:'account',role:'seller',status:'active',version}]};
+  const command=JSON.parse(options.body);calls.push(command);
+  if(conflict){conflict=false;version=2;throw Object.assign(new Error('권한이 변경되었습니다.'),{status:409});}
+  return {profiles,staff:[{user_id:'account',role:command.payload.role,status:'active',version:3}]};
+ };
+ const h=await harness('components/EventAccessPanel.jsx'),props={request,project:{id:'event',boothId:'booth'}};
+ h.render(props);await h.flush();let tree=h.render(props);
+ await tree.find(n=>n.type==='select').props.onChange({target:{value:'assistant'}});tree=h.render(props);
+ assert.equal(tree.find(n=>n.type==='select').props.disabled,false);assert.ok(tree.some(n=>n.props.role==='alert'));
+ await tree.find(n=>n.type==='select').props.onChange({target:{value:'assistant'}});tree=h.render(props);
+ assert.equal(calls[1].payload.version,2);assert.equal(tree.find(n=>n.type==='select').props.value,'assistant');
+});
+
+
+test('event menu pins and unpins for viewers without exposing management actions',async()=>{
+ const h=await harness('pages/ProjectsPage.jsx');
+ const calls=[],project={id:'viewer-event',name:'조회 행사',createdAt:'2026-10-01',permissions:{canManage:false,canViewPos:true}};
+ const props={projects:[project],onPinProject:id=>calls.push(id)};
+ let tree=h.render(props);
+ const pin=tree.find(n=>n.type==='button'&&n.props.children?.includes?.('지금 집중할 행사로 지정'));
+ assert.ok(pin);
+ assert.equal(tree.some(n=>n.type==='a'&&n.props.href?.startsWith('#/project?')),false);
+ const details={open:true};
+ pin.props.onClick({currentTarget:{closest:()=>details}});
+ assert.deepEqual(calls,['viewer-event']);assert.equal(details.open,false);
+ tree=h.render({...props,pinnedProjectId:project.id});
+ tree.find(n=>n.type==='button'&&n.props.children?.includes?.('집중 행사 고정 해제')).props.onClick({currentTarget:{closest:()=>details}});
+ assert.deepEqual(calls,['viewer-event','']);
+});
+
+
+test('dashboard displays pinned unknown event with a pin title icon and its own links',async()=>{
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
+ const tree=h.render({data:{events:[],inventory:[]},events:[{id:'pin',name:'고정 행사',permissions:{canViewPos:true}}],pinnedProjectId:'pin'});
+ assert.equal(tree.find(n=>n.type==='h3').props.children,'고정 행사');
+ assert.ok(tree.some(n=>n.type==='Icon'&&n.props.name==='pin'));
+ assert.ok(tree.some(n=>n.type==='a'&&n.props.href==='#/sales?projectId=pin'));
 });

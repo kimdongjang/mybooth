@@ -1863,3 +1863,5 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
 .home-past-list span{color:#64748b}
 @media(max-width:767px){.home-focus-actions{position:sticky;bottom:0;padding:12px 0;background:#fff;border-top:1px solid #e2e8f0;z-index:2}.home-focus-actions>.management-add{flex-basis:100%}}
 @media(max-width:420px){.home-focus-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.home-focus-metrics>div:first-child{grid-column:1/-1}}
+
+.home-focus-title{display:flex;align-items:center;gap:8px}

@@ -969,3 +969,26 @@ duplicateProject는 상품/가격/세트와 제작자 참여 구성을 가져오
 
 
 정산 API는 [정산 잠금 계약](settlement-locking.md)에 따라 스키마 초기화를 업무 행 잠금 전 별도 트랜잭션으로 분리하고 40P01/40001만 제한적으로 재시도한다.
+
+
+집중 행사는 행사 선택 카드의 더보기 메뉴에서 지정/해제한다. 조회 가능한 행사는 운영 권한 없이도 본인의 집중 행사로 지정할 수 있다. App은 계정별 localStorage 키 pos_dashboard_focus:<인코딩한 계정 ID>와 메모리 상태에 선택을 보존하고 PersonalOverview를 통해 대시보드로 전달한다. 지정한 행사가 현재 대시보드 자료에 없거나 고정을 해제하면 기존 자동 선택으로 돌아간다. 기기 간 동기화는 제공하지 않으며 판매 대상으로 선택한 행사·큐·서버 권한은 변경하지 않는다. 제목 왼쪽에는 공통 pin 아이콘을 사용한다.
+
+
+자동 조회는 requestJson의 background 옵션으로 중앙 스피너 집계에서 제외한다. 옵션은 fetch에 전달하지 않는 클라이언트 표시 메타데이터다. 10초 주기/온라인 복귀의 loadState·loadProjects 및 다른 탭 재고 변경 재조회에 적용한다. 권한 드롭다운은 확인창 없이 saveEventAccess를 바로 보내며, EventAccessPanel은 후속 onChange에 작업명을 전달해 권한 저장 후 상태 재조회·409 충돌 재조회도 조용히 수행한다. 명시적 초기 화면 조회는 스피너를 유지하며 자동 조회의 오류 처리·인증 검사·대기 주문 보존은 동일하다. GET /api/pos는 서버 상태를 내려받는 조회이고, 미전송 주문 업로드는 syncService의 별도 POST /api/pos이다.
+
+
+## 공개 홈 검색 노출
+
+대표 검색 주소는 https://withbooth.vercel.app/ 이다. index.html에 굿즈 부스·행사 판매/재고 관리 제목과 설명, canonical, index/follow, Open Graph/Twitter 로고 이미지 및 WebSite JSON-LD(WithBooth/위드부스)를 제공한다. 초기 root에는 기존 AuthPage의 공개 소개를 정적으로 제공하며 React 마운트 때 정상 화면으로 교체한다. 소개 문구 변경 시 양쪽의 공개 기능 설명을 함께 맞춘다. 로그인 후 계정/행사 데이터는 초기 HTML에 포함하지 않는다.
+
+public/robots.txt는 홈 및 렌더링 자산 크롤링을 허용하고 /api/, /mobile-updates/, 별도 구형 /pos.html 크롤링을 제외한다. robots 규칙은 접근제어나 검색 결과 삭제 보장이 아니며 기존 서버 인증이 데이터 접근을 통제한다. public/sitemap.xml에는 공개 canonical 홈 한 개만 기재한다. hash 기반 내부 화면은 독립 공개 검색 페이지로 등록하지 않는다. Vercel filesystem 라우트가 SPA 폴백보다 먼저 정적 파일을 제공한다. 도메인 변경 시 canonical·구조화 데이터·공유 메타·robots의 Sitemap 주소·사이트맵 loc를 함께 변경한다.
+
+배포 후 Google Search Console에 https://withbooth.vercel.app/ URL 접두어 속성을 등록/소유권 확인하고 sitemap.xml을 제출한다. URL 검사에서 홈의 실제 응답·렌더링·색인 허용·canonical을 확인하고 색인 생성을 요청한다. Search Console의 소유권 확인 값은 실제 발급값만 별도 적용한다. 현재 소유권 확인/사이트맵 제출/색인 여부는 미확인이다. 검색 노출 시점·순위는 보장하지 않는다.
+
+기준: [Google robots.txt](https://developers.google.com/crawling/docs/robots-txt/create-robots-txt), [사이트맵](https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap), [사이트명 구조화 데이터](https://developers.google.com/search/docs/appearance/site-names), [hash URL 제한](https://developers.google.com/search/docs/crawling-indexing/url-structure).
+
+
+행사 관리 사이드바의 현재 관리 중인 행사/행사명/보관 상태 중복 표시를 제거한다. 행사 메뉴와 기존 관리 동작은 유지한다.
+
+
+계정 미연결 참여 제작자의 역할은 pos_event_artists.requested_role(seller/assistant, nullable)에 보존한다. saveEventAccess는 활성 참여/부스/운영자 권한, 버전 및 요청 영수증을 확인하고 연결 상태가 바뀌면 409로 거절한다. 실제 계정 권한은 계정 연결 전에는 부여하지 않으며 linkEventArtistAccount가 연결 시 저장된 역할을 반영한다. 기존 스키마 초기화 경로에서 ADD COLUMN IF NOT EXISTS로 열을 준비한다. 운영 DB 적용은 배포 후 최초 경로 실행과 별개로 관리하며 실 DB 검증은 미실행이다.

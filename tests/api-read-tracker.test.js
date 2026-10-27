@@ -48,3 +48,25 @@ test('shared JSON request tracks response parsing and clears after HTTP failures
  ok=false;await assert.rejects(request('/api/booths'),err=>err.status===403);
  assert.equal(tracker.getSnapshot(),0);
 });
+
+
+test('background reads stay silent while overlapping foreground reads keep their indicator',async()=>{
+ const tracker=createApiReadTracker(),background=deferred(),foreground=deferred(),snapshots=[];
+ tracker.subscribe(()=>snapshots.push(tracker.getSnapshot()));
+ const quiet=tracker.run('/api/pos?projectId=event',{background:true},()=>background.promise);
+ assert.equal(tracker.getSnapshot(),0);
+ const visible=tracker.run('/api/pos?projectId=event',{},()=>foreground.promise);
+ background.resolve('updated');assert.equal(await quiet,'updated');assert.equal(tracker.getSnapshot(),1);
+ foreground.resolve('loaded');await visible;assert.deepEqual(snapshots,[1,0]);
+ await assert.rejects(tracker.run('/api/pos',{background:true},()=>Promise.reject(new Error('network'))));
+ assert.equal(tracker.getSnapshot(),0);
+});
+
+test('JSON request strips background UI option from fetch while preserving HTTP errors',async()=>{
+ const tracker=createApiReadTracker(),app=await readFile(new URL('../src/App.jsx',import.meta.url),'utf8');
+ const source=app.slice(app.indexOf('async function requestJson('),app.indexOf('\nexport default function App'));
+ let captured;
+ const request=vm.runInNewContext(`(${source.trim()})`,{apiReadTracker:tracker,AUTH_TOKEN_KEY:'test-auth',sessionStore:{getItem:()=>null},apiContracts:{prepare:(_token,_url,options)=>options,observe(){}},fetch:async(_url,options)=>{captured=options;assert.equal(tracker.getSnapshot(),0);return {ok:false,status:403,json:async()=>({error:'denied'})};}});
+ await assert.rejects(request('/api/pos',{background:true}),error=>error.status===403);
+ assert.equal(Object.hasOwn(captured,'background'),false);assert.equal(tracker.getSnapshot(),0);
+});
