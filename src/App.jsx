@@ -1,5 +1,9 @@
+import { Analytics } from '@vercel/analytics/react';
 import PaymentToast from './components/PaymentToast';
 import LoadingState from './components/LoadingState';
+import ApiReadIndicator from './components/ApiReadIndicator';
+import {apiReadTracker} from './utils/apiReadTracker';
+import {countDashboardWaiting} from './utils/personalDashboard';
 import RevenuePage from './pages/RevenuePage';
 import { settlementEntries } from './utils/settlementEntries';
 import DashboardPage from './pages/DashboardPage';
@@ -38,6 +42,7 @@ const apiContracts=createApiContractContext();
 async function requestJson(url, options = {}) {
   const token = sessionStore.getItem(AUTH_TOKEN_KEY);
   options=apiContracts.prepare(token,url,options);
+  return apiReadTracker.run(url,options,async()=>{
   const res = await fetch(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) },
@@ -46,6 +51,7 @@ async function requestJson(url, options = {}) {
   if (!res.ok) throw Object.assign(new Error(data.error || '요청 처리에 실패했습니다.'), { status: res.status });
   apiContracts.observe(token,url,data);
   return data;
+  });
 }
 
 export default function App() {
@@ -444,6 +450,10 @@ export default function App() {
 
   const sharedStockContext=useRef(null);
   sharedStockContext.current={projects,selectedProject,scope,applyState};
+  const readDashboardWaiting=useCallback(async projectId=>{
+    const orders=await orderRepository.getAll(projectId);
+    return countDashboardWaiting(orders,adminId,projectId);
+  },[adminId]);
   const sharedStockRequest=useCallback(async(url,options)=>{
     if(!options||options.method!=='POST')return requestJson(url,options);
     if(!navigator.onLine)throw new Error('제작자 재고 변경은 인터넷 연결이 필요합니다.');
@@ -724,8 +734,14 @@ export default function App() {
   }, [saleLineProductEntries, sales]);
   const selectedCreatorSummary = creatorSalesSummary.find((summary) => summary.creator === logCreatorFilter);
 
-  if (!token) return routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />;
+  // Use the accepted hash route without account, project or product identifiers.
+  const analyticsPath = pagePaths[routePage] || '/dashboard';
+  const analytics = import.meta.env.PROD && !isNative
+    ? <Analytics route={analyticsPath} path={analyticsPath} /> : null;
+  if (!token) return <>{analytics}{routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />}</>;
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
+    {analytics}
+    <ApiReadIndicator/>
     <PaymentToast notice={paymentToast} onDismiss={setPaymentToast}/>
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onReleaseProject={releaseProject} releaseDisabled={saving || loading || projectLoading} />
     {['dashboard','account','revenue'].includes(screen)&&<nav className="event-subnav inventory-management-nav menu-tabs" aria-label={screen==='dashboard'?'대시보드 하위 메뉴':'마이페이지 하위 메뉴'}>{(screen==='dashboard'?[['dashboard','대시보드']]:[['account','마이페이지'],['revenue','수익현황']]).map(([key,label])=><button key={key} type="button" aria-current={screen===key?'page':undefined} onClick={()=>setScreen(key)}>{label}</button>)}</nav>}
@@ -733,7 +749,7 @@ export default function App() {
     {readOnly && !['inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">{selectedProject?.settlementClosedAt?'정산 마감 · 읽기 전용입니다.':'보관된 행사 · 읽기 전용입니다.'} <button type="button" className="event-text-link" onClick={() => setScreen(selectedProject?.settlementClosedAt?'log':'projectArchive')}>{selectedProject?.settlementClosedAt?'정산 마감 관리 →':'비밀번호로 보관 해제 →'}</button></div>}
     {loading || projectLoading || (linkedProjectId && selectedProject?.id !== linkedProjectId) || (selectedProject && readyScope !== scope && !error) ? <main className="page-content"><LoadingState /></main> : <>
 
-    {screen === 'dashboard' && <PersonalOverview key={adminId} request={requestJson} dashboard events={projects} />}
+    {screen === 'dashboard' && <PersonalOverview key={adminId} request={requestJson} dashboard events={projects} readWaitingOrders={readDashboardWaiting} />}
     {screen === 'revenue' && <PersonalOverview key={adminId} request={requestJson} />}
     {screen === 'inventory' && <PersonalInventory key={adminId} request={sharedStockRequest} routeHash={routeHash} navigate={setScreen} />}
     {screen === 'artistStock' && <ArtistStockPage key={adminId} request={sharedStockRequest} initialProjectId={selectedProject?.id} />}

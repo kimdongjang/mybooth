@@ -140,6 +140,43 @@ export async function saveEventAccess(sql,userId,payload) {
   return result;
 }
 
+async function workspaceOperatorSummaries(sql,events) {
+ const ids=events.filter(event=>event.permissions.canManage).map(event=>event.id);
+ if(!ids.length)return new Map();
+ const rows=(await sql`WITH catalog AS (
+   SELECT project_id,COUNT(*) FILTER(WHERE COALESCE(is_active,TRUE))::int AS products,
+     COUNT(*) FILTER(WHERE COALESCE(is_active,TRUE) AND COALESCE(stock_qty,stock) BETWEEN 1 AND 3)::int AS low_stock,
+     COALESCE(SUM(COALESCE(stock_qty,stock)) FILTER(WHERE COALESCE(is_active,TRUE)),0) AS remaining,
+     COALESCE(SUM(GREATEST(COALESCE(initial_stock_qty,stock_qty,stock),COALESCE(stock_qty,stock))) FILTER(WHERE COALESCE(is_active,TRUE)),0) AS allocated
+   FROM pos_products WHERE project_id=ANY(${ids}::text[]) GROUP BY project_id
+  ), sales AS (
+   SELECT project_id,COUNT(*)::int AS transactions,COALESCE(SUM(total),0) AS gross,MAX(time) AS latest
+   FROM pos_sales WHERE project_id=ANY(${ids}::text[]) GROUP BY project_id
+  ), artists AS (
+   SELECT project_id,COUNT(*)::int AS artists FROM pos_event_artists WHERE project_id=ANY(${ids}::text[]) AND status='active' GROUP BY project_id
+  ) SELECT p.id,COALESCE(c.products,0) AS products,COALESCE(c.low_stock,0) AS low_stock,COALESCE(c.remaining,0) AS remaining,COALESCE(c.allocated,0) AS allocated,
+    COALESCE(s.transactions,0) AS transactions,COALESCE(s.gross,0) AS gross,s.latest,COALESCE(a.artists,0) AS artists
+   FROM pos_projects p LEFT JOIN catalog c ON c.project_id=p.id LEFT JOIN sales s ON s.project_id=p.id LEFT JOIN artists a ON a.project_id=p.id
+   WHERE p.id=ANY(${ids}::text[])`).rows;
+ const summaries=new Map(rows.map(row=>[row.id,{products:Number(row.products),remainingStock:Number(row.remaining),initialStock:Number(row.allocated),
+  sales:Number(row.transactions),total:Number(row.gross),lastSaleAt:row.latest||null,artistCount:Number(row.artists),lowStockProducts:Number(row.low_stock)}]));
+ const tables=(await sql`SELECT to_regclass('pos_event_settlements') AS closures,to_regclass('pos_settlements') AS ledger`).rows[0];
+ const closures=tables.closures?(await sql`SELECT c.project_id,c.closed_at,c.snapshot FROM pos_event_settlements c JOIN pos_projects p ON p.id=c.project_id AND p.admin_id=c.admin_id WHERE c.project_id=ANY(${ids}::text[])`).rows:[];
+ const ledgers=tables.ledger?(await sql`SELECT l.project_id,l.creator,l.payments FROM pos_settlements l JOIN pos_projects p ON p.id=l.project_id AND p.admin_id=l.admin_id WHERE l.project_id=ANY(${ids}::text[])`).rows:[];
+ for(const event of closures){
+  const summary=summaries.get(event.project_id);if(!summary)continue;
+  summary.closedAt=event.closed_at||null;
+  if(event.closed_at&&event.snapshot){
+   const records=ledgers.filter(row=>row.project_id===event.project_id);
+   const paidFor=creator=>(records.find(row=>row.creator===creator)?.payments||[]).reduce((total,payment)=>total+Number(payment.amount||0),0);
+   summary.settlementNet=(event.snapshot.rows||[]).reduce((total,row)=>total+Number(row.net||0),0);
+   summary.paid=records.reduce((total,row)=>total+paidFor(row.creator),0);
+   summary.pending=(event.snapshot.rows||[]).reduce((total,row)=>total+Math.max(0,Number(row.net||0)-paidFor(row.creator)),0);
+  }
+ }
+ return summaries;
+}
+
 export async function workspaceEvents(sql,userId) {
   const ids=(await sql`SELECT eb.project_id,d.venue,sp.starts_on::text,sp.ends_on::text FROM pos_event_booths eb JOIN pos_projects p ON p.id=eb.project_id LEFT JOIN pos_event_details d ON d.project_id=p.id LEFT JOIN pos_event_stock_policy sp ON sp.project_id=p.id WHERE p.deleted_at IS NULL ORDER BY eb.project_id`).rows;
   const events=[];
@@ -147,7 +184,8 @@ export async function workspaceEvents(sql,userId) {
     const event=await eventPermissions(sql,userId,project_id);
     if(event.permissions.canRead)events.push({id:event.id,name:event.name,venue,startsOn:starts_on,endsOn:ends_on,boothId:event.booth_id,boothName:event.booth_name,createdAt:event.created_at,archivedAt:event.archived_at,permissions:event.permissions});
   }
-  return events;
+  const summaries=await workspaceOperatorSummaries(sql,events);
+  return events.map(event=>({...event,...(event.permissions.canManage?{summary:summaries.get(event.id)}:{})}));
 }
 
 

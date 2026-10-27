@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {readFile} from 'node:fs/promises';
+import {dashboardEvents,dashboardFocus,dashboardAlerts} from '../src/utils/personalDashboard.js';
 import {eventSchedule,sortEventsBySchedule} from '../src/utils/eventSchedule.js';
 import {storageQuery} from '../api/lib/storageContract.js';
 import {createApiContractContext} from '../src/utils/apiContractContext.js';
@@ -13,7 +14,7 @@ const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
 async function harness(file,mocks={}) {
  let cursor=0,effectIndex=0;const states=[],effects=[],deps=[];
  const react={useId:()=> 'inventory-plan-form',useRef:value=>{const i=cursor++;return states[i]||=( {current:value});},useState:value=>{const i=cursor++;if(!(i in states))states[i]=typeof value==='function'?value():value;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},useEffect:(effect,dependencies)=>{const i=effectIndex++;if(!deps[i]||dependencies.some((v,j)=>!Object.is(v,deps[i][j]))){deps[i]=dependencies;effects.push(effect);}}};
- const base={react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
+ const base={react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
  const context=vm.createContext({crypto:globalThis.crypto,URLSearchParams,URL,sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},alert:message=>{throw new Error(message);}});
  const source=await readFile(new URL('../src/'+file,import.meta.url),'utf8');
  const module=new vm.SourceTextModule(ts.transpileModule(source,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText,{context});
@@ -420,7 +421,7 @@ test('personal sales search submits and resets; table sorts numeric amounts in b
 });
 
 
-test('dashboard combines current and future events in one panel in schedule order',async()=>{
+test('dashboard has a detailed focus and chronological upcoming list',async()=>{
  const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
  const props={data:{events:[],inventory:[],stockEvents:[]},events:[
   {id:'later',name:'나중 행사',venue:'벡스코',startsOn:'2099-12-05',endsOn:'2099-12-06',permissions:{canViewPos:true}},
@@ -428,9 +429,10 @@ test('dashboard combines current and future events in one panel in schedule orde
   {id:'earlier',name:'먼저 행사',venue:'세텍',startsOn:'2099-01-05',endsOn:'2099-01-06',permissions:{canViewPos:true}}
  ]};
  const tree=h.render(props);
- const panel=tree.find(n=>n.props.className==='dashboard-card home-events');
- assert.deepEqual(nodes(panel).filter(n=>n.type==='h3').map(n=>n.props.children),['현재 행사','먼저 행사','나중 행사']);
- assert.equal(tree.some(n=>n.props.className==='home-upcoming-list'),false);
+ const panel=tree.find(n=>n.props.className==='dashboard-card home-focus');
+ assert.deepEqual(nodes(panel).filter(n=>n.type==='h3').map(n=>n.props.children),['현재 행사']);
+ const future=tree.find(n=>n.props.className==='home-upcoming-rows');
+ assert.deepEqual(nodes(future).filter(n=>n.type==='h3').map(n=>n.props.children),['먼저 행사','나중 행사']);
 });
 
 
@@ -458,4 +460,23 @@ test('event list puts the nearest upcoming event first without changing the sour
  ];
  assert.deepEqual(sortEventsBySchedule(rows,'2026-10-26').map(row=>row.id),['next','later','now','unknown','past']);
  assert.equal(rows[0].id,'past');
+});
+
+
+test('dashboard switches live focus without changing event links and limits upcoming rows to three',async()=>{
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:()=> '2026-10-27'}});
+ const permissions={canManage:true,canSell:true,canConfigure:true,canSettle:true};
+ const active=(id,last)=>({id,name:id,startsOn:'2026-10-26',endsOn:'2026-10-28',permissions,summary:{total:1000,sales:1,products:1,initialStock:10,remainingStock:9,artistCount:1,lastSaleAt:last}});
+ const props={data:{events:[],inventory:[]},events:[active('old','2026-10-26'),active('new','2026-10-27'),...[1,2,3,4].map(day=>({id:`future${day}`,name:`미래${day}`,startsOn:`2026-11-0${day}`,endsOn:`2026-11-0${day}`,permissions})),{id:'unknown',name:'일정 미정 행사',permissions}]};
+ let tree=h.render(props);
+ const focus=()=>tree.find(n=>n.props.className==='dashboard-card home-focus');
+ assert.equal(nodes(focus()).find(n=>n.type==='h3').props.children,'new');
+ assert.ok(nodes(focus()).some(n=>n.type==='a'&&n.props.href==='#/sales?projectId=new'));
+ tree.find(n=>n.type==='button'&&n.props['aria-label']==='다음 행사').props.onClick();tree=h.render(props);
+ assert.equal(nodes(focus()).find(n=>n.type==='h3').props.children,'old');
+ assert.ok(nodes(focus()).some(n=>n.type==='a'&&n.props.href==='#/sales?projectId=old'));
+ let future=tree.find(n=>n.props.className==='home-upcoming-rows');assert.equal(nodes(future).filter(n=>n.type==='li').length,3);
+ tree.find(n=>n.type==='button'&&n.props['aria-controls']==='home-future-list').props.onClick();tree=h.render(props);
+ future=tree.find(n=>n.props.className==='home-upcoming-rows');assert.equal(nodes(future).filter(n=>n.type==='li').length,5);
+ assert.equal(nodes(future).filter(n=>n.type==='h3').at(-1).props.children,'일정 미정 행사');
 });

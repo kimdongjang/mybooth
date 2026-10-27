@@ -1,3 +1,4 @@
+import LoadingState from '../components/LoadingState';
 import InventoryImport from './InventoryImport';
 import StockMovementForm from '../components/StockMovementForm';
 import { dateValue } from '../components/RegistrationDateForm';
@@ -200,10 +201,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
     {error && <p role="alert" className="inventory-error">{error}</p>}
     {message && <p role="status">{message}</p>}
     {deletionNotice && <div role="status" className="inventory-card"><p>{deletionNotice}</p><button type="button" className="management-back" onClick={() => setDeletionNotice('')}>닫기</button></div>}
-    {!ready && !error && <div className="inventory-loading" aria-busy="true">
-      <div className="inventory-skeleton" aria-hidden="true"><div className="inventory-skeleton-search" /><div className="inventory-skeleton-toolbar" /><div className="inventory-skeleton-table">{Array.from({ length: 7 }, (_, row) => <div className="inventory-skeleton-row" key={row}>{Array.from({ length: 4 }, (_, column) => <span key={column} />)}</div>)}</div></div>
-      <div className="inventory-loading-status" role="status"><span className="inventory-loading-spinner" aria-hidden="true" /><span>재고를 불러오는 중…</span></div>
-    </div>}
+    {!ready && !error && <LoadingState/>}
     {uncertain && <div role="status" className="inventory-card"><p>이전에 요청한 재고 이동의 완료 여부를 확인해주세요.</p><button type="button" className="management-back" disabled={busy} onClick={() => run(resolvePending)}>이전 이동 결과 확인</button></div>}
     <InventoryTransferRecovery adminId={adminId} api={api} onBlocked={setPendingMoves} onInventory={inventory => { setItems(inventory); setDraft(current => current ? inventory.find(row => row.id === current.id) || null : null); }} />
     {ready && tool === 'import' && <InventoryImport api={api} adminId={adminId} navigate={navigate} review={importReview} onRegistered={data=>{setItems(data.inventory);setAllocationEvents(data.inventoryEvents || []);}} />}

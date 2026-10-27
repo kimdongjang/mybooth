@@ -43,13 +43,14 @@ export function AppHeader({ page, navigate, project, saving, sync, onReleaseProj
     event.preventDefault(); go(key);
   };
   const showEventNav = project && !['projects', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(page);
+  const eventDestination = project ? (project.permissions?.canSell || project.permissions?.canViewPos ? 'pos' : 'log') : 'projects';
   const eventContext = (<div className="header-event">
-      <a className="event-context-link" href={`#${pagePaths[project ? 'pos' : 'projects']}`} onClick={follow(project ? (project.permissions?.canSell||project.permissions?.canViewPos?'pos':'log') : 'projects')}>
+      <a className="event-context-link" href={`#${pagePaths[eventDestination]}`} onClick={follow(eventDestination)}>
         <Icon name="project" /><span className="event-context-name" title={project?.name}>{project?.name || '행사 선택'}</span>
       </a>
     </div>);
   return <><header className="app-header border-b border-line bg-white text-ink">
-    <div className="header-brand"><a href="#/dashboard" className="display-font brand-title font-bold" onClick={follow('dashboard')}><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
+    <div className="header-brand"><a href={`#${pagePaths[eventDestination]}`} className="display-font brand-title font-bold" onClick={follow(eventDestination)}><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
     <div className="header-event-desktop">{eventContext}</div>
     {project && <div className="header-sync"><SyncStatus sync={sync} /></div>}
     <div className="header-controls"><button data-guide={project && page === 'pos' && !open ? 'menu' : undefined} ref={toggle} type="button" className={`menu-toggle ${open ? 'is-open' : ''}`} aria-label={open ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={open} aria-controls="booth-navigation" onClick={() => setOpen(!open)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>

@@ -1069,3 +1069,26 @@ test('event information saves name and schedule together with password and rejec
   assert.equal((await save({...payload,startsOn:'',endsOn:''})).status,200);assert.equal((await f.sql`SELECT project_id FROM pos_event_stock_policy WHERE project_id=${f.event}`).rows.length,0);
  }finally{await f.db.close();}
 });
+
+test('workspace dashboard aggregates are scoped to operators and do not expose event totals to viewers',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();await artistStock.initArtistStock(f.sql);await eventAccess.initEventAccess(f.sql,'a');
+  await f.sql`INSERT INTO pos_sales(project_id,id,time,method,total,lines) VALUES(${f.event},'dashboard-paid','2026-10-27T10:00:00Z','cash',5000,'[]'),(${f.event},'dashboard-free','2026-10-27T11:00:00Z','cash',0,'[]')`;
+  await f.sql`UPDATE pos_settlements SET payments='[{"id":"paid","amount":1000},{"id":"reverse","amount":-200}]'::jsonb WHERE project_id=${f.event} AND creator='작가'`;
+  await f.sql`INSERT INTO pos_settlements(admin_id,project_id,creator,payments) VALUES('a',${f.event},'다른 작가','[{"id":"paid-other","amount":500}]'::jsonb)`;
+  await f.sql`INSERT INTO pos_event_settlements(admin_id,project_id,closed_at,snapshot) VALUES('a',${f.event},NOW(),'{"rows":[{"creator":"작가","net":4000},{"creator":"다른 작가","net":2000}]}'::jsonb)`;
+  await f.sql`INSERT INTO pos_settlements(admin_id,project_id,creator,payments) VALUES('b',${f.event},'다른 계정 원장','[{"id":"foreign","amount":999999}]'::jsonb)`;
+  const before=await foundation.legacySnapshot(f.sql,'a');
+  const rows=await eventAccess.workspaceEvents(f.sql,'a'),current=rows.find(row=>row.id===f.event);
+  assert.ok(current.summary);assert.equal(current.summary.products,before.products.filter(row=>row.project_id===f.event&&row.is_active!==false).length);
+  assert.equal(current.summary.sales,before.sales.filter(row=>row.project_id===f.event).length);
+  assert.equal(current.summary.total,before.sales.filter(row=>row.project_id===f.event).reduce((sum,row)=>sum+Number(row.total),0));
+  assert.equal(current.summary.total,5000);assert.equal(current.summary.sales,2);assert.ok(current.summary.closedAt);
+  assert.equal(current.summary.settlementNet,6000);assert.equal(current.summary.paid,1300);assert.equal(current.summary.pending,4700);
+  assert.equal(new Date(current.summary.lastSaleAt).toISOString(),'2026-10-27T11:00:00.000Z');
+  await f.sql`INSERT INTO pos_booth_members(booth_id,user_id,role,status) VALUES(${boothId},'b','viewer','active')`;
+  const viewer=await eventAccess.workspaceEvents(f.sql,'b');assert.ok(viewer.every(row=>row.summary===undefined));
+  const outsider=await eventAccess.workspaceEvents(f.sql,'c');assert.equal(outsider.length,0);
+  assert.deepEqual((await foundation.legacySnapshot(f.sql,'a')).sales,before.sales);
+ }finally{await f.db.close();}
+});
