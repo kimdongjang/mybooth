@@ -5,14 +5,14 @@ import LoadingState from '../components/LoadingState';
 import PersonalDashboard from '../components/PersonalDashboard';
 
 const noEvents=[];
-export default function PersonalOverview({request,projectId,dashboard=false,pinnedProjectId='',events=noEvents,readWaitingOrders}) {
+export default function PersonalOverview({request,projectId,dashboard=false,pinnedProjectId='',onPinProject,events=noEvents,readWaitingOrders}) {
  const [data,setData]=useState(null),[error,setError]=useState(''),[start,setStart]=useState(''),[end,setEnd]=useState('');
  useEffect(()=>{let active=true;request('/api/booths?artists=history').then(async value=>{
   if(dashboard){const stock=await Promise.all(value.profiles.map(p=>request(`/api/booths?artists=stock&ownerId=${encodeURIComponent(p.owner_id)}`)));value={...value,inventory:[...new Map(stock.flatMap(s=>s.inventory).map(item=>[`${item.custodianId}:${item.inventoryId||item.id}`,item])).values()],stockEvents:[...new Map(stock.flatMap(s=>s.events||[]).map(event=>[event.id,event])).values()]};}
   if(dashboard&&readWaitingOrders){const counts=await Promise.all(events.filter(event=>event.permissions?.canSell||event.permissions?.canManage).map(async event=>[event.id,await readWaitingOrders(event.id).catch(()=>undefined)]));value={...value,waitingOrders:Object.fromEntries(counts)};}
   if(active)setData(value);
  }).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[request,projectId,dashboard,readWaitingOrders,events]);
- if(dashboard)return <PersonalDashboard pinnedProjectId={pinnedProjectId} data={data} error={error} events={events}/>;
+ if(dashboard)return <PersonalDashboard pinnedProjectId={pinnedProjectId} onPinProject={onPinProject} data={data} error={error} events={events}/>;
  const selected=(data?.events||[]).filter(e=>!projectId||e.projectId===projectId);
  const rows=selected.flatMap(e=>e.rows.map(row=>({...row,event:e})));
  const gross=selected.flatMap(e=>e.sales).filter(s=>!s.voided&&(!start||koreanDay(s.time)>=start)&&(!end||koreanDay(s.time)<=end)).flatMap(s=>s.items).reduce((s,i)=>s+i.amount,0);
