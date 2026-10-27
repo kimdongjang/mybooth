@@ -13,7 +13,7 @@ async function harness() {
     if(calls.length===1)throw new Error('응답 유실');
     return {inventory:{allocations:[]}};
   };
-  const mocks={react:{useId:()=> 'stock-total-form',useRef:value=>{const i=cursor++;if(!(i in states))states[i]={current:value};return states[i];},useState:value=>{const i=cursor++;if(!(i in states))states[i]=value;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},useEffect:(effect,deps)=>{const i=effectIndex++;if(!dependencies[i]||deps.some((v,j)=>!Object.is(v,dependencies[i][j]))){dependencies[i]=deps;effects.push(effect);}}},
+  const mocks={'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react:{useId:()=> 'stock-total-form',useRef:value=>{const i=cursor++;if(!(i in states))states[i]={current:value};return states[i];},useState:value=>{const i=cursor++;if(!(i in states))states[i]=value;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},useEffect:(effect,deps)=>{const i=effectIndex++;if(!dependencies[i]||deps.some((v,j)=>!Object.is(v,dependencies[i][j]))){dependencies[i]=deps;effects.push(effect);}}},
     'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'../components/PosUI':{Input:'Input'}};
   const context=vm.createContext({crypto:globalThis.crypto});
   const source=await readFile(new URL('../src/pages/ArtistStockPage.jsx',import.meta.url),'utf8');

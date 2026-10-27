@@ -7,6 +7,7 @@ import { won } from '../utils/productDisplay';
 import LoadingState from './LoadingState';
 import SettlementEditor from './SettlementEditor';
 import { koreanDay } from '../utils/revenueSummary';
+import {useEventReadRefresh} from '../hooks/useEventReadRefresh';
 export default function EventSettlementPanel({request,projectId,onChange}) {
  const [data,setData]=useState(null),[costs,setCosts]=useState([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[editing,setEditing]=useState(null);
  const [costDraft,setCostDraft]=useState(null),[costError,setCostError]=useState('');
@@ -15,10 +16,11 @@ export default function EventSettlementPanel({request,projectId,onChange}) {
  const updateCost=(key,value)=>setCostDraft(current=>({...current,[key]:value}));
  const addCost=e=>{e.preventDefault();const value=Number(costDraft.value);if(!costDraft.label.trim()||costDraft.value===''||!Number.isFinite(value)||value<0||(costDraft.type==='fixed'&&!Number.isSafeInteger(value))||(costDraft.type==='percent'&&(value>100||Math.abs(value*100-Math.round(value*100))>1e-7))){setCostError('항목명과 올바른 금액·수수료를 입력해주세요.');return;}setCosts(current=>[...current,{...costDraft,label:costDraft.label.trim(),value:costDraft.type==='percent'?Math.round(value*100):value}]);setCostDraft(null);};
  const pending=useRef(null),lock=useRef(false),active=useRef(true);
- const load=async()=>{const result=await request(`/api/settlements?projectId=${encodeURIComponent(projectId)}`);if(active.current){setData(result);setCosts(result.eventSettlements.find(row=>row.projectId===projectId)?.costs || []);}return result;};
- useEffect(()=>{active.current=true;load().catch(e=>{if(active.current)setError(e.message);});return()=>{active.current=false;};},[projectId,request]);
  const event=data?.eventSettlements.find(row=>row.projectId===projectId) || {version:0,costs:[],history:[]};
  const dirty=JSON.stringify(costs)!==JSON.stringify(event.costs);
+ const readRevision=useEventReadRefresh(request,!busy&&!pending.current&&!costDraft&&!editing&&!dirty);
+ const load=async()=>{const result=await request(`/api/settlements?projectId=${encodeURIComponent(projectId)}`);if(active.current){setData(result);setCosts(result.eventSettlements.find(row=>row.projectId===projectId)?.costs || []);}return result;};
+ useEffect(()=>{active.current=true;load().catch(e=>{if(active.current){setError(e.message);if([401,403,404].includes(e.status))setData(null);}});return()=>{active.current=false;};},[projectId,request,readRevision]);
  const clear=useUnsavedChanges(dirty);
  let preview,previewError;
  try{preview=event.closedAt?event.snapshot:data?eventSettlementPreview(data.state,costs,data.settlements.filter(row=>row.projectId===projectId)):null;}catch(e){previewError=e.message;}

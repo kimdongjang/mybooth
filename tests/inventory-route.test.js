@@ -30,6 +30,11 @@ test('inventory deep links, direct refresh, back/forward and event history queri
   const { usePageRoute, pageForHash, productIdForHash } = module.namespace;
   assert.equal(usePageRoute()[0], 'inventory');
   assert.equal(usePageRoute()[2], window.location.hash);
+  assert.equal(pageForHash('#/project/manage?projectId=managed-event'), 'project');
+  assert.equal(pageForHash('#/project?projectId=managed-event'), 'project');
+  await usePageRoute()[1]('project');
+  assert.equal(window.location.hash, '#/project/manage');
+  assert.equal(usePageRoute()[0], 'project');
   await usePageRoute()[1]('inventory');
   assert.equal(window.location.hash, '#/inventory');
   await usePageRoute()[1]('/inventory/new');

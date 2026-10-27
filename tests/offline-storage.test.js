@@ -27,9 +27,83 @@ const { db } = await load('../src/database/dexie.ts');
 const { stateRepository: states } = await load('../src/database/stateRepository.ts');
 const { orderRepository: orders } = await load('../src/database/orderRepository.ts');
 const {LocalFirstStore}=await load('../src/data/localFirst.ts');
+const {createEventReadCache}=await load('../src/data/eventReadCache.ts');
 const initial = { products: [{ id: 'p', stock: 5 }], bundles: [], sales: [], dataRevision: null };
 const sold = { ...initial, products: [{ id: 'p', stock: 4 }], sales: [{ id: 'sale' }] };
 const order = { projectId: 'a', localOrderId: 'sale', createdAt: '2026-10-15', payload: { projectId: 'a' }, syncStatus: 'PENDING', retryCount: 0 };
+
+test('event reads reuse IndexedDB across remounts, coalesce misses, and reuse the workspace without another API',async()=>{
+ const scope={actorId:'reader',boothId:'booth',projectId:'event'},store=new LocalFirstStore(db,()=>true),calls=[];
+ const url='/api/booths?workspace=stockParticipants&projectId=event&boothId=booth';
+ let release;const gate=new Promise(resolve=>release=resolve);
+ const request=async(url,options)=>{calls.push({url,options});await gate;return {profiles:[{owner_id:'maker'}]};};
+ const cache=createEventReadCache({scope,store,request,isCurrent:()=>true});
+ try{
+  await store.put({actorId:'reader'},'workspace',{profiles:[{owner_id:'self'}]});
+  assert.equal((await cache.request('/api/booths?workspace=home')).profiles[0].owner_id,'self');assert.equal(calls.length,0);
+  const first=cache.request(url),second=cache.request(url);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,1);
+  release();assert.deepEqual(await first,await second);
+  const reopened=createEventReadCache({scope,store,request:async()=>{throw new Error('cache must win');},isCurrent:()=>true});
+  assert.equal((await reopened.request(url)).profiles[0].owner_id,'maker');
+ }finally{await db.delete();await db.open();}
+});
+
+test('event background refresh is silent, updates subscribers, and stops requesting departed screens',async()=>{
+ const scope={actorId:'reader',boothId:'booth',projectId:'event'},store=new LocalFirstStore(db,()=>true),calls=[];let version=1,updates=0;
+ const cache=createEventReadCache({scope,store,isCurrent:()=>true,request:async(url,options)=>{calls.push(options);return {version};}});
+ const unsubscribe=cache.request.subscribe(()=>updates++),url='/api/booths?artists=stock&ownerId=maker&projectId=event&boothId=booth';
+ try{
+  await cache.request(url);version=2;assert.equal(await cache.refresh({activeOnly:true}),true);
+  assert.equal(calls.length,2);assert.equal(calls[1].background,true);assert.ok(calls[1].signal);assert.equal(updates,1);
+  assert.equal((await cache.request(url)).version,2);assert.equal(calls.length,2);
+  unsubscribe();await cache.refresh({activeOnly:true});assert.equal(calls.length,2);
+ }finally{unsubscribe();await db.delete();await db.open();}
+});
+
+test('event cache commands stay online, invalidate saved and conflicted reads, and preserve orders/state',async()=>{
+ const scope={actorId:'reader',boothId:'booth',projectId:'event'},store=new LocalFirstStore(db,()=>true);let version=1,fail=false,posts=0,gets=0;
+ const url='/api/booths?workspace=access&projectId=event&boothId=booth';
+ const cache=createEventReadCache({scope,store,isCurrent:()=>true,request:async(_url,options)=>{
+  if(options.method==='POST'){posts++;if(fail)throw Object.assign(new Error('conflict'),{status:409});version++;return {saved:true};}
+  gets++;return {version};
+ }});
+ try{
+  await states.save('a',initial);await orders.add({...order});
+  assert.equal((await cache.request(url)).version,1);
+  await cache.request('/api/booths',{method:'POST',body:'command'});
+  assert.equal((await cache.request(url)).version,2);assert.equal(gets,2);assert.equal(posts,1);
+  fail=true;await assert.rejects(cache.request('/api/booths',{method:'POST'}),/conflict/);
+  await cache.request(url);assert.equal(gets,3);
+  assert.deepEqual(await states.get('a'),initial);assert.equal(await orders.countWaiting('a'),1);
+ }finally{await db.delete();await db.open();}
+});
+
+test('event cache isolates actor/booth/event, supports offline reads, and hides denied snapshots',async()=>{
+ const scope={actorId:'reader',boothId:'booth',projectId:'event'};let online=true,denied=false;
+ const store=new LocalFirstStore(db,()=>online),url='/api/booths?artists=history';
+ const request=async()=>{if(!online)throw new Error('offline');if(denied)throw Object.assign(new Error('forbidden'),{status:403});return {privateValue:1};};
+ const cache=createEventReadCache({scope,store,request,isCurrent:()=>true});
+ try{
+  await cache.request(url);online=false;assert.equal((await cache.request(url)).privateValue,1);
+  await cache.invalidate();assert.equal((await cache.request(url)).privateValue,1);
+  for(const other of [{...scope,actorId:'other'},{...scope,boothId:'other'},{...scope,projectId:'other'}]){
+   const isolated=createEventReadCache({scope:other,store,request,isCurrent:()=>true});await assert.rejects(isolated.request(url),/인터넷/);
+  }
+  online=true;denied=true;assert.equal(await cache.refresh(),false);
+  await assert.rejects(cache.request(url),/forbidden/);
+ }finally{await db.delete();await db.open();}
+});
+
+test('late event reads cannot overwrite a mutation refresh or survive an account switch',async()=>{
+ const scope={actorId:'reader',boothId:'booth',projectId:'event'},store=new LocalFirstStore(db,()=>true),url='/api/booths?artists=stock&ownerId=maker';
+ let release,first=true,active=true;const gate=new Promise(resolve=>release=resolve);
+ const cache=createEventReadCache({scope,store,isCurrent:()=>active,request:async()=>{if(first){first=false;await gate;return {version:1};}return {version:2};}});
+ try{
+  const old=cache.request(url);await new Promise(resolve=>setImmediate(resolve));await cache.invalidate();
+  assert.equal((await cache.request(url)).version,2);release();await assert.rejects(old,/범위/);
+  assert.equal((await cache.request(url)).version,2);active=false;await assert.rejects(cache.request(url),/범위/);
+ }finally{release();await db.delete();await db.open();}
+});
 
 test('local-first reads return durable cache before the remote result, isolate scope and revoke denied data',async()=>{
  await db.open();const store=new LocalFirstStore(db,()=>true),scope={actorId:'artist-a',boothId:'booth-a'};

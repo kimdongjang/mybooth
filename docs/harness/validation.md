@@ -1,3 +1,12 @@
+## 2026-10-27 PR #81 갱신 검증
+
+- 최신 main(5d42843)을 PR 브랜치에 병합하고 이후 요청한 행사 보조 조회 캐시, 관리 경로, 대시보드 바로가기/색상, 행사 선택 카드 배치를 분리 반영했다. 기존 로컬의 조회 전용 판매 진입 변경·정산 비용 자동 저장·데이터 관리 카드 재구성은 제외했다.
+- `node --experimental-vm-modules --test tests/offline-storage.test.js tests/background-sync.test.js tests/workspace-ui.test.js tests/event-settlement-ui.test.js tests/inventory-import-flow.test.js tests/artist-stock-ui.test.js tests/artist-account-ui.test.js tests/payment-confirm.test.js tests/api-read-tracker.test.js tests/api-contract-context.test.js tests/react-hooks.test.js tests/inventory-route.test.js tests/personal-dashboard.test.js`: PR 전용 작업 트리에서 98개 통과.
+- 캐시 재진입 GET 생략/동시 요청 병합/활성 화면 백그라운드 갱신, 계정·부스·행사 격리/명령 후 무효화/권한 거절 숨김/늦은 응답 차단, 미전송 주문 보존, 로컬 단품·세트 판매 수량과 0원 가격, 편집 초안 보호를 확인했다. 관리 새 주소와 기존 주소 호환, 대시보드 네 바로가기의 순서·권한·행사 ID, 드롭다운 제거와 미지정 + 링크도 확인했다.
+- 첫 분리 검증에서 제외 대상인 기존 데이터 관리 재구성의 테스트가 함께 복사돼 2개 실패했다. 해당 테스트도 main의 기존 계약으로 복구·분리한 뒤 동일 명령으로 모두 통과했다.
+- `npm run build` 통과(기존 500kB 청크 경고). 실제 브라우저/Android의 시각·클릭·정확한 호출 빈도/통신 단절·재시작, 실제 PostgreSQL 경쟁은 미실행이다. 운영 API/DB 및 제공된 인증 토큰을 사용하지 않았다.
+- 행사 관리 쓰기·마감·복원은 온라인 전용이고 행사 백업은 미전송 기기 큐를 포함하지 않는다. 최초 캐시 준비가 필요하며 앱 종료 후 자동 전송은 보장하지 않는다. API·DB 스키마 변경 없음.
+
 ## 2026-10-27 IndexedDB 우선 진입·30초 POS 동기화
 
 - `node --experimental-vm-modules --test tests/background-sync.test.js tests/offline-storage.test.js tests/payment-confirm.test.js tests/api-read-tracker.test.js tests/api-contract-context.test.js`: 최신 origin/main 기반 분리 브랜치에서 24개 통과. 캐시 행사 진입의 GET 생략/로딩 해제, 부스 범위, 중복 조회 병합, 30초 타이머와 숨김/복귀/연결 복구/수동 실행, 업로드→수신 순서, 실패 재시도 지연, 전환 후 이전 응답 무시를 확인했다.
