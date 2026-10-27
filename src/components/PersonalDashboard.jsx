@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import {useState} from 'react';
 import {won} from '../utils/productDisplay';
 import {koreanDay} from '../utils/revenueSummary';
@@ -20,7 +21,7 @@ function Preparation({event,warehouse,compact=false}) {
  return <div className={compact?'home-preparation is-compact':'home-preparation'} aria-label={`${event.name} 준비 상태`}>{values.map(([label,value,unit])=><span key={label} className={Number(value)===0?'needs-attention':''}>{label} <strong>{won(value)}{unit}</strong>{Number(value)===0&&<span aria-label="확인 필요"> ⚠</span>}</span>)}{!compact&&warehouse>0&&metrics.allocated===0&&<p>미배정 재고 {won(warehouse)}개 · 이 행사에 배정된 재고가 없습니다.</p>}</div>;
 }
 
-export default function PersonalDashboard({data,error,events=[]}) {
+export default function PersonalDashboard({pinnedProjectId='',data,error,events=[]}) {
  const [period,setPeriod]=useState('all'),[start,setStart]=useState(''),[end,setEnd]=useState('');
  const [selected,setSelected]=useState(null),[expanded,setExpanded]=useState(false);
  const today=koreanDay(new Date()),inventory=data?.inventory||[],history=data?.events||[];
@@ -28,7 +29,7 @@ export default function PersonalDashboard({data,error,events=[]}) {
  const pending=sum(confirmed,'pending'),paid=sum(settlements,'paid'),warehouse=sum(inventory,'warehouse'),remaining=sum(inventory,'remaining');
  const sold=inventory.reduce((total,item)=>total+Number(item.stockSummary?.sold||0),0),eventRemaining=inventory.reduce((total,item)=>total+Number(item.stockSummary?.eventRemaining||0),0),other=inventory.reduce((total,item)=>total+Number(item.stockSummary?.other||0),0);
  const portions=[['sold','행사 판매',sold],['remaining','행사 잔여',eventRemaining],['warehouse','미배정',warehouse],...(other>0?[['other','기타 차감',other]]:[])],stockTotal=portions.reduce((total,[,,value])=>total+value,0);
- const cards=dashboardEvents(data,events,today),groups=dashboardFocus(cards);
+ const cards=dashboardEvents(data,events,today),groups=dashboardFocus(cards,pinnedProjectId);
  const focus=groups.choices.find(event=>event.id===selected)||groups.choices[0],focusIndex=groups.choices.indexOf(focus);
  const future=[...groups.upcoming,...groups.unknown].filter(event=>event.id!==focus?.id),visibleFuture=expanded?future:future.slice(0,3),past=groups.ended.filter(event=>event.id!==focus?.id);
  const alerts=dashboardAlerts(cards,warehouse).map(alert=>({
@@ -50,7 +51,7 @@ export default function PersonalDashboard({data,error,events=[]}) {
   {data&&<>
    {alerts.length>0&&<section className="home-alert-strip" aria-labelledby="home-alert-title"><h2 id="home-alert-title">지금 확인할 것</h2>{alerts.map(alert=><a key={alert.key} href={alert.href} className={alert.type==='negative'?'home-settlement-info':undefined}>{alert.text} →</a>)}</section>}
    <section className="dashboard-card home-focus" aria-labelledby="home-focus-title">
-    <div className="home-section-heading"><h2 id="home-focus-title">지금 집중할 행사</h2>{groups.choices.length>1&&<div className="home-focus-switch" role="group" aria-label="진행 중 행사 전환"><button type="button" className="management-back" aria-label="이전 행사" onClick={()=>setSelected(groups.choices[(focusIndex-1+groups.choices.length)%groups.choices.length].id)}>←</button><span aria-live="polite">{focusIndex+1}/{groups.choices.length}</span><button type="button" className="management-back" aria-label="다음 행사" onClick={()=>setSelected(groups.choices[(focusIndex+1)%groups.choices.length].id)}>→</button></div>}</div>
+    <div className="home-section-heading"><h2 id="home-focus-title" className="home-focus-title"><Icon name="pin"/>지금 집중할 행사</h2>{groups.choices.length>1&&<div className="home-focus-switch" role="group" aria-label="진행 중 행사 전환"><button type="button" className="management-back" aria-label="이전 행사" onClick={()=>setSelected(groups.choices[(focusIndex-1+groups.choices.length)%groups.choices.length].id)}>←</button><span aria-live="polite">{focusIndex+1}/{groups.choices.length}</span><button type="button" className="management-back" aria-label="다음 행사" onClick={()=>setSelected(groups.choices[(focusIndex+1)%groups.choices.length].id)}>→</button></div>}</div>
     {focus?<>
      <header className="home-focus-heading"><div><h3>{focus.name}</h3><span className={`inventory-event-status is-${focus.status}`}>{statusOf(focus)}</span></div><span className="home-role">{roleOf(focus.p)}</span></header>
      <p className="home-focus-context">{focus.boothName&&<span>{focus.boothName}</span>}<span>{periodOf(focus)}</span>{focus.dayLabel&&<strong>{focus.dayLabel}</strong>}</p>{focus.venue&&<p className="home-event-venue">{focus.venue}</p>}

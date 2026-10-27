@@ -1092,3 +1092,24 @@ test('workspace dashboard aggregates are scoped to operators and do not expose e
   assert.deepEqual((await foundation.legacySnapshot(f.sql,'a')).sales,before.sales);
  }finally{await f.db.close();}
 });
+
+
+test('unlinked event roles save without account linkage, replay safely and transfer when linked',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const made=await f.invoke('booths','createEventCreator',{projectId:f.event,boothId,name:'권한 제작자',requestId:crypto.randomUUID()});assert.equal(made.status,200);
+  const ownerId=made.body.ownerId;
+  let row=(await f.sql`SELECT * FROM pos_event_artists WHERE project_id=${f.event} AND owner_id=${ownerId}`).rows[0];
+  const command={projectId:f.event,boothId,ownerId,role:'assistant',status:'active',version:row.version,requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke('booths','saveEventAccess',command,'c')).status,403);
+  const saved=await f.invoke('booths','saveEventAccess',command);assert.equal(saved.status,200,JSON.stringify(saved.body));
+  assert.equal(saved.body.profiles.find(p=>p.owner_id===ownerId).requested_role,'assistant');
+  assert.deepEqual((await f.invoke('booths','saveEventAccess',command)).body,saved.body);
+  assert.equal((await f.invoke('booths','saveEventAccess',{...command,role:'seller'})).status,409);
+  assert.equal((await f.invoke('booths','saveEventAccess',{...command,requestId:crypto.randomUUID()})).status,409);
+  assert.equal((await f.sql`SELECT * FROM pos_event_staff WHERE project_id=${f.event} AND user_id='b'`).rows.length,0);
+  const linked=await f.invoke('booths','linkEventArtistAccount',{projectId:f.event,boothId,profileId:made.body.profileId,targetUserId:'b',requestId:crypto.randomUUID()});assert.equal(linked.status,200,JSON.stringify(linked.body));
+  row=(await f.sql`SELECT * FROM pos_event_staff WHERE project_id=${f.event} AND user_id='b'`).rows[0];assert.equal(row.role,'assistant');
+  assert.equal((await f.invoke('booths','saveEventAccess',{...command,version:command.version+1,requestId:crypto.randomUUID()})).status,409);
+ }finally{await f.db.close();}
+});

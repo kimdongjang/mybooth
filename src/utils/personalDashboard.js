@@ -37,12 +37,13 @@ export function dashboardEvents(data,events=[],today=koreanDay(new Date())) {
  });
 }
 
-export function dashboardFocus(events) {
+export function dashboardFocus(events,pinnedProjectId='') {
  const active=events.filter(event=>event.status==='active').sort((a,b)=>b.latest-a.latest||String(b.schedule.starts_on).localeCompare(String(a.schedule.starts_on))||a.name.localeCompare(b.name,'ko'));
  const upcoming=events.filter(event=>event.status==='upcoming').sort((a,b)=>a.schedule.starts_on.localeCompare(b.schedule.starts_on)||a.name.localeCompare(b.name,'ko'));
  const ended=events.filter(event=>event.status==='ended').sort((a,b)=>timestamp(b.endedAt)-timestamp(a.endedAt)||a.name.localeCompare(b.name,'ko'));
  const unknown=events.filter(event=>event.status==='unscheduled').sort((a,b)=>a.name.localeCompare(b.name,'ko'));
- return {choices:active.length?active:upcoming.length?[upcoming[0]]:ended.length?[ended[0]]:[],upcoming,ended,unknown};
+ const pinned=events.find(event=>event.id===pinnedProjectId);
+ return {choices:pinned?[pinned]:active.length?active:upcoming.length?[upcoming[0]]:ended.length?[ended[0]]:[],upcoming,ended,unknown};
 }
 
 export function dashboardAlerts(events,warehouse=0) {

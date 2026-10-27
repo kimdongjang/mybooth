@@ -1,4 +1,5 @@
 const isApiRead=(url,options)=>{
+ if(options?.background===true)return false;
  if(String(options?.method||'GET').toUpperCase()!=='GET')return false;
  try{return new URL(String(url),'https://local.invalid').pathname.startsWith('/api/');}catch{return false;}
 };

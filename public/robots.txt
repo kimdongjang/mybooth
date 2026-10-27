@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /mobile-updates/
+Disallow: /pos.html
+
+Sitemap: https://withbooth.vercel.app/sitemap.xml
