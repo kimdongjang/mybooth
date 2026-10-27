@@ -25,7 +25,7 @@
 - `src/database/dexie.ts`: 프로젝트별 `orders`, `posState`만 존재한다. 계정별 행사 목록, 지속 세션, 준비 진행 상태, 관리 변경 큐는 없다.
 - `src/App.jsx`: 가입/로그인과 행사 목록/관리는 API를 직접 호출한다. 인증/선택 행사는 sessionStorage에 저장한다. 상품·세트·입고·조정은 `mutate`로 서버 성공 후 캐시를 갱신한다.
 - 판매는 주문 큐에 먼저 기록하지만 상태 스냅샷은 별도 비동기 저장이다. 취소도 상태와 큐를 따로 저장한다.
-- `src/hooks/useSync.ts`, `src/sync/syncService.ts`: 열린 앱에서 현재 선택 행사 주문을 시작 시/10초 주기/연결 복구/수동/판매 직후 전송한다. 전체 계정의 양방향 동기화나 앱 종료 후 백그라운드 전송은 없다.
+- `src/hooks/useSync.ts`, `src/sync/syncService.ts`: 2026-10-27부터 열린 앱에서 현재 선택 행사 주문을 30초 주기/연결 복구/화면 복귀/수동으로 전송하고 큐 해소 후 행사 상태를 수신한다. 캐시 진입/판매 직후 업로드는 생략한다. 전체 계정 동기화나 앱 종료 후 백그라운드 전송은 없다. 현재 계약은 [공통 데이터 계층](local-first-data.md)을 따른다.
 - `src/database/orderRepository.ts`: PENDING/FAILED만 재전송하므로 앱 종료 후 남은 SYNCING 복구가 없다. 서버 응답 상태 병합도 없다.
 - `loadState`는 온라인 서버 응답으로 로컬 상태를 교체하여 미전송 판매 효과가 화면에서 사라질 수 있다. 오프라인 재시작도 행사 목록 API에 의존한다.
 - 기존 `backupProject`/`restoreProject`는 비밀번호 확인이 필요한 온라인 서버 백업/새 행사 복원이다. 주문 큐 JSON/CSV 내보내기도 전체 로컬 스냅샷 복원 기능은 아니다.

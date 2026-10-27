@@ -33,6 +33,7 @@ import { stateRepository } from './database/stateRepository';
 import { localData } from './data/localFirst';
 import { useSync } from './hooks/useSync';
 import { createLocalOrderId } from './utils/orderId';
+import { SYNC_INTERVAL_MS } from './sync/backgroundSync';
 
 const AUTH_TOKEN_KEY = 'pos_admin_token';
 const AUTH_ADMIN_KEY = 'pos_admin_id';
@@ -133,7 +134,7 @@ export default function App() {
   }, [selectedProject?.id]);
   const [logCreatorFilter, setLogCreatorFilter] = useState('all');
   const activeScope = useRef(null);
-  const scope = `${token || ''}:${selectedProject?.id || ''}`;
+  const scope = `${token || ''}:${selectedProject?.boothId || ''}:${selectedProject?.id || ''}`;
   activeScope.current = scope;
   const activeToken = useRef(token);
   activeToken.current = token;
@@ -153,7 +154,9 @@ export default function App() {
     };
     return () => channel.close();
   }, [token, adminId, selectedProject?.id]);
-  const sync = useSync({ enabled: Boolean(token && selectedProject?.id && readyScope === scope && !readOnly && selectedProject?.permissions?.canSell), getAuthToken, projectId: selectedProject?.id, actorId: adminId, boothId: selectedProject?.boothId });
+  const sync = useSync({ enabled: Boolean(token && selectedProject?.id && readyScope === scope && !readOnly && selectedProject?.permissions?.canSell), refreshEnabled: Boolean(token && selectedProject?.id && readyScope === scope), onRefresh: () => loadState({background:true}), getAuthToken, projectId: selectedProject?.id, actorId: adminId, boothId: selectedProject?.boothId });
+  const stateReads = useRef(new Map());
+  const workspaceReads = useRef(new Map());
 
   const applyState = async (data, fromCache = false, queueVersion) => {
     if (activeScope.current !== scope) return;
@@ -190,15 +193,23 @@ export default function App() {
     setCart([]);
   };
 
-  const loadState = async ({background=false}={}) => {
+  const loadState = (options = {}) => {
+    if (stateReads.current.has(scope)) return stateReads.current.get(scope);
+    const pending = loadStateOnce(options).finally(() => {
+      if (stateReads.current.get(scope) === pending) stateReads.current.delete(scope);
+    });
+    stateReads.current.set(scope, pending);
+    return pending;
+  };
+  const loadStateOnce = async ({background=false}={}) => {
     if (!selectedProject?.id) return;
     if(selectedProject.permissions&&!selectedProject.permissions.canSell&&!selectedProject.permissions.canConfigure){setReadyScope(scope);setProducts([]);setBundles([]);setSales([]);setLoading(false);return;}
     if(!background){setLoading(true);setError('');}
     try {
       const cached = await stateRepository.getForActor(selectedProject.id, adminId);
       if (activeScope.current !== scope) return;
-      const usableCache=cached&&(!['pxwiu2t','s4fjgga'].includes(selectedProject.id)||cached.dataRevision);
-      if(usableCache&&!background)await applyState(cached,true);
+      const usableCache=cached&&(!selectedProject.boothId||cached.boothId===selectedProject.boothId)&&(!['pxwiu2t','s4fjgga'].includes(selectedProject.id)||cached.dataRevision);
+      if(usableCache&&!background){await applyState(cached,true);return true;}
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         if (usableCache) {
           return;
@@ -208,17 +219,17 @@ export default function App() {
       }
 
       const queueVersion = await stateRepository.queueVersion(selectedProject.id);
-      const data = await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}&boothId=${encodeURIComponent(selectedProject.boothId||'')}`,{background});
+      const data = await requestJson(`/api/pos?projectId=${encodeURIComponent(selectedProject.id)}&boothId=${encodeURIComponent(selectedProject.boothId||'')}`,{background,signal:AbortSignal.timeout(20_000)});
       if (activeScope.current !== scope) return;
       // Preserve the durable local projection until every command is acknowledged.
       if (await orderRepository.countWaiting(selectedProject.id)) {
         // acceptRemote validates the authenticated owner and retains the pending
         // projection, including an unbound pre-upgrade cache, atomically.
         await applyState(data, false, queueVersion);
-        setError('미동기화 주문을 보존했습니다. 동기화 완료 후 새로고침하면 서버 변경을 불러옵니다.');
       } else await applyState(data, false, queueVersion);
+      return true;
     } catch (err) {
-      if (activeToken.current !== token) return;
+      if (activeScope.current !== scope) return;
       if (String(err.message).includes('인증')) logout();
       else if ([403,404].includes(err.status)) {
         setReadyScope(null); setProducts([]); setBundles([]); setSales([]); setCart([]);
@@ -227,17 +238,26 @@ export default function App() {
       else {
         const cached = await stateRepository.getForActor(selectedProject.id, adminId);
         if (activeScope.current !== scope) return;
-        if (cached && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
+        if (cached && (!selectedProject.boothId || cached.boothId === selectedProject.boothId) && (!['pxwiu2t', 's4fjgga'].includes(selectedProject.id) || cached.dataRevision)) {
           await applyState(cached, true);
-          setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
+          if(!background)setError('오프라인 상태입니다. 마지막 저장 데이터를 사용합니다.');
         } else setError(err.message);
       }
+      return false;
     } finally {
       if (activeScope.current === scope) setLoading(false);
     }
   };
 
-  const loadProjects = async ({background=false}={}) => {
+  const loadProjects = (options = {}) => {
+    if(workspaceReads.current.has(token))return workspaceReads.current.get(token);
+    const pending=loadProjectsOnce(options).finally(()=>{
+      if(workspaceReads.current.get(token)===pending)workspaceReads.current.delete(token);
+    });
+    workspaceReads.current.set(token,pending);
+    return pending;
+  };
+  const loadProjectsOnce = async ({background=false}={}) => {
     if (!token) return;
     if(!background){setProjectLoading(true);setError('');}
     const isCurrent=()=>activeToken.current===token;
@@ -249,6 +269,8 @@ export default function App() {
       setProjects(nextProjects);
       const remembered=nextProjects.find(project=>project.id===sessionStore.getItem(SELECTED_PROJECT_KEY));
       setSelectedProject(current=>nextProjects.find(project=>project.id===current?.id)||remembered||null);
+      setProjectLoading(false);
+      setLoading(false);
     };
     const reject=err=>{
       if(!isCurrent())return;
@@ -260,9 +282,10 @@ export default function App() {
       else if(!background||err.status)setError(err.message);
     };
     try {
-      const result=await localData.read({scope:{actorId:adminId},resource:'workspace',fetchRemote:()=>requestJson('/api/booths?workspace=home',{background}),isCurrent});
+      const cached=await localData.get({actorId:adminId},'workspace');
+      const result=await localData.read({scope:{actorId:adminId},resource:'workspace',fetchRemote:()=>requestJson('/api/booths?workspace=home',{background:background||Boolean(cached),signal:AbortSignal.timeout(20_000)}),isCurrent});
       accept(result.value);
-      if(result.source==='local')void result.refresh.then(accept).catch(reject);
+      if(result.source==='local')await result.refresh.then(accept).catch(reject);
     } catch (err) {
       if (activeToken.current !== token) return;
       if (err.status === 401 || String(err.message).includes('인증')) logout();
@@ -276,8 +299,7 @@ export default function App() {
         } else reject(err);
       }
     } finally {
-      setProjectLoading(false);
-      setLoading(false);
+      if(isCurrent()){setProjectLoading(false);setLoading(false);}
     }
   };
 
@@ -385,20 +407,14 @@ export default function App() {
     if (selectedProject?.id !== target.id) selectProject(target, { fromInventory: true, destination: routeHash.slice(1) });
   }, [token, projectLoading, linkedProjectId, projects, selectedProject?.id]);
 
-  useEffect(() => { if (token) loadProjects(); }, [token, screen === 'projects', screen === 'dashboard', screen === 'revenue']);
+  useEffect(() => { if (token && (!selectedProject || ['projects','dashboard','revenue'].includes(screen))) loadProjects(); }, [token, screen === 'projects', screen === 'dashboard', screen === 'revenue']);
   useEffect(()=>{
     if(!token)return;
     const refresh=()=>{void loadProjects({background:true});};
-    const timer=window.setInterval(refresh,10_000);window.addEventListener('online',refresh);
+    const timer=window.setInterval(()=>{if(!document.hidden)refresh();},SYNC_INTERVAL_MS);window.addEventListener('online',refresh);
     return()=>{window.clearInterval(timer);window.removeEventListener('online',refresh);};
   },[token,adminId]);
-  useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id]);
-  useEffect(()=>{
-    if(!token||!selectedProject?.id)return;
-    const refresh=()=>{void loadState({background:true});};
-    const timer=window.setInterval(refresh,10_000);window.addEventListener('online',refresh);
-    return()=>{window.clearInterval(timer);window.removeEventListener('online',refresh);};
-  },[token,selectedProject?.id,adminId]);
+  useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id, selectedProject?.boothId]);
 
   const login = async (credentials) => {
     const data = await requestJson('/api/auth', { method: 'POST', body: JSON.stringify(credentials) });
@@ -579,7 +595,6 @@ export default function App() {
   const refreshAndSyncOrders = async () => {
     try {
       await sync.refreshPendingCount();
-      void sync.syncNow();
     } catch (err) {
       console.warn('[sync] failed to refresh pending order count', err);
     }
