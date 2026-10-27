@@ -10,7 +10,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { settlementMoneyEntries } from '../src/utils/settlementEntries.js';
 import { koreanDay, periodRange, revenueSummary, settlementCsv } from '../src/utils/revenueSummary.js';
 
-async function fixture() {
+async function fixture({beforeQuery=()=>{}}={}) {
   const db=new PGlite();
   await db.exec(`CREATE TABLE pos_admins(id TEXT PRIMARY KEY,deleted_at TIMESTAMPTZ);INSERT INTO pos_admins(id)VALUES('a'),('b');
     CREATE TABLE pos_projects(id TEXT PRIMARY KEY,admin_id TEXT);INSERT INTO pos_projects VALUES('event','a'),('foreign','b');
@@ -21,8 +21,9 @@ async function fixture() {
     CREATE TABLE pos_bundles(project_id TEXT,id TEXT,items JSONB);
     CREATE TABLE pos_sales(project_id TEXT,lines JSONB,id SERIAL PRIMARY KEY);
     INSERT INTO pos_sales(project_id,lines) VALUES('event','[{"type":"product","id":"p","name":"키링","creatorName":"작가","unitPrice":1000,"qty":10}]');`);
+  const statements=[];let releases=0;
   let connects=0,tail=Promise.resolve();
-  const pool={connect:async()=>{connects++;const prior=tail;let release;tail=new Promise(resolve=>release=resolve);await prior;return {sql(parts,...values){return this.query(parts.reduce((s,p,i)=>s+(i?`$${i}`:'')+p,''),values);},query(query,values){return db.query(query,values);},release};}};
+  const pool={connect:async()=>{connects++;const prior=tail;let release;tail=new Promise(resolve=>release=resolve);await prior;return {sql(parts,...values){return this.query(parts.reduce((s,p,i)=>s+(i?`$${i}`:'')+p,''),values);},async query(query,values){statements.push(query);await beforeQuery(query,values);return db.query(query,values);},release(){releases++;release();}};}};
   const context=vm.createContext({});
   const module=new vm.SourceTextModule(await readFile(new URL('../api/settlements.js',import.meta.url),'utf8'),{context});
   await module.link(name=>{const exports=name==='@vercel/postgres'?{sql:pool}:name.endsWith('auth.js')?{assertPostgresConnectionString(){},requireAuth(req,res){if(req.adminId)return{id:req.adminId};res.status(401).json({error:'Unauthorized'});return null;}}:name.endsWith('storageContract.js')?storageContract:name.endsWith('boothFoundation.js')?boothFoundation:name.endsWith('eventSettlement.js')?eventSettlement:{settlementMoneyEntries};return new vm.SyntheticModule(Object.keys(exports),function(){for(const[key,value]of Object.entries(exports))this.setExport(key,value);},{context});});
@@ -33,7 +34,7 @@ async function fixture() {
    const event=result.body.eventSettlements.find(row=>row.projectId==='event') || {version:0,costs:[]};
    return invoke({action:'closeEventSettlement',projectId:'event',version:event.version,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(eventSettlementPreview(result.body.state,event.costs,result.body.settlements))});
   };
-  return{db,invoke,close,connects:()=>connects};
+  return{db,invoke,close,statements,connects:()=>connects,releases:()=>releases};
 }
 const command=(action,version,extra={})=>({action,version,projectId:'event',creator:'작가',requestId:crypto.randomUUID(),...extra});
 
@@ -159,4 +160,47 @@ test('unclosed revenue remains expected; closed net, fees and creators stay froz
  assert.equal(summary.total,300);assert.equal(summary.net,-50);assert.equal(summary.fees,150);assert.equal(summary.expectedGross,200);assert.equal(summary.pending,-50);
  assert.equal(summary.creators.length,1);assert.equal(summary.creators[0].rows.length,2);
  assert.equal(summary.events.find(e=>e.id==='open').confirmed,false);
+});
+
+
+test('settlement bootstrap commits before business locks and routine GET performs no DDL',async()=>{
+ const f=await fixture();try{
+  assert.equal((await f.invoke()).status,200);
+  const firstCommit=f.statements.indexOf('COMMIT');
+  const account=f.statements.findIndex(query=>/SELECT id FROM pos_admins.*FOR UPDATE/.test(query));
+  assert.ok(firstCommit>=0&&account>firstCommit);
+  assert.ok(f.statements.slice(0,firstCommit).some(query=>/pg_advisory_xact_lock/.test(query)));
+  assert.equal(f.statements.slice(firstCommit+1).some(query=>/ALTER TABLE|CREATE TABLE/.test(query)),false);
+  f.statements.length=0;
+  assert.equal((await f.invoke(null,'a',{projectId:'event'})).status,200);
+  assert.equal(f.statements.some(query=>/ALTER TABLE|CREATE TABLE|pg_advisory_xact_lock/.test(query)),false);
+ }finally{await f.db.close();}
+});
+
+test('settlement deadlock rolls back the full payment and retries with the same request ID once',async()=>{
+ let armed=false,failures=0;
+ const f=await fixture({beforeQuery(query){if(armed&&query.includes('INSERT INTO pos_settlement_commands')&&failures++===0)throw Object.assign(new Error('injected deadlock'),{code:'40P01'});}});
+ try{
+  assert.equal((await f.close()).status,200);armed=true;
+  const before=f.connects(),released=f.releases(),payment=command('addPayment',0,{amount:1000,paidAt:'2026-10-27'});
+  const result=await f.invoke(payment);assert.equal(result.status,200,JSON.stringify(result.body));
+  assert.equal(f.connects()-before,2);assert.equal(f.releases()-released,2);
+  assert.equal(result.body.settlement.version,1);assert.equal(result.body.settlement.payments.length,1);
+  assert.equal((await f.db.query('SELECT COUNT(*)::int AS count FROM pos_settlement_commands WHERE id=$1',[payment.requestId])).rows[0].count,1);
+  assert.equal((await f.invoke(payment)).body.settlement.payments.length,1);
+ }finally{await f.db.close();}
+});
+
+test('settlement serialization retry is bounded and never retries permission or input failures',async()=>{
+ let armed=false;
+ const f=await fixture({beforeQuery(query){if(armed&&query.startsWith('SELECT s.* FROM pos_settlements'))throw Object.assign(new Error('internal transaction conflict'),{code:'40001'});}});
+ try{
+  assert.equal((await f.invoke()).status,200);armed=true;
+  const before=f.connects(),released=f.releases();
+  const response=await f.invoke();assert.equal(response.status,503);assert.equal(f.connects()-before,3);assert.equal(f.releases()-released,3);
+  assert.equal(JSON.stringify(response.body).includes('internal transaction conflict'),false);
+  armed=false;let count=f.connects();
+  assert.equal((await f.invoke(command('saveDeductions',0,{projectId:'foreign',deductions:[]}))).status,404);assert.equal(f.connects()-count,1);
+  count=f.connects();assert.equal((await f.invoke(command('unknown',0))).status,400);assert.equal(f.connects()-count,1);
+ }finally{await f.db.close();}
 });

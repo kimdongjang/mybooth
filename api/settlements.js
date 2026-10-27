@@ -15,15 +15,52 @@ const date = value => {
 };
 const record = row => ({ projectId: row.project_id, creator: row.creator, version: row.version, deductions: row.deductions, payments: row.payments });
 
+const retryableConflict=error=>['40P01','40001'].includes(error.code);
+const schemaReady=state=>state.admin_deleted&&state.project_deleted&&state.ledger&&state.commands&&state.archives&&state.events;
+async function settlementSchema(sql) {
+  return (await sql`SELECT
+    EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('pos_admins') AND attname='deleted_at' AND NOT attisdropped) AS admin_deleted,
+    EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('pos_projects') AND attname='deleted_at' AND NOT attisdropped) AS project_deleted,
+    to_regclass('pos_settlements') AS ledger,to_regclass('pos_settlement_commands') AS commands,
+    to_regclass('pos_event_archives') AS archives,to_regclass('pos_event_settlements') AS events`).rows[0];
+}
+// Bootstrap commits before authorization can acquire account/booth row locks.
+// IF NOT EXISTS still takes strong DDL locks; never run it on routine reads.
+async function ensureSettlementSchema(client,sql) {
+  if(schemaReady(await settlementSchema(sql)))return;
+  await client.query('BEGIN');
+  try {
+    await sql`SELECT pg_advisory_xact_lock(736281,1)`;
+    const state=await settlementSchema(sql);
+    if(!state.admin_deleted)await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+    if(!state.project_deleted)await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+    if(!state.ledger)await sql`CREATE TABLE IF NOT EXISTS pos_settlements (
+      admin_id TEXT NOT NULL REFERENCES pos_admins(id), project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
+      creator TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, deductions JSONB NOT NULL DEFAULT '[]', payments JSONB NOT NULL DEFAULT '[]',
+      PRIMARY KEY(admin_id,project_id,creator))`;
+    if(!state.commands)await sql`CREATE TABLE IF NOT EXISTS pos_settlement_commands (
+      admin_id TEXT NOT NULL REFERENCES pos_admins(id), id TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
+      fingerprint TEXT NOT NULL, PRIMARY KEY(admin_id,id))`;
+    if(!state.archives||!state.events)await initEventSettlements(sql);
+    await client.query('COMMIT');
+  } catch(error) {
+    await client.query('ROLLBACK').catch(()=>{});
+    throw error;
+  }
+}
+
 export function createHandler(pool) {
   return async (req, res) => {
-    let admin = requireAuth(req, res);
-    if (!admin) return;
+    const authenticated = requireAuth(req, res);
+    if (!authenticated) return;
+    for(let attempt=0;attempt<3;attempt++) {
+    let admin={...authenticated};
     let client;
     try {
       assertPostgresConnectionString();
       client = await pool.connect();
       const sql = await canonicalSql(client.sql.bind(client));
+      await ensureSettlementSchema(client,sql);
       await client.query('BEGIN');
       const requestedBooth=req.query?.boothId || req.body?.boothId;
       const defaultBooth=await migratedBooth(sql,admin.id);
@@ -35,17 +72,7 @@ export function createHandler(pool) {
         if(projectId && !(await sql`SELECT project_id FROM pos_event_booths WHERE project_id=${projectId} AND booth_id=${booth.id}`).rows.length) fail('부스의 행사가 아닙니다.',404);
         admin={...admin,id:booth.legacy_admin_id};
       }
-      await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
-      await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
       if (!(await sql`SELECT id FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows.length) fail('인증이 필요합니다.', 401);
-      await sql`CREATE TABLE IF NOT EXISTS pos_settlements (
-        admin_id TEXT NOT NULL REFERENCES pos_admins(id), project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
-        creator TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, deductions JSONB NOT NULL DEFAULT '[]', payments JSONB NOT NULL DEFAULT '[]',
-        PRIMARY KEY(admin_id,project_id,creator))`;
-      await sql`CREATE TABLE IF NOT EXISTS pos_settlement_commands (
-        admin_id TEXT NOT NULL REFERENCES pos_admins(id), id TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE,
-        fingerprint TEXT NOT NULL, PRIMARY KEY(admin_id,id))`;
-      await initEventSettlements(sql);
       if(booth) await reconcileBoothFoundation(sql,admin.id);
       const mappings=booth ? await recipientMap(sql,admin.id) : [];
       const identityRecord=row=>({...record(row),...(booth ? {recipientId:mappings.find(m=>m.project_id===row.project_id && m.legacy_creator===row.creator)?.recipient_id} : {})});
@@ -133,8 +160,11 @@ export function createHandler(pool) {
       return res.status(200).json({ settlement: identityRecord(saved.rows[0]) });
     } catch (error) {
       if (client) await client.query('ROLLBACK').catch(() => {});
+      if(retryableConflict(error)&&attempt<2)continue;
+      if(retryableConflict(error))return res.status(503).json({error:'정산 처리 중 다른 요청과 충돌했습니다. 잠시 후 다시 시도해주세요.'});
       return res.status(error.status || 500).json({ error: error.message || '정산 저장에 실패했습니다.' });
     } finally { client?.release(); }
+    }
   };
 }
 export default createHandler(pool);
