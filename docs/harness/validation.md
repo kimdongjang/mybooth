@@ -1,3 +1,9 @@
+## 행사 보조 API 스피너 제외 보완 (2026-10-27)
+
+- 최신 main 8eff630 기반에서 eventReadCache의 허용 GET을 최초 캐시 준비·무효화 후 재조회·자동 갱신의 후속 조회까지 항상 background:true로 요청하도록 보완했다. 일반 foreground 요청의 스피너, 오류/권한/큐 보호는 유지한다.
+- `node --experimental-vm-modules --test tests/offline-storage.test.js tests/api-read-tracker.test.js tests/background-sync.test.js`: 25개 통과. 최초 보조 요청과 주기 갱신의 background 옵션, 동시 일반 요청 추적, 오류 전달·캐시/주문 보존을 확인했다.
+- `npm run build` 통과(기존 500kB 청크 경고). 실브라우저/Android 시각 확인과 운영 API 호출은 미실행이다. PR 미리보기 배포와 main 병합 후 운영 배포를 구분한다.
+
 ## 2026-10-27 PR #81 갱신 검증
 
 - 최신 main(5d42843)을 PR 브랜치에 병합하고 이후 요청한 행사 보조 조회 캐시, 관리 경로, 대시보드 바로가기/색상, 행사 선택 카드 배치를 분리 반영했다. 기존 로컬의 조회 전용 판매 진입 변경·정산 비용 자동 저장·데이터 관리 카드 재구성은 제외했다.
