@@ -16,6 +16,5 @@ export function EventLink({ page, navigate, children, className = '', ...props }
 export default function ProjectNavigation({ page, project, navigate }) {
   return <aside className="event-sidebar">
     <nav className="menu-tabs" aria-label="행사 관리 메뉴">{projectSections.map(item => <EventLink key={item.page} page={item.page} navigate={navigate} className={`event-side-link ${item.danger ? 'is-danger' : ''}`} aria-current={page === item.page || (['projectArchive','projectDelete'].includes(page) && item.page === 'projectBackup') || (page==='projectName'&&item.page==='project') ? 'page' : undefined}>{item.title}</EventLink>)}</nav>
-    <EventLink page="pos" navigate={navigate} className="event-text-link event-return-link">← 판매 화면으로</EventLink>
   </aside>;
 }

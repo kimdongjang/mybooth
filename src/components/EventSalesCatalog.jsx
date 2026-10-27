@@ -1,7 +1,7 @@
 import {useState} from 'react';
 import {won,eventCreatorNameOf} from '../utils/productDisplay';
 
-export default function EventSalesCatalog({items,event,products=[],renderDetail,renderProduct,onAdd,disabled,productId='',navigate}) {
+export default function EventSalesCatalog({items,event,products=[],sales,renderDetail,renderProduct,onAdd,disabled,productId='',navigate}) {
  const [selectedId,setSelectedId]=useState('');
  const eventItems=items.filter(item=>item.allocations.some(row=>row.projectId===event.id));
  const selected=eventItems.find(item=>productId?item.allocations.some(row=>row.projectId===event.id&&row.productId===productId):item.id===selectedId);
@@ -13,7 +13,10 @@ export default function EventSalesCatalog({items,event,products=[],renderDetail,
    <div className="management-summary"><span>상품 <b>{eventItems.length}개</b></span></div>
    <div className="management-table-wrap event-product-table-wrap"><table className="management-table event-product-number-table"><caption className="sr-only">판매 번호, 상품 이름, 제작자, 판매가, 배정 수량, 판매 수량, 남은 재고, 등록일</caption>
     <thead><tr>{['판매 번호','상품 이름','제작자','판매가','배정 수량','판매수량','남은 재고','등록일'].map((label,index)=><th scope="col" key={label} className={[2,4,7].includes(index)?'event-product-extra-column':undefined}>{label}</th>)}</tr></thead>
-    <tbody>{eventItems.map(item=>{const row=allocation(item),master=product(item);return <tr key={item.id}>
+    <tbody>{eventItems.map(item=>{const master=product(item),row={...allocation(item)};
+     if(master){row.initial=master.initialStockQty??row.initial;row.remaining=master.stockQty??master.stock??row.remaining;row.price=master.price??row.price;
+      if(sales)row.sold=sales.filter(sale=>!sale.voided).reduce((sum,sale)=>sum+(sale.lines||[]).reduce((qty,line)=>qty+(line.type==='product'&&line.id===master.id?Number(line.qty):line.type==='bundle'?(line.subItems||[]).filter(part=>part.productId===master.id).reduce((count,part)=>count+Number(part.qty)*Number(line.qty),0):0),0),0);
+     }return <tr key={item.id}>
      <td data-label="판매 번호"><output className="product-sale-number">{master?.saleNumber||'—'}</output></td>
      <td data-label="상품 이름"><a className="management-name-link" aria-label={`${item.name} 상세보기`} href={`#/products/${encodeURIComponent(master?.id||item.id)}?projectId=${encodeURIComponent(event.id)}`} onClick={e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey||e.button!==0)return;e.preventDefault();if(navigate)navigate(`/products/${encodeURIComponent(master?.id||item.id)}?projectId=${encodeURIComponent(event.id)}`);else setSelectedId(item.id);}}>{item.name}</a><small className="management-mobile-meta">{eventCreatorNameOf(master||item)}</small></td>
      <td data-label="제작자" className="event-product-extra-column">{eventCreatorNameOf(master||item)}</td><td data-label="판매가" className="mono management-row-price">{won(row?.price??item.price)}원</td>

@@ -30,6 +30,11 @@ export class LocalFirstStore {
  subscribe(listener:(key:string)=>void){this.listeners.add(listener);return()=>{this.listeners.delete(listener);};}
  private emit(key:string){for(const listener of this.listeners)listener(key);}
  async get<T>(scope:DataScope,resource:string):Promise<T|undefined>{const row=await this.resources.get(keyFor(scope,resource));return row?.revoked?undefined:row?.value;}
+ async invalidate(scope:DataScope,prefix:string){
+  await this.resources.where('scopeKey').equals(scopeKey(scope)).modify(row=>{
+   if(JSON.parse(row.key)[1].startsWith(prefix)){row.stale=true;row.revision=crypto.randomUUID();}
+  });
+ }
  async put(scope:DataScope,resource:string,value:unknown){
   const key=keyFor(scope,resource);
   await this.database.transaction('rw',this.resources,this.commands,async()=>{
@@ -37,9 +42,10 @@ export class LocalFirstStore {
    await this.resources.put({key,scopeKey:scopeKey(scope),actorId:scope.actorId,value,updatedAt:Date.now(),revision:crypto.randomUUID()});
   });this.emit(key);
  }
- async read<T>({scope,resource,fetchRemote,isCurrent=()=>true,onUpdate,onError}:{scope:DataScope;resource:string;fetchRemote:()=>Promise<T>;isCurrent?:()=>boolean;onUpdate?:(value:T|undefined)=>void;onError?:(error:any)=>void}){
+ async read<T>({scope,resource,fetchRemote,isCurrent=()=>true,onUpdate,onError,preferCache=false}:{scope:DataScope;resource:string;fetchRemote:()=>Promise<T>;isCurrent?:()=>boolean;onUpdate?:(value:T|undefined)=>void;onError?:(error:any)=>void;preferCache?:boolean}){
   const key=keyFor(scope,resource),cached=await this.resources.get(key);
   if(!isCurrent())throw failure('로그인 또는 데이터 범위가 변경되었습니다.',409);
+  if(preferCache&&cached&&!cached.revoked&&(!cached.stale||!this.online()))return {value:cached.value as T,source:'local' as const,refresh:Promise.resolve(cached.value as T)};
   const refresh=async()=>{
    if(!this.online())throw failure('인터넷 연결이 필요합니다.');
    try{
@@ -69,7 +75,7 @@ export class LocalFirstStore {
   // Cached callers may choose to await refresh; always handle the background
   // rejection as well so an offline screen does not create unhandled promises.
   void refreshed.catch(()=>{});
-  if(cached&&!cached.revoked)return {value:cached.value as T,source:'local' as const,refresh:refreshed};
+  if(cached&&!cached.revoked&&!(preferCache&&cached.stale))return {value:cached.value as T,source:'local' as const,refresh:refreshed};
   return {value:await refreshed as T,source:'remote' as const,refresh:refreshed};
  }
  async mutate({scope,resource,operation,payload,isCurrent=()=>true}:{scope:DataScope;resource:string;operation:string;payload:any;isCurrent?:()=>boolean}){

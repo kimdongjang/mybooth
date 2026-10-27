@@ -1,15 +1,17 @@
 import {useEffect,useRef,useState} from 'react';
 import {confirmAction} from '../utils/confirmAction';
+import {useEventReadRefresh} from '../hooks/useEventReadRefresh';
 export default function EventAccessPanel({request,project,onChange,beforeChange}) {
  const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[pending,setPending]=useState(null);
  const [linkProfile,setLinkProfile]=useState(null),[query,setQuery]=useState(''),[accounts,setAccounts]=useState([]),[searching,setSearching]=useState(false);
  const [direct,setDirect]=useState(false),[directName,setDirectName]=useState('');
+ const readRevision=useEventReadRefresh(request,!busy&&!pending&&!linkProfile);
  const dialog=useRef(null),searchVersion=useRef(0);
  useEffect(()=>{searchVersion.current++;setAccounts([]);setQuery('');setSearching(false);setDirect(false);setDirectName('');if(linkProfile)dialog.current?.showModal();else dialog.current?.close();},[linkProfile]);
  const search=async e=>{e.preventDefault();const version=++searchVersion.current;setSearching(true);setError('');try{const result=await request(`/api/booths?workspace=${linkProfile?.mode==='add'?'searchArtists':'searchAccounts'}&${new URLSearchParams({projectId:project.id,boothId:project.boothId,q:query})}`);if(version===searchVersion.current)setAccounts(result.artists||result.accounts);}catch(e){if(version===searchVersion.current)setError(e.message);}finally{if(version===searchVersion.current)setSearching(false);}};
  const lock=useRef(false);
  const load=async(background=false)=>{const next=await request(`/api/booths?workspace=access&projectId=${encodeURIComponent(project.id)}&boothId=${encodeURIComponent(project.boothId)}`,background?{background:true}:undefined);setData(next);};
- useEffect(()=>{let active=true;request(`/api/booths?workspace=access&projectId=${encodeURIComponent(project.id)}&boothId=${encodeURIComponent(project.boothId)}`).then(d=>{if(active)setData(d);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[request,project.id]);
+ useEffect(()=>{let active=true;request(`/api/booths?workspace=access&projectId=${encodeURIComponent(project.id)}&boothId=${encodeURIComponent(project.boothId)}`).then(d=>{if(active)setData(d);}).catch(e=>{if(active){setError(e.message);if([401,403,404].includes(e.status))setData(null);}});return()=>{active=false;};},[request,project.id,readRevision]);
  const run=async command=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');setPending(command);try{await beforeChange?.(command.action);const result=await request('/api/booths',{method:'POST',body:JSON.stringify(command)});if(command.action==='saveEventAccess'&&result.profiles&&result.staff)setData(result);else await load(command.action==='saveEventAccess');await onChange?.(command.action);setPending(null);return result;}catch(e){setError(e.message);if(e.status>=400&&e.status<500){setPending(null);if(e.status===409)await load(command.action==='saveEventAccess').catch(()=>{});}}finally{setBusy(false);lock.current=false;}};
  const send=(action,payload)=>run({action,payload:{boothId:project.boothId,projectId:project.id,...payload,requestId:crypto.randomUUID()}});
  const disabled=busy||Boolean(pending);
@@ -26,7 +28,7 @@ export default function EventAccessPanel({request,project,onChange,beforeChange}
   <div className="management-table-wrap event-participant-table-wrap"><table className="management-table event-participant-table"><thead><tr><th scope="col">제작자 닉네임</th><th scope="col">등록 상품</th><th scope="col">계정</th><th scope="col">행사 권한</th><th scope="col">관리</th></tr></thead><tbody>
   {data?.profiles.filter(p=>p.status==='active'&&(p.display_name!=='미지정'||p.linked_user_id)).map(p=>{const staff=data.staff.find(s=>s.user_id===p.linked_user_id);return <tr key={p.owner_id}>
    <td>{p.nickname||p.display_name}{p.nickname&&p.nickname!==p.display_name&&p.display_name!=='미지정'&&<small className="inventory-cell-sub">{p.display_name}</small>}</td><td>{p.product_count||0}개</td>
-   <td>{p.linked_user_id?p.nickname||p.linked_user_id:<button type="button" className="management-back" disabled={disabled||p.status!=='active'||p.booth_status==='ended'} onClick={()=>{setError('');setLinkProfile(p);}}>+연결</button>}</td>
+   <td>{p.linked_user_id?p.nickname||p.linked_user_id:<button type="button" className="management-back event-participant-link" disabled={disabled||p.status!=='active'||p.booth_status==='ended'} onClick={()=>{setError('');setLinkProfile(p);}}>+연결</button>}</td>
    <td><label><span className="sr-only">{p.nickname||p.display_name} 행사 권한</span><select aria-label={`${p.nickname||p.display_name} 행사 권한`} disabled={disabled||['owner','manager'].includes(p.booth_role)} value={['owner','manager'].includes(p.booth_role)?'operator':staff?.status==='active'?staff.role:p.booth_role==='seller'?'seller':!p.linked_user_id&&p.requested_role?p.requested_role:'none'} onChange={e=>changeRole(p,e.target.value)}>{['owner','manager'].includes(p.booth_role)&&<option value="operator">운영자</option>}<option value="none" disabled>권한 선택</option><option value="seller">부스참여자</option><option value="assistant">부관리자</option></select></label></td>
    <td><button type="button" className="management-delete" disabled={disabled} onClick={async()=>{if(await confirmAction('이 제작자를 행사에서 삭제할까요? 재고와 이전 판매·정산은 유지하고 상품의 제작자 연결을 해제합니다.',{title:'참여 제작자 삭제',confirmLabel:'삭제'}))await send('removeEventArtist',{ownerId:p.owner_id,version:p.version||0});}}>삭제</button></td>
   </tr>;})}

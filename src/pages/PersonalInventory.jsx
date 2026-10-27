@@ -14,6 +14,7 @@ import EventSalesCatalog from '../components/EventSalesCatalog';
 import ProductCreatePage from './ProductCreatePage';
 import EventProductDetail from '../components/EventProductDetail';
 import {confirmAction} from '../utils/confirmAction';
+import {useEventReadRefresh} from '../hooks/useEventReadRefresh';
 
 function ProductEditor({item,busy,onSave,onImage,onRemove}) {
  const [draft,setDraft]=useState(item);
@@ -23,12 +24,14 @@ function ProductEditor({item,busy,onSave,onImage,onRemove}) {
   <form id={`product-${item.id}`} className="management-details" onSubmit={async e=>{e.preventDefault();try{await onSave(draft);clear();}catch{}}}><InventoryProductFields draft={draft} hideCreator products={[]} onChange={(key,value)=>setDraft(current=>({...current,[key]:value}))} disabled={busy}/></form>
  </div></article>;
 }
-export default function PersonalInventory({request,routeHash,navigate,event=null,eventProducts=[],onRemoveEventProduct}) {
+export default function PersonalInventory({request,routeHash,navigate,event=null,eventProducts=[],eventSales,onRemoveEventProduct}) {
  const [options,setOptions]=useState([]),[selection,setSelection]=useState(''),[data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[pending,setPending]=useState(null);
  const [draft,setDraft]=useState({name:'',price:0,stock:0,cost:0,goodsType:'',vtuberName:'',genre:''});
  const lock=useRef(false),batch=useRef(null),imports=useRef([]),created=useRef(null);
  const scope=options.find(o=>o.key===selection);
  const path=routeHash.split('?')[0],tool=event?(path==='#/products/new'?'eventNew':'list'):path.includes('/import')?'import':path.endsWith('/new')?'new':(path.endsWith('/sales')||path.endsWith('/movements'))?'sales':'list';
+ const readRevision=useEventReadRefresh(request,Boolean(event&&path==='#/products'));
+ const loadedScope=useRef('');
  const clear=useUnsavedChanges(tool==='new'&&Boolean(draft.name));
  useEffect(()=>{let active=true;(async()=>{
   const home=await request('/api/booths?workspace=home');
@@ -38,8 +41,8 @@ export default function PersonalInventory({request,routeHash,navigate,event=null
    const people=await request(`/api/booths?workspace=stockParticipants&projectId=${encodeURIComponent(event.id)}&boothId=${encodeURIComponent(event.boothId)}`);
    values=people.profiles.map(p=>({key:`event:${p.owner_id}`,ownerId:p.owner_id,boothId:event.boothId,projectId:event.id,profileId:p.profile_id,owned:home.profiles.some(own=>own.owner_id===p.owner_id),catalog:p.catalog!==false,stockOnly:Boolean(p.stockOnly),label:p.display_name,linked:Boolean(p.linked_user_id)}));
   } else if(event) values=values.filter(p=>event.permissions.ownerIds.includes(p.ownerId)).map(p=>({...p,boothId:event.boothId,projectId:event.id}));
-  if(active){setOptions(values);setSelection(event?values[0]?.key||'':values.find(v=>v.key.startsWith('own:'))?.key||'');}
- })().catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[request,event?.id]);
+  if(active){setOptions(values);setSelection(current=>values.some(option=>option.key===current)?current:event?values[0]?.key||'':values.find(v=>v.key.startsWith('own:'))?.key||'');}
+ })().catch(e=>{if(active){setError(e.message);if([401,403,404].includes(e.status)){setOptions([]);setData(null);}}});return()=>{active=false;};},[request,event?.id,readRevision]);
  const refreshCreators=async()=>{
   const people=await request(`/api/booths?workspace=stockParticipants&projectId=${encodeURIComponent(event.id)}&boothId=${encodeURIComponent(event.boothId)}`);
   const values=people.profiles.map(p=>({key:`event:${p.owner_id}`,ownerId:p.owner_id,profileId:p.profile_id,boothId:event.boothId,projectId:event.id,owned:options.find(option=>option.ownerId===p.owner_id)?.owned||false,catalog:p.catalog!==false,stockOnly:Boolean(p.stockOnly),label:p.display_name,linked:Boolean(p.linked_user_id)}));
@@ -51,7 +54,7 @@ export default function PersonalInventory({request,routeHash,navigate,event=null
   return {...results[0],history:results.flatMap(result=>result.history||[]),stockEvents:[...new Map(results.flatMap(result=>result.events).map(row=>[row.id,row])).values()],quantityEditable:results.some(result=>result.quantityEditable!==false),inventory:results.flatMap(result=>result.inventory.map(item=>({...item,eventContexts:result.events}))),events:[...new Map(results.flatMap(result=>result.events).map(row=>[row.id,row])).values()].filter(row=>!event||row.id===event.id)};
  };
  const load=async s=>{const next=await read(s);setData(next);return next;};
- useEffect(()=>{setData(null);if(!scope)return;let active=true;read(scope).then(d=>{if(active)setData(d);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[selection,options,request]);
+ useEffect(()=>{if(loadedScope.current!==selection){setData(null);loadedScope.current=selection;}if(!scope)return;let active=true;read(scope).then(d=>{if(active){setData(d);setError('');}}).catch(e=>{if(active){setError(e.message);if([401,403,404].includes(e.status))setData(null);}});return()=>{active=false;};},[selection,options,request,readRevision]);
  const execute=async command=>{
   if(lock.current)return;lock.current=true;setBusy(true);setError('');setPending(command);
   try {const result=await request('/api/booths',{method:'POST',body:JSON.stringify(command)});await load(scope);setPending(null);return result;}
@@ -111,6 +114,6 @@ export default function PersonalInventory({request,routeHash,navigate,event=null
     try{const result=await execute({action:'importArtistStock',payload:{ownerId:scope.ownerId,boothId:scope.boothId,products:payload.products,requestId:batch.current}});imports.current=result.inventory;batch.current=null;return result;}catch(error){if(error.status>=400&&error.status<500)batch.current=null;throw error;}
    }} saveImage={async(id,file)=>{const item=imports.current.find(i=>i.importId===id);if(item)await image(item,file);}} onRegistered={()=>load(scope)}/>}
    {!event&&tool==='sales'&&<PersonalSalesHistory request={request} items={data?.inventory||[]}/> }
-   {scope&&data&&(event?<EventSalesCatalog key={event.id} productId={eventProductId} navigate={navigate} renderProduct={renderEventProduct} onAdd={canCreate?()=>navigate('productNew'):undefined} disabled={disabled} items={data.inventory} event={event} products={eventProducts} renderDetail={renderItem}/>:tool==='list'?<PersonalInventoryCatalog items={data.inventory} events={data.events} detailId={detailId} navigate={navigate} renderDetail={renderItem}/>:null)}
+   {scope&&data&&(event?<EventSalesCatalog key={event.id} productId={eventProductId} navigate={navigate} renderProduct={renderEventProduct} onAdd={canCreate?()=>navigate('productNew'):undefined} disabled={disabled} items={data.inventory} event={event} products={eventProducts} sales={eventSales} renderDetail={renderItem}/>:tool==='list'?<PersonalInventoryCatalog items={data.inventory} events={data.events} detailId={detailId} navigate={navigate} renderDetail={renderItem}/>:null)}
  </main></>;
 }
