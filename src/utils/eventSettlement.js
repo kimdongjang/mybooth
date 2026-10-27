@@ -21,7 +21,7 @@ export function eventSettlementPreview({products=[],bundles=[],sales=[]}, costs=
   const byId=Object.fromEntries(products.map(p=>[p.id,p]));
   const amounts=new Map();
   const name=value=>String(value || '').trim() || '미지정';
-  for(const product of products) if(product.isActive!==false && product.is_active!==false) amounts.set(name(product.creatorName ?? product.creator_name),0);
+  for(const product of products) if(product.isActive!==false && product.is_active!==false) amounts.set(name(product.settlementCreator ?? product.creatorName ?? product.creator_name),0);
   for(const sale of sales) for(const line of sale.lines || []) for(const entry of settlementMoneyEntries(line,byId,bundles)) amounts.set(name(entry.creator),(amounts.get(name(entry.creator))||0)+entry.amount);
   for(const record of settlements) if(!amounts.has(record.creator)) amounts.set(record.creator,0);
   const rows=[...amounts].sort(([a],[b])=>a.localeCompare(b,'ko')).map(([creator,gross])=>({creator,gross:Math.round(gross),fees:0,shares:[]}));
@@ -30,7 +30,7 @@ export function eventSettlementPreview({products=[],bundles=[],sales=[]}, costs=
   const items=validateEventCosts(costs).map(cost=>{
     const amount=cost.type==='percent'?Number((BigInt(gross)*BigInt(cost.value)+5000n)/10000n):cost.value;
     const shares=distribute(amount,rows.map(row=>cost.split==='equal'?1:row.gross));
-    if(amount && !rows.length)invalid('비용을 분담할 참여 작가가 없습니다.');
+    if(amount && !rows.length)invalid('비용을 분담할 참여 제작자가 없습니다.');
     rows.forEach((row,i)=>{row.fees+=shares[i];row.shares.push({label:cost.label,amount:shares[i]});});
     return {...cost,amount};
   });

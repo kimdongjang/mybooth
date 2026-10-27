@@ -29,6 +29,7 @@ export function assertPostgresConnectionString() {
 export async function initAuthDb() {
   assertPostgresConnectionString();
   await sql`CREATE TABLE IF NOT EXISTS pos_admins (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+  await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS allow_operator_stock BOOLEAN NOT NULL DEFAULT TRUE`;
   await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS email TEXT`;
   await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS nickname TEXT`;
   await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
@@ -45,18 +46,19 @@ export async function initAuthDb() {
   await sql`UPDATE pos_admins SET email = 'naru3644@gmail.com' WHERE id = 'admin' AND email IS NULL AND deleted_at IS NULL`;
 }
 
-export async function createAdmin(id, password, email, nickname) {
+export async function createAdmin(id, password, email, nickname, allowOperatorStock = true) {
   const adminId = String(id || '').trim();
   const adminEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
   const invalid = (message) => Object.assign(new Error(message), { status: 400 });
   if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(adminId)) throw invalid('아이디는 영문/숫자/._- 조합 3~32자로 입력해주세요.');
   if (typeof password !== 'string' || password.length < 6) throw invalid('패스워드는 6자 이상 입력해주세요.');
   if (adminEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) throw invalid('올바른 이메일을 입력해주세요.');
+  if(typeof allowOperatorStock!=='boolean')throw invalid('재고관리 허용 설정을 확인해주세요.');
   const displayName = nicknameValue(nickname);
   await initAuthDb();
 
   try {
-    await sql`INSERT INTO pos_admins (id, email, password_hash, nickname) VALUES (${adminId}, ${adminEmail}, ${hashPassword(password)}, ${displayName})`;
+    await sql`INSERT INTO pos_admins (id, email, password_hash, nickname,allow_operator_stock) VALUES (${adminId}, ${adminEmail}, ${hashPassword(password)}, ${displayName},${allowOperatorStock})`;
   } catch (error) {
     if (String(error.code) === '23505') throw Object.assign(new Error('이미 사용 중인 아이디 또는 이메일입니다.'), { status: 409 });
     throw error;

@@ -15,6 +15,8 @@ interface SyncServiceOptions {
   endpoint?: string;
   getAuthToken?: () => string | null;
   projectId?: string | null;
+  actorId?: string | null;
+  boothId?: string | null;
 }
 
 class SyncService {
@@ -22,6 +24,8 @@ class SyncService {
   private endpoint: string;
   private getAuthToken: () => string | null;
   private projectId: string | null;
+  private actorId: string | null = null;
+  private boothId: string | null = null;
   private locked = false;
   private listeners = new Set<SyncListener>();
   private snapshot: SyncSnapshot = { isSyncing: false, pendingCount: 0, lastSyncedAt: null };
@@ -33,13 +37,15 @@ class SyncService {
     this.projectId = options.projectId || null;
   }
 
-  configure(options: Pick<SyncServiceOptions, 'getAuthToken' | 'projectId'>): void {
+  configure(options: Pick<SyncServiceOptions, 'getAuthToken' | 'projectId' | 'actorId' | 'boothId'>): void {
     if (options.getAuthToken) this.getAuthToken = options.getAuthToken;
-    if (this.projectId !== (options.projectId || null)) {
+    if (this.projectId !== (options.projectId || null) || this.actorId !== (options.actorId || null) || this.boothId !== (options.boothId || null)) {
       this.snapshot = { ...this.snapshot, lastSyncedAt: null };
       this.emit();
     }
     this.projectId = options.projectId || null;
+    this.actorId = options.actorId || null;
+    this.boothId = options.boothId || null;
     void this.refreshPendingCount();
   }
 
@@ -82,11 +88,17 @@ class SyncService {
     try {
       if (!this.projectId) return this.snapshot;
       const projectId = this.projectId;
+      const actorId = this.actorId;
+      const boothId = this.boothId;
       const token = this.getAuthToken();
       const orders = await this.repository.getPendingOrders(projectId);
       for (const order of orders) {
-        if (this.projectId !== projectId || this.getAuthToken() !== token) break;
+        if (this.projectId !== projectId || this.actorId!==actorId || this.boothId!==boothId || this.getAuthToken() !== token) break;
         if (!order.id || order.projectId !== projectId || (order.payload as { projectId?: string })?.projectId !== projectId) continue;
+        if(order.actorId && (order.actorId!==actorId || (order.boothId && order.boothId!==boothId))) {
+          this.snapshot={...this.snapshot,lastError:'원래 주문 계정과 부스에서 동기화해주세요.'};
+          this.emit();break;
+        }
         await this.repository.updateStatus(order.id, 'SYNCING');
         await this.refreshPendingCount();
 
@@ -107,7 +119,7 @@ class SyncService {
 
           const syncedAt = new Date().toISOString();
           await this.repository.updateStatus(order.id, 'SYNCED', { lastSyncAt: syncedAt });
-          if (this.projectId === projectId && this.getAuthToken() === token) {
+          if (this.projectId === projectId && this.actorId===actorId && this.boothId===boothId && this.getAuthToken() === token) {
             this.snapshot = { ...this.snapshot, lastSyncedAt: syncedAt };
           }
         } catch (error) {

@@ -1,3 +1,6 @@
+import * as storageContract from '../api/lib/storageContract.js';
+import * as eventAccess from '../api/lib/eventAccess.js';
+import * as boothFoundation from '../api/lib/boothFoundation.js';
 import * as eventSettlement from '../api/lib/eventSettlement.js';
 import * as accountInventory from '../api/lib/accountInventory.js';
 import { hashPassword } from '../api/lib/auth.js';
@@ -26,7 +29,7 @@ async function fixture() {
         assertPostgresConnectionString() {},
         requireAuth(req, res) { if (req.adminId) return { id: req.adminId }; res.status(401).json({ error: 'Unauthorized' }); return null; },
         validateAdminPassword: async (_id, password) => password === 'test-password',
-      } : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
+      } : specifier === './lib/storageContract.js' ? storageContract : specifier === './lib/eventAccess.js' ? eventAccess : specifier === './lib/boothFoundation.js' ? boothFoundation : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
     }, { context });
@@ -420,7 +423,7 @@ test('event genre edits share the common source, preserve clearing and backups, 
     assert.equal(backup.data.tables.pos_products[0].genre, '행사 장르');
     const copied = await invoke('duplicateProject', event, { password: 'test-password', name: '장르 복제' });
     assert.equal((await invoke(null, copied.body.project.id)).body.products[0].genre, '행사 장르');
-    assert.equal((await invoke('restoreProject',null,{})).status,410);
+    assert.equal((await invoke('restoreProject',null,{})).status,403);
     product = saved.body.products[0];
     assert.equal((await invoke('saveEventProduct', null, { projectId: event, productId: product.id, inventoryVersion: product.inventoryVersion, product: { ...product, genre: {} } })).status, 400);
     assert.equal((await invoke(null, event)).body.products[0].genre, '행사 장르');

@@ -13,7 +13,7 @@ export default function ProductValueInput({ label, field, products, value, onCha
   const choose = option => { onChange(option); setOpen(false); setActive(-1); };
   return <div className="management-field product-value-input" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) { setOpen(false); setActive(-1); } }}>
     <label htmlFor={id}>{label}</label>
-    <Input id={id} role="combobox" autoComplete="off" aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? `${id}-options` : undefined} aria-activedescendant={expanded && active >= 0 ? `${id}-option-${active}` : undefined} required={required} disabled={disabled} value={value} onFocus={show} onChange={next => { onChange(next); setFilter(true); setOpen(true); setActive(-1); }} onKeyDown={event => {
+    <Input placeholder={field === 'goodsType' ? '예: 아크릴 스탠드, 스티커, 엽서' : field === 'genre' ? '예: 오리지날, 원신, 보컬로이드' : undefined} id={id} role="combobox" autoComplete="off" aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? `${id}-options` : undefined} aria-activedescendant={expanded && active >= 0 ? `${id}-option-${active}` : undefined} required={required} disabled={disabled} value={value} onFocus={show} onChange={next => { onChange(next); setFilter(true); setOpen(true); setActive(-1); }} onKeyDown={event => {
       if (event.key === 'Escape') { setOpen(false); setActive(-1); }
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault(); setOpen(true);

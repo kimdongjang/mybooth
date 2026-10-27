@@ -1,4 +1,5 @@
 import { eventSettlementPreview, validateEventCosts } from '../../src/utils/eventSettlement.js';
+import { decorateEventProducts } from './boothFoundation.js';
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
 export const eventRecord=row=>({projectId:row.project_id,version:row.version,costs:row.costs,snapshot:row.snapshot,closedAt:row.closed_at,history:row.history});
 export async function initEventSettlements(sql) {
@@ -29,7 +30,7 @@ export async function eventSettlementCommand(sql,adminId,body) {
    const preview=eventSettlementPreview(state,costs,records);
    const sales=state.sales;
    if(JSON.stringify(preview)!==body.expectedPreview)fail('판매 또는 비용이 변경되었습니다. 새로고침 후 마감해주세요.',409);
-   if(!preview.rows.length)fail('참여 작가와 판매 내역을 확인해주세요.');
+   if(!preview.rows.length)fail('참여 제작자와 판매 내역을 확인해주세요.');
    if(records.some(row=>row.payments.reduce((sum,p)=>sum+p.amount,0)>Math.max(0,preview.rows.find(r=>r.creator===row.creator)?.net||0)))fail('기존 지급액이 확정 정산금을 초과합니다. 지급 기록을 확인해주세요.',409);
    closedAt=new Date().toISOString();snapshot={...preview,closedAt,sales};history.push({action:'close',at:closedAt});
   }
@@ -44,5 +45,5 @@ export async function eventState(sql,adminId,projectId) {
  const products=(await sql`SELECT p.*,CASE WHEN i.id IS NOT NULL THEN i.product->>'creatorName' ELSE p.creator_name END AS creator_name FROM pos_products p LEFT JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id AND l.admin_id=${adminId} LEFT JOIN pos_inventory i ON i.admin_id=l.admin_id AND i.id=l.inventory_id WHERE p.project_id=${projectId} ORDER BY p.id`).rows.map(p=>({...p,creatorName:p.creator_name,isActive:p.is_active}));
  const bundles=(await sql`SELECT * FROM pos_bundles WHERE project_id=${projectId} ORDER BY id`).rows;
  const sales=(await sql`SELECT * FROM pos_sales WHERE project_id=${projectId} ORDER BY id`).rows;
- return {products,bundles,sales};
+ return {products:await decorateEventProducts(sql,adminId,projectId,products),bundles,sales};
 }

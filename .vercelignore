@@ -1,0 +1,11 @@
+.git
+.env*
+.local-archive
+.local-data
+.codex*
+.agents
+android
+node_modules
+dist
+tests
+docs

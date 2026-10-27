@@ -1,0 +1,92 @@
+# IndexedDB 우선 공통 데이터 계층
+
+작성일: 2026-10-23. 구현 경로는 src/data/localFirst.ts, 저장 스키마는 src/database/dexie.ts v5다. 기존 orders/posState와 판매·취소 명령은 그대로 보존한다.
+
+## 작업 원칙
+
+화면 → 업무별 데이터 어댑터 → LocalFirstStore → IndexedDB / 서버 순서로 연결한다. fetch 전체를 자동 가로채거나 임의 POST를 성공 처리하지 않는다. 조회·생성·수정·삭제는 같은 기반을 사용하되, 오프라인 허용과 충돌 처리는 업무별로 명시한다.
+
+| 영역 | 현재 구현 |
+| --- | --- |
+| 행사 목록·운영 권한 문맥 | 공통 read 적용, 웹/앱 공통 IndexedDB 우선 표시, 10초 주기·online 이벤트로 재조회 |
+| 선택한 행사의 POS 데이터 | 기존 stateRepository를 사용해 IndexedDB 우선 표시 후 서버 갱신. 10초 주기·연결 복구 갱신 |
+| 판매·취소 | 기존 commitOrder 원자 저장 및 전용 syncService 큐 유지. 공통 resourceCommands에 중복 등록하지 않음 |
+| 개인 재고·수익·참여자·설정 화면 | 아직 직접 API 방식. 각 업무 어댑터를 연결하는 후속 전환 필요 |
+| 일반 생성·수정·삭제 | 공통 원자 저장·명령 큐·재전송 기반 구현. 실제 업무 쓰기는 아직 큐 어댑터 미등록 |
+| 로그인·행사 생성·멤버 권한·정산 마감·백업 복원 | 현재 온라인 전용 유지. 이번 작업으로 오프라인 허용하지 않음 |
+
+행사 목록에 있다고 모든 행사가 오프라인 준비된 것은 아니다. POS는 온라인에서 불러와 저장한 행사만 오프라인 사용 가능하다. 참여 작가에게 운영자의 전체 POS 데이터를 다운로드하지 않는다. 전체 행사 선다운로드와 개인 화면 캐시, 웹 브라우저 종료 후 지속 세션은 별도다.
+
+## 공통 API와 사용법
+
+### 범위
+
+DataScope에 actorId를 반드시 지정한다. boothId/projectId/ownerId는 실제 데이터 범위를 명시하며 빈 값과 다른 범위는 서로 다른 키로 저장한다. resource는 업무 이름과 필요한 식별자·필터를 포함한 안정된 문자열이다. 인증 토큰·비밀번호·초대 코드 원문을 키·값·payload에 저장하지 않는다.
+
+```ts
+const scope = { actorId, boothId, projectId };
+const result = await localData.read({
+  scope,
+  resource: 'event-summary',
+  fetchRemote: () => request('/api/...'),
+  isCurrent: () => currentSession === sessionAtStart,
+});
+render(result.value); // 캐시가 있으면 네트워크 완료 전에 반환
+if (result.source === 'local') {
+  void result.refresh.then(render).catch(showError);
+}
+```
+
+read는 캐시 우선 응답과 별도 refresh Promise를 제공한다. 캐시 없는 최초 조회는 서버 성공과 IndexedDB 저장을 기다린다. 오프라인이고 캐시도 없으면 실패한다. 캐시가 있는 상태의 네트워크 실패는 캐시를 보존하며, 401/403/404는 해당 캐시를 표시하지 못하게 revoked 상태로 둔다. 복구에 필요한 원본 값·명령은 삭제하지 않는다. 화면도 오류에 맞게 선택·메모리 데이터를 해제해야 한다.
+
+get은 로컬 조회, put은 명시적 서버 기준 저장이다. 미동기화 명령이 있는 resource의 put은 거절한다. 변경 전 시작한 서버 응답은 revision 비교로 최신 로컬 상태를 덮어쓰지 않는다.
+
+### 업무별 쓰기 등록
+
+register(name, adapter)로 실행 정책을 등록한 뒤 mutate를 호출한다. 등록하지 않은 작업은 거절한다.
+
+- offline: online-only는 인터넷 연결을 요구하고 execute를 호출한다. 임의 서버 응답을 로컬 화면 모델로 추측하지 않으며 성공 뒤 해당 resource를 명시적으로 재조회한다. 자동 재전송하지 않는다.
+- offline: queue는 순수하고 동기적인 reduce와 서버 execute가 모두 필요하다. reduce는 현재 로컬 상태와 payload로 다음 상태를 만든다. IndexedDB transaction 안에서 상태와 명령을 함께 저장한다. 한쪽 저장 실패 시 둘 다 롤백한다.
+- 삭제는 로컬 표시 모델에서 제거하거나 어댑터가 정한 tombstone으로 남기되, 서버 삭제 명령은 동기화될 때까지 보존한다. 관계·판매·원장 삭제 범위는 업무 서버 정책을 그대로 따른다.
+- 큐 어댑터는 execute의 세 번째 인자인 고정 commandId를 서버 requestId/localOrderId에 전달해야 한다. 서버 멱등성 보장 없는 작업은 queue로 등록하지 않는다.
+- payload에 expected version과 범위를 보존하고, 실제 서버 원자성·권한·감사 이력도 검증한다. 같은 상품 연속 편집, 생성 후 수정/삭제, ID 의존성, 공유 재고 변경은 업무별 버전/병합 설계가 선행되어야 한다.
+- 파일·이미지는 JSON 명령으로 저장한 URL만으로 업로드 완료로 취급하지 않는다. 이미지 바이너리 보관과 재시도 어댑터는 미구현이다.
+
+```ts
+localData.register('feature.update', {
+  offline: 'online-only',
+  execute: (scope, payload, commandId) => featureApi({
+    ...payload, actorId: scope.actorId, requestId: commandId,
+  }),
+});
+await localData.mutate({
+  scope, resource: 'feature-detail', operation: 'feature.update', payload,
+  isCurrent: () => currentSession === sessionAtStart,
+});
+```
+
+처음에는 online-only로 옮겨 공통 경계를 만든다. 업무별 동시성/멱등성 테스트가 통과한 작업만 queue로 전환한다. 판매·취소는 기존 큐에 이미 있으므로 별도 어댑터에 재등록하지 않는다.
+
+### 동기화 수명과 충돌
+
+sync(actorId, isCurrent)는 해당 계정의 명령만 순번대로 전송한다. Web Locks로 탭 간 업로드를 직렬화하며 SYNCING도 원래 ID로 복구한다. 네트워크·서버 실패는 FAILED로 남겨 재시도하고 409는 CONFLICT, 권한·검증·구형 계약 거절은 BLOCKED로 남긴다. 충돌/차단 명령을 넘어 후속 명령을 전송하지 않는다. 명령·payload를 자동 삭제하거나 새 ID로 바꾸지 않는다.
+
+pending(actorId)로 실패·충돌·차단 명령을 확인할 수 있다. 충돌 병합·버리기·권한 복구 UI는 아직 없다. 이를 구현하기 전에 queue를 실제 업무 화면에 활성화하지 않는다. 요청 타임아웃과 시작 시 인증 토큰 고정은 execute 어댑터가 구현해야 한다. 전송 도중 계정이 바뀌면 다음 명령은 중단한다.
+
+start(actorId, isCurrent)는 시작·10초 주기·online 이벤트에 sync를 연결하고 정리 함수를 반환한다. 이 타이머는 열린 앱 안에서만 동작한다. 공통 큐에는 현재 실제 업무 어댑터를 연결하지 않았으므로 앱에서 start도 아직 활성화하지 않았다. 행사 목록·POS 수신 타이머와 기존 판매 전송 타이머는 별도로 활성화되어 있다. subscribe는 로컬 변경/전송 완료를 알리며 원격 수신은 read.refresh로 명시적으로 연결한다.
+
+## 후속 기능 변경 체크리스트
+
+- 조회 키에 계정/부스/행사/작가와 필터를 빠짐없이 포함한다.
+- 로컬 화면 모델과 서버 응답 변환을 업무 어댑터에 둔다. 화면에 IndexedDB 접근을 분산하지 않는다.
+- 읽기 권한·서버 권한 회수·계정 전환 시 캐시 표시를 검사한다.
+- 쓰기는 online-only/queue를 명시하고, queue는 충돌 해결·순서·멱등성 계약부터 검증한다.
+- local-first로 전환하지 않은 화면을 오프라인 가능하다고 보고하지 않는다.
+- UI에 요청하지 않은 안내·성공 알림을 추가하지 않는다.
+- 동작 변경은 관련 테스트·빌드와 하네스 검증을 수행한다. 운영 DB를 검증에 쓰지 않는다.
+
+## 검증 기록
+
+fake IndexedDB에서 로컬 즉시 응답·서버 갱신·오프라인 캐시·계정/부스 격리·403 표시 차단, 생성/수정/삭제 상태와 큐의 원자성·저장 실패 롤백·늦은 서버 읽기 보존, 응답 유실 후 동일 ID·SYNCING 복구·409 후 후속 중단·계정 전환을 검증했다. 기존 판매·취소 원자 저장·구형 큐 보존·재전송 회귀와 UI 범위 검증을 포함한 관련 테스트 12개 통과. 기존 v3 주문·캐시는 v5 업그레이드 후 보존됨을 확인했다.
+
+실제 브라우저의 네트워크 단절·새로고침·다중 탭과 다기기, 전체 계정 동기화, 실제 서버 멱등성은 이번 공통 큐의 자동 검증 범위 밖이다. 적용된 업무 쓰기가 없으므로 모든 기능의 오프라인 전환을 완료한 상태가 아니다.

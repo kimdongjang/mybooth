@@ -10,6 +10,8 @@ async function harness(inventoryId = 'warehouse/원본', initialProductId = '') 
   let index = 0, refIndex = 0, confirmed = true, result = true;
   const context = vm.createContext({ confirm: () => confirmed });
   const mocks = {
+    '../hooks/useUnsavedChanges': { allowNavigation: async () => true },
+    '../utils/confirmAction': { confirmAction: async () => confirmed },
     '../hooks/useProductReorder': { useProductReorder: () => ({busy:false,message:'',rowProps:()=>({}),handleProps:()=>({})}) },
     react: { useState: initial => { const i = index++; if (!(i in state)) state[i] = initial; return [state[i], value => { state[i] = typeof value === 'function' ? value(state[i]) : value; }]; }, useRef: initial => refs[refIndex++] ||= { current: initial }, useMemo: fn => fn(), useEffect() {} },
     'react/jsx-runtime': { Fragment: 'fragment', jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },

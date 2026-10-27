@@ -1,3 +1,5 @@
+import CreatorField from '../components/CreatorField';
+import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
 import { useEffect, useRef, useState } from 'react';
 import { uploadProductImage } from '../utils/uploadProductImage';
 import { PageIntro } from '../components/PageLayout';
@@ -6,17 +8,20 @@ import InventoryProductFields from '../components/InventoryProductFields';
 import { prepareProductImage } from '../utils/productImage';
 import { uid } from '../utils/productDisplay';
 
-export default function ProductCreatePage({ projectId, onImageChange, readOnly, saving, products, registerProduct, onBack }) {
-  const pendingKey = `pos_event_product_registration:${projectId}`;
+export default function ProductCreatePage({ projectId, onImageChange, readOnly, saving, products, registerProduct, onBack, artists, saveImage, allowDirectArtist = false,creatorRequest,creatorProject,onRefreshCreators }) {
+  const pendingKey = `pos_event_product_registration:${artists ? 'artist:' : ''}${projectId}`;
   const pending = useRef(null);
   const [draft, setDraft] = useState(() => {
     try { pending.current = JSON.parse(sessionStorage.getItem(pendingKey) || 'null'); } catch { /* Keep unreadable storage untouched. */ }
-    return pending.current || { id: uid(), name: '', goodsType: '', vtuberName: '', creatorName: '', genre: '', price: 1000, stockQty: 0 };
+    return pending.current || { id: artists ? crypto.randomUUID() : uid(), name: '', goodsType: '', vtuberName: '', creatorName: '', genre: '', price: 1000, stockQty: 0 };
   });
+  const original = useRef(JSON.stringify(draft));
   const [uncertain, setUncertain] = useState(Boolean(pending.current));
   const [image, setImage] = useState(null);
+  const clearUnsaved = useUnsavedChanges(JSON.stringify(draft) !== original.current || Boolean(image));
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [creatorBusy,setCreatorBusy]=useState(false);
   const [preparing, setPreparing] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [imageError, setImageError] = useState('');
@@ -43,12 +48,13 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
   const change = (key, value) => setDraft(current => ({ ...current, [key]: value }));
   const submit = async (event) => {
     event.preventDefault();
-    if (readOnly || saving || preparing || submitting.current) return;
+    if (readOnly || saving || preparing || creatorBusy || submitting.current) return;
     const price = Number(draft.price);
     const stockQty = Number(draft.stockQty);
+    if (artists && !(allowDirectArtist && !draft.ownerId && draft.artistName?.trim()) && !artists.some(artist => artist.ownerId === draft.ownerId)) return alert('행사에 등록된 제작자를 선택해주세요.');
     if (!draft.name.trim() || !draft.goodsType.trim() || draft.price === '' || draft.stockQty === '' || !Number.isSafeInteger(price) || price < 0 || price > 2147483647 || !Number.isSafeInteger(stockQty) || stockQty < 0 || stockQty > 2147483647) return alert('상품 이름, 굿즈 종류와 0 이상의 정수 판매가·재고를 입력해주세요.');
     const product = {
-      ...draft, name: draft.name.trim(), productCode: draft.id, goodsType: draft.goodsType.trim(), vtuberName: draft.vtuberName.trim(), creatorName: draft.creatorName.trim(), genre: draft.genre.trim(),
+      ...draft, name: draft.name.trim(), productCode: draft.id, goodsType: draft.goodsType.trim(), vtuberName: draft.vtuberName.trim(), creatorName: artists ? (artists.find(artist => artist.ownerId === draft.ownerId)?.label || draft.creatorName || draft.artistName?.trim() || '') : draft.creatorName.trim(), genre: draft.genre.trim(),
       price, stockQty, stock: stockQty, initialStockQty: stockQty, size: '', isActive: true,
       setCreatorName: null, setGroupName: null, setPrice: null, setDescription: null, createdAt: new Date().toISOString(),
     };
@@ -68,12 +74,14 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
         savedProduct.current = true;
         setRegistered(true);
       }
-      if (image) {
+      if (image && saveImage) await saveImage(image);
+      else if (image) {
         const blob = uploadedImage.current?.file === image ? uploadedImage.current : await uploadProductImage(projectId, draft.id, image);
         uploadedImage.current = { file: image, url: blob.url };
         const attached = await imageChange.current(draft.id, blob.url);
         if (!attached) throw new Error('이미지 연결에 실패했습니다.');
       }
+      clearUnsaved();
       onBack();
     } catch (error) {
       if (!savedProduct.current && error.status >= 400 && error.status < 500) { sessionStorage.removeItem(pendingKey); pending.current = null; setUncertain(false); }
@@ -99,15 +107,16 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
               <p>선택한 이미지는 상품 저장 시 등록됩니다.</p>
             </div>
             <div className="management-details">
-            <InventoryProductFields draft={draft} products={products} onChange={change} disabled={registered || uncertain || readOnly || saving || busy || preparing} />
+            {artists&&<CreatorField onBusyChange={setCreatorBusy} creators={artists} value={draft} onChange={value=>setDraft(current=>({...current,...value,creatorName:value.label||value.artistName||''}))} request={creatorRequest} project={creatorProject} allowDirect={allowDirectArtist} disabled={registered||uncertain} onRefresh={onRefreshCreators}/>}
+            <InventoryProductFields hideCreator={Boolean(artists)} draft={draft} products={products} onChange={change} disabled={registered || uncertain || readOnly || saving || busy || preparing} />
             <fieldset disabled={registered || uncertain}><legend>가격 · 재고</legend><div className="management-fields management-fields-three">
               <label className="management-field"><span>판매가 (원)</span><Input required type="number" min="0" max="2147483647" step="1" value={draft.price} onChange={value => change('price', value)} /></label>
               <label className="management-field"><span>최초 입고 수량</span><Input required type="number" min="0" max="2147483647" step="1" value={draft.stockQty} onChange={value => change('stockQty', value)} /></label>
             </div></fieldset>
-            <p className="management-note">최초 입고 수량을 공통 상품·재고 관리에 기록하고 전량을 현재 행사에 배정합니다. 판매가는 이 행사에만 적용됩니다.</p>
+            <p className="management-note">최초 입고 수량을 상품·재고에 기록하고 전량을 현재 행사에 배정합니다. 판매가는 이 행사에만 적용됩니다.</p>
             {uncertain && <p role="status" className="management-note">이전 등록의 완료 여부를 확인해야 합니다. 같은 내용으로 다시 시도하면 중복 없이 결과를 확인합니다.</p>}
             {imageError && <p role="alert" className="management-note">{imageError}</p>}
-            <button data-guide="save" type="submit" className="management-add">{saving || busy ? '저장 중…' : registered ? (image ? '이미지 다시 저장' : '등록 완료') : uncertain ? '등록 결과 확인 · 다시 시도' : '상품 등록'}</button>
+            <button data-guide="save" type="submit" className="management-add" disabled={creatorBusy}>{saving || busy ? '저장 중…' : registered ? (image ? '이미지 다시 저장' : '등록 완료') : uncertain ? '등록 결과 확인 · 다시 시도' : '상품 등록'}</button>
             </div>
           </div>
         </article>

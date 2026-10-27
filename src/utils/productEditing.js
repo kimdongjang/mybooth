@@ -12,7 +12,7 @@ export function productEditDraft(product) {
 export function productEditPatch(draft) {
   const price = Number(draft.price);
   if (!draft.name.trim() || !draft.goodsType.trim() || !String(draft.price).trim() || !Number.isSafeInteger(price) || price < 0) throw new Error('상품 이름, 굿즈 종류와 0 이상의 정수 판매가를 입력해주세요.');
-  if (typeof draft.genre !== 'string' || draft.genre.length > 200) throw new Error('장르는 200자 이내로 입력해주세요.');
+  if (typeof draft.genre !== 'string' || draft.genre.length > 200) throw new Error('작품/시리즈는 200자 이내로 입력해주세요.');
   return { genre: draft.genre.trim(), name: draft.name.trim(), vtuberName: draft.vtuberName.trim(), goodsType: draft.goodsType.trim(), creatorName: draft.creatorName.trim(), price };
 }
 

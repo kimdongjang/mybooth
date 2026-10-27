@@ -1,6 +1,10 @@
 export const uid = () => Math.random().toString(36).slice(2, 9);
 export const won = (n) => Number(n || 0).toLocaleString('ko-KR');
 export const creatorNameOf = (product) => product?.creatorName?.trim() || '미지정';
+// Event attribution is separate from the original inventory owner and sale snapshots.
+export const eventCreatorNameOf = (product) => product && Object.hasOwn(product, 'eventCreator')
+  ? product.eventCreator?.name?.trim() || '미연결'
+  : creatorNameOf(product);
 export const productNameFromFields = (product) => [product.vtuberName, product.goodsType, product.creatorName ? `(${product.creatorName})` : ''].filter(Boolean).join(' ') || product.name || '새 굿즈';
 export const productNameWithoutCreator = (product) => {
   const name = String(product?.name || '').trim();

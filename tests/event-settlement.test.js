@@ -12,5 +12,5 @@ test('rounding distributes every won deterministically, including zero sales and
 });
 test('cost validation rejects fractional money, invalid percentages, negative values and unsupported splits',()=>{
  for(const item of [cost(-1),cost(1.5),cost(10001,'ratio','percent'),cost(1,'individual'),{...cost(1),memo:null},{...cost(1),label:''}])assert.throws(()=>validateEventCosts([item]));
- assert.throws(()=>eventSettlementPreview({sales:[]},[cost(1)]),/작가/);
+ assert.throws(()=>eventSettlementPreview({sales:[]},[cost(1)]),/제작자/);
 });

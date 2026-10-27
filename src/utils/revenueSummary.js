@@ -85,7 +85,7 @@ export function settlementStatus(row) {
 }
 export function settlementCsv(creators) {
   const cell = value => `"${String(value ?? '').replace(/"/g,'""')}"`;
-  return '\uFEFF' + [['작가','행사','총 판매액','차감 합계','정산 예정','지급 완료','남은 정산','초과 지급','상태'],
+  return '\uFEFF' + [['제작자','행사','총 판매액','차감 합계','정산 예정','지급 완료','남은 정산','초과 지급','상태'],
     ...creators.flatMap(creator => creator.rows.map(row => [creator.name,row.projectName,row.gross,row.fees,row.net,row.paid,row.pending,row.overpaid,settlementStatus(row)]))]
     .map(row => row.map(value => cell(typeof value === 'string' && /^[=+\-@\t\r\n]/.test(value) ? `'${value}` : value)).join(',')).join('\r\n');
 }

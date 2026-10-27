@@ -1,3 +1,6 @@
+import * as storageContract from '../api/lib/storageContract.js';
+import * as eventAccess from '../api/lib/eventAccess.js';
+import * as boothFoundation from '../api/lib/boothFoundation.js';
 import * as eventSettlement from '../api/lib/eventSettlement.js';
 import * as accountInventory from '../api/lib/accountInventory.js';
 import { hashPassword } from '../api/lib/auth.js';
@@ -26,7 +29,7 @@ async function fixture() {
         assertPostgresConnectionString() {},
         requireAuth(req, res) { if (req.adminId) return { id: req.adminId }; res.status(401).json({ error: 'Unauthorized' }); return null; },
         validateAdminPassword: async (_id, password) => password === 'test-password',
-      } : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
+      } : specifier === './lib/storageContract.js' ? storageContract : specifier === './lib/eventAccess.js' ? eventAccess : specifier === './lib/boothFoundation.js' ? boothFoundation : specifier === './lib/accountInventory.js' ? accountInventory : specifier === './lib/eventSettlement.js' ? eventSettlement : defaults;
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
     }, { context });
@@ -121,7 +124,7 @@ test('account snapshot restores all data, keeps other owners and rejects tamperi
   assert.ok(fresh.dataRevision);
   assert.equal((await invoke('finalizeSale',id,{localOrderId:'old-client',method:'cash',total:0,cart:[{type:'product',id:'p1',qty:1,unitPrice:0}]})).status,409);
   assert.equal((await invoke('restoreAccount',null,payload)).status,200);
-  assert.equal((await invoke('backupProject',id)).status,410);assert.equal((await invoke('restoreProject',null)).status,410);
+  assert.equal((await invoke('backupProject',id)).status,403);assert.equal((await invoke('restoreProject',null)).status,403);
  }finally{await db.close();}
 });
 
@@ -196,4 +199,71 @@ test('bundle snapshot mismatch and malformed restored component quantities prese
     assert.equal((await invoke('restoreAccount',null,{password:'test-password',backup,requestId:crypto.randomUUID()})).status,400);
     assert.equal((await db.query('SELECT * FROM pos_projects')).rows.length, 1);
   } finally { await db.close(); }
+});
+
+
+test('event backup includes settlement and restoration creates one archived event without overwriting any existing data',async()=>{
+ const {db,id,invoke}=await fixture();try{
+  await db.exec(`CREATE TABLE pos_settlements(admin_id TEXT,project_id TEXT,creator TEXT,version INTEGER,deductions JSONB,payments JSONB)`);
+  await db.query(`INSERT INTO pos_settlements VALUES('a',$1,'creator',1,'[]','[{"id":"paid","amount":0,"date":"2026-10-23"}]')`,[id]);
+  await db.query(`INSERT INTO pos_event_settlements(admin_id,project_id,version,costs,snapshot,closed_at,history) VALUES('a',$1,2,'[{"label":"부스임대료","memo":"","type":"fixed","split":"equal","value":500}]','{"rows":[],"gross":0}',NOW(),'[]')`,[id]);
+  const original=(await db.query('SELECT * FROM pos_products WHERE project_id=$1 ORDER BY id',[id])).rows;
+  assert.equal((await invoke('backupProject',id,{password:'wrong'})).status,403);
+  assert.equal((await invoke('backupProject',id,{password:'test-password'},'b')).status,404);
+  const exported=await invoke('backupProject',id,{password:'test-password'});assert.equal(exported.status,200,JSON.stringify(exported.body));
+  const backup=exported.body.backup;assert.equal(backup.version,2);assert.equal(backup.closure.costs[0].value,500);assert.equal(backup.settlements.length,1);assert.equal(JSON.stringify(backup).includes('password_hash'),false);
+  const payload={backup,name:'복원 행사',password:'test-password',requestId:crypto.randomUUID()};
+  const restored=await invoke('restoreProject',null,payload);assert.equal(restored.status,201,JSON.stringify(restored.body));const next=restored.body.project.id;
+  assert.notEqual(next,id);assert.ok(restored.body.project.archivedAt);
+  assert.equal((await db.query("SELECT stock_qty FROM pos_products WHERE project_id=$1 AND id='p1'",[next])).rows[0].stock_qty,7);
+  assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM pos_sales WHERE project_id=$1',[next])).rows[0].n,1);
+  assert.equal((await db.query('SELECT costs FROM pos_event_settlements WHERE project_id=$1',[next])).rows[0].costs[0].value,500);
+  assert.deepEqual((await db.query('SELECT * FROM pos_products WHERE project_id=$1 ORDER BY id',[id])).rows,original);
+  const replay=await invoke('restoreProject',null,payload);assert.equal(replay.status,200);assert.equal(replay.body.project.id,next);
+  assert.equal((await invoke('restoreProject',null,{...payload,name:'다른 이름'})).status,409);
+  for(const bad of [{...backup,version:99},{...backup,format:'other'},{...backup,products:[{...backup.products[0],stock:-1}]},{...backup,closure:{...backup.closure,costs:[{label:'bad',type:'percent',split:'equal',memo:'',value:10001}]}}])assert.equal((await invoke('restoreProject',null,{...payload,requestId:crypto.randomUUID(),backup:bad})).status,400);
+  assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM pos_projects')).rows[0].n,2);
+ }finally{await db.close();}
+});
+
+test('event restore is atomic after an injected failure and duplication replays without copying sales or stock',async()=>{
+ const {db,id,invoke}=await fixture();try{
+  const backup=(await invoke('backupProject',id,{password:'test-password'})).body.backup;
+  const payload={backup,name:'retry',password:'test-password',requestId:crypto.randomUUID()};
+  await db.exec("CREATE FUNCTION fail_event_import() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'failure'; END $$; CREATE TRIGGER reject_event_import BEFORE INSERT ON pos_sales FOR EACH ROW EXECUTE FUNCTION fail_event_import()");
+  assert.equal((await invoke('restoreProject',null,payload)).status,500);
+  assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM pos_projects')).rows[0].n,1);
+  assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM pos_project_imports')).rows[0].n,0);
+  await db.exec('DROP TRIGGER reject_event_import ON pos_sales');
+  assert.equal((await invoke('restoreProject',null,payload)).status,201);
+  const copyPayload={name:'copy',password:'test-password',requestId:crypto.randomUUID()};
+  const copy=await invoke('duplicateProject',id,copyPayload);assert.equal(copy.status,201,JSON.stringify(copy.body));
+  assert.equal((await invoke('duplicateProject',id,copyPayload)).body.project.id,copy.body.project.id);
+  const state=(await invoke(null,copy.body.project.id)).body;assert.equal(state.sales.length,0);assert.ok(state.products.every(p=>p.stockQty===0&&p.initialStockQty===0));
+  assert.equal((await invoke('duplicateProject',id,{...copyPayload,name:'changed'})).status,409);
+ }finally{await db.close();}
+});
+
+
+test('event creation validates and persists venue/dates; template retries preserve metadata and backup retains venue',async()=>{
+ const {db,id,invoke}=await fixture();
+ try{
+  const details={name:'새 행사',venue:' 킨텍스 1전시장 ',startsOn:'2026-12-05',endsOn:'2026-12-06'};
+  const created=await invoke('createProject',null,details);assert.equal(created.status,201,JSON.stringify(created.body));
+  const eventId=created.body.project.id;
+  assert.equal((await db.query('SELECT venue FROM pos_event_details WHERE project_id=$1',[eventId])).rows[0].venue,'킨텍스 1전시장');
+  assert.equal((await db.query('SELECT starts_on::text AS start FROM pos_event_stock_policy WHERE project_id=$1',[eventId])).rows[0].start,'2026-12-05');
+  const before=(await db.query('SELECT COUNT(*)::int AS count FROM pos_projects')).rows[0].count;
+  for(const patch of [{startsOn:'2026-02-30'},{endsOn:'2026-12-04'},{venue:[]},{venue:'x'.repeat(201)}])assert.equal((await invoke('createProject',null,{...details,...patch})).status,400);
+  assert.equal((await db.query('SELECT COUNT(*)::int AS count FROM pos_projects')).rows[0].count,before);
+  const payload={...details,password:'test-password',requestId:crypto.randomUUID()};
+  const copied=await invoke('duplicateProject',id,payload);assert.equal(copied.status,201,JSON.stringify(copied.body));
+  assert.equal((await invoke('duplicateProject',id,payload)).body.project.id,copied.body.project.id);
+  assert.equal((await invoke('duplicateProject',id,{...payload,venue:'다른 장소'})).status,409);
+  const backup=(await invoke('backupProject',eventId,{password:'test-password'})).body.backup;
+  assert.equal(backup.project.venue,'킨텍스 1전시장');
+  assert.equal((await invoke('updateProjectInfo',eventId,{...details,venue:'벡스코',password:'test-password'})).status,200);
+  assert.equal((await db.query('SELECT venue FROM pos_event_details WHERE project_id=$1',[eventId])).rows[0].venue,'벡스코');
+  assert.equal((await invoke('updateProjectInfo',eventId,{...details,password:'test-password'},'b')).status,404);
+ }finally{await db.close();}
 });
