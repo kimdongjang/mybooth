@@ -243,3 +243,27 @@ test('event restore is atomic after an injected failure and duplication replays 
   assert.equal((await invoke('duplicateProject',id,{...copyPayload,name:'changed'})).status,409);
  }finally{await db.close();}
 });
+
+
+test('event creation validates and persists venue/dates; template retries preserve metadata and backup retains venue',async()=>{
+ const {db,id,invoke}=await fixture();
+ try{
+  const details={name:'새 행사',venue:' 킨텍스 1전시장 ',startsOn:'2026-12-05',endsOn:'2026-12-06'};
+  const created=await invoke('createProject',null,details);assert.equal(created.status,201,JSON.stringify(created.body));
+  const eventId=created.body.project.id;
+  assert.equal((await db.query('SELECT venue FROM pos_event_details WHERE project_id=$1',[eventId])).rows[0].venue,'킨텍스 1전시장');
+  assert.equal((await db.query('SELECT starts_on::text AS start FROM pos_event_stock_policy WHERE project_id=$1',[eventId])).rows[0].start,'2026-12-05');
+  const before=(await db.query('SELECT COUNT(*)::int AS count FROM pos_projects')).rows[0].count;
+  for(const patch of [{startsOn:'2026-02-30'},{endsOn:'2026-12-04'},{venue:[]},{venue:'x'.repeat(201)}])assert.equal((await invoke('createProject',null,{...details,...patch})).status,400);
+  assert.equal((await db.query('SELECT COUNT(*)::int AS count FROM pos_projects')).rows[0].count,before);
+  const payload={...details,password:'test-password',requestId:crypto.randomUUID()};
+  const copied=await invoke('duplicateProject',id,payload);assert.equal(copied.status,201,JSON.stringify(copied.body));
+  assert.equal((await invoke('duplicateProject',id,payload)).body.project.id,copied.body.project.id);
+  assert.equal((await invoke('duplicateProject',id,{...payload,venue:'다른 장소'})).status,409);
+  const backup=(await invoke('backupProject',eventId,{password:'test-password'})).body.backup;
+  assert.equal(backup.project.venue,'킨텍스 1전시장');
+  assert.equal((await invoke('updateProjectInfo',eventId,{...details,venue:'벡스코',password:'test-password'})).status,200);
+  assert.equal((await db.query('SELECT venue FROM pos_event_details WHERE project_id=$1',[eventId])).rows[0].venue,'벡스코');
+  assert.equal((await invoke('updateProjectInfo',eventId,{...details,password:'test-password'},'b')).status,404);
+ }finally{await db.close();}
+});

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {readFile} from 'node:fs/promises';
+import {eventSchedule,sortEventsBySchedule} from '../src/utils/eventSchedule.js';
 import {storageQuery} from '../api/lib/storageContract.js';
 import {createApiContractContext} from '../src/utils/apiContractContext.js';
 import {allocationPlan} from '../src/utils/inventoryAllocationPlan.js';
@@ -12,21 +13,22 @@ const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
 async function harness(file,mocks={}) {
  let cursor=0,effectIndex=0;const states=[],effects=[],deps=[];
  const react={useId:()=> 'inventory-plan-form',useRef:value=>{const i=cursor++;return states[i]||=( {current:value});},useState:value=>{const i=cursor++;if(!(i in states))states[i]=typeof value==='function'?value():value;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},useEffect:(effect,dependencies)=>{const i=effectIndex++;if(!deps[i]||dependencies.some((v,j)=>!Object.is(v,deps[i][j]))){deps[i]=dependencies;effects.push(effect);}}};
- const base={react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/StockMovementForm':{default:'StockMovementForm'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
+ const base={react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
  const context=vm.createContext({crypto:globalThis.crypto,URLSearchParams,URL,sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},alert:message=>{throw new Error(message);}});
  const source=await readFile(new URL('../src/'+file,import.meta.url),'utf8');
  const module=new vm.SourceTextModule(ts.transpileModule(source,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText,{context});
  await module.link(name=>{assert.ok(base[name],name);return new vm.SyntheticModule(Object.keys(base[name]),function(){for(const[k,v]of Object.entries(base[name]))this.setExport(k,v);},{context});});await module.evaluate();
  return {render:(props,exportName='default')=>{cursor=effectIndex=0;return nodes(module.namespace[exportName](props));},flush:async()=>{while(effects.length)effects.shift()();await new Promise(resolve=>setImmediate(resolve));}};
 }
-test('five primary menus and artist/assistant/operator event navigation follow server capabilities',async()=>{
+test('four primary menus and artist/assistant/operator event navigation follow server capabilities',async()=>{
  for(const [role,permissions,expected] of [
+  ['viewer',{ownerIds:[],canSell:false,canViewPos:true,canConfigure:false,canManage:false},['판매 목록']],
   ['artist',{ownerIds:['own'],canSell:false,canConfigure:false,canManage:false},['행사 판매 설정','판매현황']],
   ['assistant',{ownerIds:['own'],canSell:true,canConfigure:true,canManage:false},['판매 목록','행사 판매 설정','판매현황']],
   ['operator',{ownerIds:[],canSell:true,canConfigure:true,canManage:true,canSettle:true},['판매 목록','행사 판매 설정','판매현황','행사 관리']]
  ]) {
   const h=await harness('components/PageLayout.jsx');const tree=h.render({page:'settings',navigate(){},project:{id:'e',name:'행사',permissions}},'AppHeader');
-  const nav=tree.find(n=>n.props.className?.split(' ').includes('nav-screens'));assert.deepEqual(nodes(nav).filter(n=>n.type==='a').map(n=>n.props.children[1]),['대시보드','행사 선택','내 재고관리','수익현황','마이페이지']);
+  const nav=tree.find(n=>n.props.className?.split(' ').includes('nav-screens'));assert.deepEqual(nodes(nav).filter(n=>n.type==='a').map(n=>n.props.children[1]),['대시보드','행사 선택','내 재고관리','마이페이지']);
   const event=tree.find(n=>n.props['aria-label']==='행사 메뉴');assert.deepEqual(nodes(event).filter(n=>n.type==='button').map(n=>n.props.children),expected,role);
  }
 });
@@ -64,7 +66,7 @@ test('personal inventory catalog searches own stock and opens the selected produ
  tree=h.render({...props,detailId:'b'});assert.equal(tree.find(n=>n.type==='detail').props.id,'b');assert.equal(tree.some(n=>n.props.role==='search'),false);
 });
 
-test('personal tools reuse the import editor through loading and adapt movement commands to owned stock',async()=>{
+test('personal tools reuse the import editor and replace loss entry with sales history',async()=>{
  const calls=[];const request=async(url,options)=>{
   if(options?.method==='POST'){calls.push(JSON.parse(options.body));return {};}
   if(url.includes('workspace=home'))return {profiles:[{owner_id:'mine',display_name:'나'}],booths:[]};
@@ -75,9 +77,13 @@ test('personal tools reuse the import editor through loading and adapt movement 
  assert.equal(h.render(props).find(n=>n.type==='InventoryImport').props.ready,false);
  await h.flush();h.render(props);await h.flush();let tree=h.render({...props,routeHash:'#/inventory/import/review'});
  assert.equal(tree.find(n=>n.type==='InventoryImport').props.review,true);assert.equal(tree.find(n=>n.type==='InventoryImport').props.ready,true);
- tree=h.render({...props,routeHash:'#/inventory/movements'});const form=tree.find(n=>n.type==='StockMovementForm');assert.equal(form.props.items[0].stock,5);
- await form.props.api('recordStockMovement',{inventoryId:'p',version:2,quantity:1,reason:'external',memo:'판매처',requestId:'fixed-id'});
- assert.equal(calls[0].action,'recordArtistStockLoss');assert.equal(calls[0].payload.ownerId,'mine');assert.equal(calls[0].payload.requestId,'fixed-id');assert.equal(calls[0].payload.memo,'판매처');
+ tree=h.render({...props,routeHash:'#/inventory/sales'});
+ assert.equal(tree.find(n=>n.type==='PersonalSalesHistory').props.items[0].warehouse,5);
+ assert.equal(tree.some(n=>n.type==='StockMovementForm'),false);
+ const tabs=tree.find(n=>n.props['aria-label']==='내 재고관리 하위 메뉴');
+ assert.deepEqual(nodes(tabs).filter(n=>n.type==='button').map(n=>n.props.children),['내 재고관리','재고 일괄등록','내 판매내역']);
+ tree=h.render({...props,routeHash:'#/inventory/movements'});
+ assert.ok(tree.some(n=>n.type==='PersonalSalesHistory'));assert.equal(calls.length,0);
 });
 
 
@@ -374,4 +380,82 @@ test('event creators use role controls and delete instead of participation toggl
  const h=await harness('components/EventAccessPanel.jsx');const props={request,project:{id:'e',boothId:'b'},onChange:()=>{changed++;}};
  h.render(props);await h.flush();let tree=h.render(props);assert.equal(tree.some(n=>n.type==='h2'&&n.props.children==='행사 일정'),false);assert.equal(tree.some(n=>n.type==='button'&&n.props.children==='참여 종료'),false);assert.ok(tree.find(n=>n.type==='select'));
  await tree.find(n=>n.type==='button'&&n.props.children==='삭제').props.onClick();tree=h.render(props);assert.equal(calls[0].action,'removeEventArtist');assert.equal(calls[0].payload.ownerId,'o');assert.equal(changed,1);assert.equal(tree.some(n=>n.type==='button'&&n.props.children==='삭제'),false);
+});
+test('revenue belongs to the account menu and keeps its own page title',async()=>{
+ const header=await harness('components/PageLayout.jsx');
+ const tree=header.render({page:'revenue',navigate(){},project:{id:'e'}},'AppHeader');
+ const nav=tree.find(n=>n.props.className?.split(' ').includes('nav-screens'));
+ const active=nodes(nav).filter(n=>n.type==='a'&&n.props['aria-current']==='page');
+ assert.equal(active.length,1);assert.equal(active[0].props.href,'#/account');
+ assert.equal(tree.some(n=>n.props['aria-label']==='행사 메뉴'),false);
+ const overview=await harness('pages/PersonalOverview.jsx');
+ const revenue=overview.render({request:async()=>({events:[]})});
+ assert.equal(revenue.find(n=>n.type==='h1').props.children,'수익현황');
+ assert.equal(revenue.find(n=>n.type==='h1').props.className,'sr-only');
+ const dashboard=overview.render({request:async()=>({events:[]}),dashboard:true});
+ assert.ok(dashboard.some(n=>n.type==='PersonalDashboard'));
+ assert.equal(dashboard.some(n=>n.type==='a'&&n.props.href==='#/account'),false);
+});
+
+test('personal sales search submits and resets; table sorts numeric amounts in both directions',async()=>{
+ const h=await harness('components/PersonalSalesHistory.jsx',{'./LoadingState':{default:'LoadingState'}});
+ const request=async()=>({events:[{projectId:'event',eventName:'행사',sales:[
+  {time:'2026-10-25',items:[{name:'상품 A',quantity:2,amount:900}]},
+  {time:'2026-10-26',items:[{name:'상품 B',quantity:10,amount:10000}]}
+ ]}]});
+ const props={request};h.render(props);await h.flush();let tree=h.render(props);
+ const names=()=>tree.filter(n=>n.type==='td'&&['상품 A','상품 B'].includes(n.props.children)).map(n=>n.props.children);
+ assert.deepEqual(names(),['상품 B','상품 A']);
+ tree.find(n=>n.type==='button'&&n.props.children[0]==='판매금액').props.onClick();tree=h.render(props);
+ assert.deepEqual(names(),['상품 A','상품 B']);
+ assert.ok(tree.some(n=>n.type==='th'&&n.props['aria-sort']==='ascending'));
+ tree.find(n=>n.type==='button'&&n.props.children[0]==='판매금액').props.onClick();tree=h.render(props);
+ assert.deepEqual(names(),['상품 B','상품 A']);
+ tree.find(n=>n.type==='input'&&n.props.type==='search').props.onChange({target:{value:'상품 A'}});tree=h.render(props);
+ assert.equal(names().length,2);
+ tree.find(n=>n.type==='form'&&n.props.role==='search').props.onSubmit({preventDefault(){}});tree=h.render(props);
+ assert.deepEqual(names(),['상품 A']);
+ tree.find(n=>n.type==='button'&&n.props.children==='검색 조건 초기화').props.onClick();tree=h.render(props);
+ assert.equal(names().length,2);
+});
+
+
+test('dashboard combines current and future events in one panel in schedule order',async()=>{
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
+ const props={data:{events:[],inventory:[],stockEvents:[]},events:[
+  {id:'later',name:'나중 행사',venue:'벡스코',startsOn:'2099-12-05',endsOn:'2099-12-06',permissions:{canViewPos:true}},
+  {id:'now',name:'현재 행사',venue:'킨텍스',startsOn:'2020-01-01',endsOn:'2090-12-31',permissions:{canSell:true}},
+  {id:'earlier',name:'먼저 행사',venue:'세텍',startsOn:'2099-01-05',endsOn:'2099-01-06',permissions:{canViewPos:true}}
+ ]};
+ const tree=h.render(props);
+ const panel=tree.find(n=>n.props.className==='dashboard-card home-events');
+ assert.deepEqual(nodes(panel).filter(n=>n.type==='h3').map(n=>n.props.children),['현재 행사','먼저 행사','나중 행사']);
+ assert.equal(tree.some(n=>n.props.className==='home-upcoming-list'),false);
+});
+
+
+test('event schedule badges use Korean calendar days and preserve archived and unknown schedules',()=>{
+ const event={startsOn:'2026-12-05',endsOn:'2026-12-07'};
+ assert.deepEqual(eventSchedule(event,'2026-12-03'),{status:'upcoming',label:'진행 예정',countdown:'D-2',period:'26.12.05~12.07'});
+ assert.equal(eventSchedule(event,'2026-12-05').countdown,'D-DAY');
+ assert.equal(eventSchedule(event,'2026-12-06').countdown,'종료 D-1');
+ assert.equal(eventSchedule(event,'2026-12-07').countdown,'오늘 종료');
+ assert.equal(eventSchedule(event,'2026-12-08').status,'ended');
+ assert.equal(eventSchedule({...event,archivedAt:'2026'},'2026-12-03').countdown,'');
+ assert.equal(eventSchedule({},'2026-12-03').status,'unscheduled');
+ assert.equal(eventSchedule({startsOn:'2026-02-30',endsOn:'2026-03-01'},'2026-02-01').period,'');
+ assert.equal(eventSchedule({startsOn:'2026-12-31',endsOn:'2027-01-01'},'2026-12-30').period,'26.12.31~27.01.01');
+});
+
+
+test('event list puts the nearest upcoming event first without changing the source order',()=>{
+ const rows=[
+  {id:'past',name:'지난 행사',startsOn:'2026-10-01',endsOn:'2026-10-02'},
+  {id:'later',name:'나중 행사',startsOn:'2027-02-01',endsOn:'2027-02-02'},
+  {id:'now',name:'진행 행사',startsOn:'2026-10-25',endsOn:'2026-10-27'},
+  {id:'next',name:'가까운 행사',startsOn:'2026-12-05',endsOn:'2026-12-06'},
+  {id:'unknown',name:'일정 없음'}
+ ];
+ assert.deepEqual(sortEventsBySchedule(rows,'2026-10-26').map(row=>row.id),['next','later','now','unknown','past']);
+ assert.equal(rows[0].id,'past');
 });

@@ -62,10 +62,10 @@ async function fixture() {
 test('new-client event creation establishes its operator booth and appears in workspace while preserving earlier source data',async()=>{
  const f=await fixture();try{
   const before=await foundation.legacySnapshot(f.sql,'a');
-  const created=await f.invoke('pos','createProject',{},'a',{body:{action:'createProject',protocolVersion:2,payload:{name:'새 행사'}}});
+  const created=await f.invoke('pos','createProject',{},'a',{body:{action:'createProject',protocolVersion:2,payload:{name:'새 행사',venue:'킨텍스',startsOn:'2026-12-05',endsOn:'2026-12-06'}}});
   assert.equal(created.status,201,JSON.stringify(created.body));assert.ok(created.body.project.boothId);
   const home=await f.invoke('booths',null,{},'a',{query:{workspace:'home'}});assert.equal(home.status,200,JSON.stringify(home.body));
-  const event=home.body.events.find(e=>e.id===created.body.project.id);assert.ok(event);assert.equal(event.permissions.operator,true);assert.equal(event.permissions.canManage,true);assert.equal(event.permissions.canSell,true);
+  const event=home.body.events.find(e=>e.id===created.body.project.id);assert.ok(event);assert.equal(event.venue,'킨텍스');assert.equal(event.startsOn,'2026-12-05');assert.equal(event.endsOn,'2026-12-06');assert.equal(event.permissions.operator,true);assert.equal(event.permissions.canManage,true);assert.equal(event.permissions.canSell,true);
   assert.ok(home.body.events.some(e=>e.id===f.event),'previous unlinked own event is preserved and linked');
   const other=await f.invoke('booths',null,{},'b',{query:{workspace:'home'}});assert.equal(other.body.events.some(e=>e.id===event.id),false);
   const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.inventory,before.inventory);assert.deepEqual(after.sales,before.sales);assert.deepEqual(after.settlements,before.settlements);

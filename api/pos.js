@@ -63,6 +63,7 @@ async function initDb() {
   await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS seed_version INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`;
   await sql`ALTER TABLE pos_projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+  await sql`CREATE TABLE IF NOT EXISTS pos_event_details(project_id TEXT PRIMARY KEY REFERENCES pos_projects(id) ON DELETE CASCADE,venue TEXT NOT NULL DEFAULT '')`;
   await sql`CREATE INDEX IF NOT EXISTS pos_projects_admin_id_idx ON pos_projects(admin_id)`;
   await sql`CREATE TABLE IF NOT EXISTS pos_products (project_id TEXT NOT NULL REFERENCES pos_projects(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, stock INTEGER NOT NULL, product_code TEXT, goods_type TEXT, vtuber_name TEXT, creator_name TEXT, stock_qty INTEGER, initial_stock_qty INTEGER, size TEXT, set_creator_name TEXT, set_group_name TEXT, set_price INTEGER, set_description TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY(project_id, id))`;
   await sql`ALTER TABLE pos_products ADD COLUMN IF NOT EXISTS image_url TEXT`;
@@ -529,13 +530,13 @@ async function dataRevision(projectId) {
 
 async function listProjects(adminId) {
   await initDb();
-  const result = await sql`SELECT e.id, e.name, e.seed_version, e.archived_at, e.created_at, e.updated_at,
+  const result = await sql`SELECT e.id, e.name, d.venue, e.seed_version, e.archived_at, e.created_at, e.updated_at,
     (SELECT COUNT(*) FROM pos_products p WHERE p.project_id=e.id AND COALESCE(p.is_active,TRUE)) AS product_count,
     (SELECT COALESCE(SUM(COALESCE(p.stock_qty,p.stock)),0) FROM pos_products p WHERE p.project_id=e.id AND COALESCE(p.is_active,TRUE)) AS remaining_stock,
     (SELECT COUNT(*) FROM pos_sales s WHERE s.project_id=e.id) AS sale_count,
     (SELECT COALESCE(SUM(s.total),0) FROM pos_sales s WHERE s.project_id=e.id) AS sale_total
-    FROM pos_projects e WHERE e.admin_id = ${adminId} AND e.deleted_at IS NULL ORDER BY updated_at DESC, created_at DESC`;
-  return { projects: result.rows.map((project) => ({ id: project.id, name: project.name, summary: { products: Number(project.product_count || 0), remainingStock: Number(project.remaining_stock || 0), sales: Number(project.sale_count || 0), total: Number(project.sale_total || 0) }, archivedAt: project.archived_at ? new Date(project.archived_at).toISOString() : null, seedVersion: Number(project.seed_version || 0), createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString() })) };
+    FROM pos_projects e LEFT JOIN pos_event_details d ON d.project_id=e.id WHERE e.admin_id = ${adminId} AND e.deleted_at IS NULL ORDER BY updated_at DESC, created_at DESC`;
+  return { projects: result.rows.map((project) => ({ id: project.id, name: project.name, venue:project.venue, summary: { products: Number(project.product_count || 0), remainingStock: Number(project.remaining_stock || 0), sales: Number(project.sale_count || 0), total: Number(project.sale_total || 0) }, archivedAt: project.archived_at ? new Date(project.archived_at).toISOString() : null, seedVersion: Number(project.seed_version || 0), createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString() })) };
 }
 
 async function insertProduct(projectId, input, onlyMissing = false, saleNumber = null) {
@@ -566,13 +567,30 @@ async function addMissingDefaults(adminId, projectId) {
   await sql`UPDATE pos_projects SET seed_version = ${CURRENT_SEED_VERSION}, updated_at = NOW() WHERE id = ${projectId}`;
 }
 
-async function createProject(adminId, name) {
-  const projectName = String(name || '').trim();
-  if (!projectName) throw new Error('프로젝트 이름을 입력해주세요.');
+function eventDetails(payload={}) {
+  const venue=payload.venue??'';
+  const startsOn=payload.startsOn??'',endsOn=payload.endsOn??'';
+  const valid=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+  if(typeof venue!=='string'||venue.trim().length>200)throw Object.assign(new Error('행사장 위치는 200자 이내로 입력해주세요.'),{status:400});
+  if(!((startsOn===''&&endsOn==='')||(valid(startsOn)&&valid(endsOn)&&endsOn>=startsOn)))throw Object.assign(new Error('행사 시작일과 종료일을 확인해주세요.'),{status:400});
+  return {venue:venue.trim(),startsOn,endsOn};
+}
+async function saveCreatedEventDetails(id,details) {
+  await sql`INSERT INTO pos_event_details(project_id,venue) VALUES(${id},${details.venue}) ON CONFLICT(project_id) DO UPDATE SET venue=EXCLUDED.venue`;
+  if(details.startsOn){
+    await sql`CREATE TABLE IF NOT EXISTS pos_event_stock_policy(project_id TEXT PRIMARY KEY REFERENCES pos_projects(id),starts_on DATE NOT NULL,ends_on DATE NOT NULL,CHECK(ends_on>=starts_on))`;
+    await sql`INSERT INTO pos_event_stock_policy(project_id,starts_on,ends_on) VALUES(${id},${details.startsOn},${details.endsOn}) ON CONFLICT(project_id) DO UPDATE SET starts_on=EXCLUDED.starts_on,ends_on=EXCLUDED.ends_on`;
+  }
+}
+async function createProject(adminId, name, payload={}) {
+  const projectName = typeof name==='string'?name.trim():'';
+  if (!projectName||projectName.length>100) throw Object.assign(new Error('프로젝트 이름은 1~100자로 입력해주세요.'),{status:400});
+  const details=eventDetails(payload);
   await initDb();
   const id = uid();
   await sql`INSERT INTO pos_projects (id, admin_id, name) VALUES (${id}, ${adminId}, ${projectName})`;
-  return { project: { id, name: projectName } };
+  await saveCreatedEventDetails(id,details);
+  return { project: { id, name: projectName,...details } };
 }
 
 // A project's row lock serializes numbering with catalog and sale mutations.
@@ -736,7 +754,7 @@ async function clearSales(adminId, projectId, password) {
 }
 
 async function snapshot(projectId) {
-  const project = (await sql`SELECT name, archived_at, seed_version FROM pos_projects WHERE id = ${projectId}`).rows[0];
+  const project = (await sql`SELECT p.name, d.venue, p.archived_at, p.seed_version FROM pos_projects p LEFT JOIN pos_event_details d ON d.project_id=p.id WHERE p.id = ${projectId}`).rows[0];
   const products = (await sql`SELECT * FROM pos_products WHERE project_id = ${projectId} ORDER BY id`).rows;
   const bundles = (await sql`SELECT * FROM pos_bundles WHERE project_id = ${projectId} ORDER BY id`).rows;
   const sales = (await sql`SELECT * FROM pos_sales WHERE project_id = ${projectId} ORDER BY time, id`).rows;
@@ -806,6 +824,7 @@ async function importProject(adminId, name, backup, duplicate = false, sourcePro
   const archivedAt = duplicate ? null : new Date().toISOString();
   const seedVersion = Number.isInteger(backup.project.seed_version) && backup.project.seed_version >= 0 && backup.project.seed_version <= 2147483647 ? backup.project.seed_version : 0;
   await sql`INSERT INTO pos_projects (id, admin_id, name, archived_at, seed_version) VALUES (${id}, ${adminId}, ${name}, ${archivedAt}, ${seedVersion})`;
+  await sql`INSERT INTO pos_event_details(project_id,venue) VALUES(${id},${eventDetails({venue:backup.project.venue}).venue})`;
   // Replace the original project_id; never trust ownership or IDs from a file.
   const products = backup.products.map(row => ({ ...row, project_id: id, ...(duplicate ? { stock: 0, stock_qty: 0, initial_stock_qty: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } : {}) }));
   const bundles = backup.bundles.map(row => ({ ...row, project_id: id }));
@@ -940,7 +959,7 @@ async function handler(req, res) {
       if (linked) return res.status(200).json(await inventoryAction(admin.id, 'saveCommonProductImage', { ...payload, projectId: req.body.projectId || payload.projectId, dataRevision: req.body.dataRevision ?? payload.dataRevision }));
     }
     if (['listInventory', 'saveInventory', 'transferInventory', 'createEventProduct', 'saveEventProduct', 'removeInventory', 'updateInventoryRegistrationDate'].includes(action)) return res.status(200).json(await inventoryAction(admin.id, action, payload));
-    if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name));
+    if (action === 'createProject') return res.status(201).json(await createProject(admin.id, payload.name,payload));
     if (action === 'restoreProject') {
       if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
       const name = typeof payload.name === 'string' ? payload.name.trim() : '';
@@ -976,7 +995,9 @@ async function handler(req, res) {
         if (!name || name.length > 100) return res.status(400).json({ error: '새 프로젝트 이름은 1~100자로 입력해주세요.' });
         const requestId=payload.requestId;
         if(requestId&& !/^[a-f0-9-]{36}$/i.test(requestId))return res.status(400).json({error:'생성 요청 ID를 확인해주세요.'});
-        const fingerprint=JSON.stringify({action,projectId,name});
+        const details=eventDetails(payload);
+        const hasDetails=['venue','startsOn','endsOn'].some(key=>Object.hasOwn(payload,key));
+        const fingerprint=JSON.stringify({action,projectId,name,...(hasDetails?details:{})});
         if(requestId) {
           const prior=(await sql`SELECT * FROM pos_project_imports WHERE admin_id=${admin.id} AND id=${requestId}`).rows[0];
           if(prior) {
@@ -985,6 +1006,11 @@ async function handler(req, res) {
           }
         }
         const result=await importProject(admin.id,name,await snapshot(projectId),true,projectId);
+        if(hasDetails){
+          await saveCreatedEventDetails(result.project.id,details);
+          Object.assign(result.project,details);
+          result.projects=result.projects.map(project=>project.id===result.project.id?{...project,...details}:project);
+        }
         if(requestId)await sql`INSERT INTO pos_project_imports(admin_id,id,fingerprint,project_id) VALUES(${admin.id},${requestId},${fingerprint},${result.project.id})`;
         return res.status(201).json(result);
       }
@@ -1004,6 +1030,7 @@ async function handler(req, res) {
         if (!name || name.length > 100) return res.status(400).json({ error: '프로젝트 이름은 1~100자로 입력해주세요.' });
         if(action==='updateProjectInfo') {
           const {startsOn,endsOn}=payload;
+          if(Object.hasOwn(payload,'venue')){const details=eventDetails(payload);await sql`INSERT INTO pos_event_details(project_id,venue) VALUES(${projectId},${details.venue}) ON CONFLICT(project_id) DO UPDATE SET venue=EXCLUDED.venue`;}
           const valid=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
           if(!((startsOn===''&&endsOn==='')||(valid(startsOn)&&valid(endsOn)&&endsOn>=startsOn)))return res.status(400).json({error:'행사 시작일과 종료일을 확인해주세요.'});
           await sql`CREATE TABLE IF NOT EXISTS pos_event_stock_policy(project_id TEXT PRIMARY KEY REFERENCES pos_projects(id),starts_on DATE NOT NULL,ends_on DATE NOT NULL,CHECK(ends_on>=starts_on))`;

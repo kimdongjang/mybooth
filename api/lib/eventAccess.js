@@ -6,6 +6,7 @@ const fail=(message,status=403)=>{throw Object.assign(new Error(message),{status
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 const hash=value=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 export async function initEventAccess(sql) {
+  await sql`CREATE TABLE IF NOT EXISTS pos_event_details(project_id TEXT PRIMARY KEY REFERENCES pos_projects(id) ON DELETE CASCADE,venue TEXT NOT NULL DEFAULT '')`;
   await sql`CREATE TABLE IF NOT EXISTS pos_booth_management_commands (
     id TEXT PRIMARY KEY,actor_id TEXT NOT NULL REFERENCES pos_admins(id),booth_id TEXT NOT NULL REFERENCES pos_booths(id),
     fingerprint TEXT NOT NULL,result JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
@@ -140,11 +141,11 @@ export async function saveEventAccess(sql,userId,payload) {
 }
 
 export async function workspaceEvents(sql,userId) {
-  const ids=(await sql`SELECT eb.project_id FROM pos_event_booths eb JOIN pos_projects p ON p.id=eb.project_id WHERE p.deleted_at IS NULL ORDER BY eb.project_id`).rows;
+  const ids=(await sql`SELECT eb.project_id,d.venue,sp.starts_on::text,sp.ends_on::text FROM pos_event_booths eb JOIN pos_projects p ON p.id=eb.project_id LEFT JOIN pos_event_details d ON d.project_id=p.id LEFT JOIN pos_event_stock_policy sp ON sp.project_id=p.id WHERE p.deleted_at IS NULL ORDER BY eb.project_id`).rows;
   const events=[];
-  for(const {project_id} of ids) {
+  for(const {project_id,venue,starts_on,ends_on} of ids) {
     const event=await eventPermissions(sql,userId,project_id);
-    if(event.permissions.canRead)events.push({id:event.id,name:event.name,boothId:event.booth_id,boothName:event.booth_name,createdAt:event.created_at,archivedAt:event.archived_at,permissions:event.permissions});
+    if(event.permissions.canRead)events.push({id:event.id,name:event.name,venue,startsOn:starts_on,endsOn:ends_on,boothId:event.booth_id,boothName:event.booth_name,createdAt:event.created_at,archivedAt:event.archived_at,permissions:event.permissions});
   }
   return events;
 }

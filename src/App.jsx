@@ -269,7 +269,7 @@ export default function App() {
     setProjectLoading(true);
     setError('');
     try {
-      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ protocolVersion:2,boothId:e?.currentTarget?.elements?.namedItem('boothId')?.value,action: 'createProject', payload: { name: newProjectName.trim() } }) });
+      const data = await requestJson('/api/pos', { method: 'POST', body: JSON.stringify({ protocolVersion:2,boothId:e?.currentTarget?.elements?.namedItem('boothId')?.value,action: 'createProject', payload: { name: newProjectName.trim(),venue:e?.currentTarget?.elements?.namedItem('venue')?.value||'',startsOn:e?.currentTarget?.elements?.namedItem('startsOn')?.value||'',endsOn:e?.currentTarget?.elements?.namedItem('endsOn')?.value||'' } }) });
       const project = data.project;
       clearRegistration();
       setNewProjectName('');
@@ -728,6 +728,7 @@ export default function App() {
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
     <PaymentToast notice={paymentToast} onDismiss={setPaymentToast}/>
     <AppHeader page={screen} navigate={setScreen} project={selectedProject} adminId={adminId} saving={saving} sync={sync} onReleaseProject={releaseProject} releaseDisabled={saving || loading || projectLoading} />
+    {['dashboard','account','revenue'].includes(screen)&&<nav className="event-subnav inventory-management-nav menu-tabs" aria-label={screen==='dashboard'?'대시보드 하위 메뉴':'마이페이지 하위 메뉴'}>{(screen==='dashboard'?[['dashboard','대시보드']]:[['account','마이페이지'],['revenue','수익현황']]).map(([key,label])=><button key={key} type="button" aria-current={screen===key?'page':undefined} onClick={()=>setScreen(key)}>{label}</button>)}</nav>}
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
     {readOnly && !['inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">{selectedProject?.settlementClosedAt?'정산 마감 · 읽기 전용입니다.':'보관된 행사 · 읽기 전용입니다.'} <button type="button" className="event-text-link" onClick={() => setScreen(selectedProject?.settlementClosedAt?'log':'projectArchive')}>{selectedProject?.settlementClosedAt?'정산 마감 관리 →':'비밀번호로 보관 해제 →'}</button></div>}
     {loading || projectLoading || (linkedProjectId && selectedProject?.id !== linkedProjectId) || (selectedProject && readyScope !== scope && !error) ? <main className="page-content"><LoadingState /></main> : <>

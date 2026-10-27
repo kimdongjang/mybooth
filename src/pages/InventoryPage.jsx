@@ -178,15 +178,15 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         <li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고관리</a></li>
         <li aria-hidden="true">/</li>
         {view !== 'list' && !tool && <><li><a href="#/inventory" onClick={event => { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return; event.preventDefault(); navigate('inventory'); }}>재고 목록</a></li><li aria-hidden="true">/</li></>}
-        {importReview && <><li><a href="#/inventory/import" onClick={event=>{if(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button!==0)return;event.preventDefault();navigate('/inventory/import');}}>엑셀 일괄 등록</a></li><li aria-hidden="true">/</li></>}
-        <li><h1 aria-current="page" tabIndex={-1}>{importReview ? '업로드 완료 · 편집' : tool === 'import' ? '엑셀 일괄 등록' : tool === 'movements' ? '외부 판매·로스' : view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상세정보'}</h1></li>
+        {importReview && <><li><a href="#/inventory/import" onClick={event=>{if(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button!==0)return;event.preventDefault();navigate('/inventory/import');}}>재고 일괄등록</a></li><li aria-hidden="true">/</li></>}
+        <li><h1 aria-current="page" tabIndex={-1}>{importReview ? '업로드 완료 · 편집' : tool === 'import' ? '재고 일괄등록' : tool === 'movements' ? '외부 판매·로스' : view === 'list' ? '재고 목록' : view === 'new' ? '상품 등록' : '상세정보'}</h1></li>
       </ol></nav>
       {view !== 'list' && <button ref={backButton} type="button" className="management-back" disabled={busy} onClick={() => navigate('inventory')}>← 목록으로</button>}
     </header>
     <nav className="inventory-section-nav menu-tabs" aria-label="재고관리 하위 메뉴">
       {[
         ['list', '/inventory', '재고 목록'],
-        ['import', '/inventory/import', '엑셀 일괄 등록'],
+        ['import', '/inventory/import', '재고 일괄등록'],
         ['movements', '/inventory/movements', '외부 판매·로스'],
         ['new', '/inventory/new', '+ 상품 추가'],
       ].map(([key, path, label]) => {

@@ -1,11 +1,12 @@
 import { allowNavigation } from './useUnsavedChanges';
 import { useCallback, useEffect, useState } from 'react';
 
-export const pagePaths = { artistStock:'/artist-stock', inventoryImport:'/inventory/import', inventoryImportReview:'/inventory/import/review', inventoryMovements:'/inventory/movements', dashboard: '/dashboard', revenue: '/revenue', inventory: '/inventory', account: '/account', pos: '/sales', settings: '/products', bundleNew: '/products/bundles/new', productNew: '/products/new', log: '/settlement', projects: '/projects', projectNew: '/projects/new', project: '/project', projectSettlement: '/project/settlement', projectName: '/project/name', projectArchive: '/project/archive', projectDuplicate: '/project/duplicate', projectBackup: '/project/backup', projectDelete: '/project/delete', restore: '/project/restore', login: '/login', signup: '/signup' };
+export const pagePaths = { artistStock:'/artist-stock', inventoryImport:'/inventory/import', inventoryImportReview:'/inventory/import/review', inventorySales:'/inventory/sales', dashboard: '/dashboard', revenue: '/account/revenue', inventory: '/inventory', account: '/account', pos: '/sales', settings: '/products', bundleNew: '/products/bundles/new', productNew: '/products/new', log: '/settlement', projects: '/projects', projectNew: '/projects/new', project: '/project', projectSettlement: '/project/settlement', projectName: '/project/name', projectArchive: '/project/archive', projectDuplicate: '/project/duplicate', projectBackup: '/project/backup', projectDelete: '/project/delete', restore: '/project/restore', login: '/login', signup: '/signup' };
 export const projectPages = ['project', 'projectSettlement', 'projectName', 'projectArchive', 'projectBackup', 'projectDelete'];
 export const pageTitles = { artistStock:'제작자 재고', dashboard: '대시보드', revenue: '수익현황', inventory: '내 재고관리', account: '마이페이지', pos: '상품 판매', settings: '행사 판매 설정', bundleNew: '새 세트 등록', productNew: '새 상품 등록', log: '판매현황', projects: '행사 선택', projectNew: '새 행사 추가', project: '행사 정보', projectSettlement: '정산 마감', projectName: '행사 이름 변경', projectArchive: '판매 종료·다시 열기', projectDuplicate: '지난 행사 구성으로 새 행사 만들기', projectBackup: '데이터·관리', projectDelete: '행사 삭제', restore: '백업 복원' };
 export const pageForHash = hash => {
   const path = String(hash).split('?')[0];
+  if (path === '#/revenue') return 'revenue';
   if (path === '#/inventory/import/review') return 'inventory';
   if (/^#\/inventory\/[^/?#]+$/.test(path)) return 'inventory';
   return Object.entries(pagePaths).find(([, value]) => path === `#${value}`)?.[0] || (/^#\/products\/[^/?#]+$/.test(path) ? 'settings' : null);

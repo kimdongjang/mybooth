@@ -6,6 +6,7 @@ import ProjectNavigation from '../components/ProjectNavigation';
 
 export default function ProjectManagementPage({page,project,navigate,onManageProject,request,onSettlementChange,onAccessChange,beforeAccessChange}) {
  const [name,setName]=useState(project.name),[password,setPassword]=useState(''),[confirmName,setConfirmName]=useState('');
+ const [venue,setVenue]=useState(project.venue||'');
  const [startsOn,setStart]=useState(''),[endsOn,setEnd]=useState(''),[scheduleReady,setScheduleReady]=useState(!request);
  const [confirmOpen,setConfirmOpen]=useState(false);const passwordDialog=useRef(null),pending=useRef(null);
  useEffect(()=>{if(confirmOpen)passwordDialog.current?.showModal();else passwordDialog.current?.close();},[confirmOpen]);
@@ -16,7 +17,7 @@ export default function ProjectManagementPage({page,project,navigate,onManagePro
  const action=info?'updateProjectInfo':operation==='backup'?'backupProject':operation==='delete'?'deleteProject':archived?'unarchiveProject':'archiveProject';
  const label=info?'행사 정보 저장':operation==='backup'?'백업 다운로드':operation==='delete'?'삭제하기':archived?'판매 다시 열기':'판매 종료하고 기록 보관';
  const submit=async e=>{e.preventDefault();if(busy||!password)return;setBusy(true);setError('');try{
-  if(info)pending.current||={name,startsOn,endsOn,password,requestId:crypto.randomUUID()};
+  if(info)pending.current||={name,venue,startsOn,endsOn,password,requestId:crypto.randomUUID()};
   await onManageProject(project,action,info?pending.current:{name,confirmName,password});pending.current=null;setPassword('');setConfirmOpen(false);
  }catch(e){setError(e.message);if(e.status>=400&&e.status<500)pending.current=null;}finally{setBusy(false);}};
  const openInfo=e=>{e.preventDefault();if(!scheduleReady||busy||archived)return;setError('');setPassword('');setConfirmOpen(true);};
@@ -26,7 +27,7 @@ export default function ProjectManagementPage({page,project,navigate,onManagePro
   {page==='projectSettlement'?<EventSettlementPanel request={request} projectId={project.id} onChange={onAccessChange} beforeChange={beforeAccessChange}/>:<>
    {info?<>
     <section className="management-product"><header className="management-product-header"><h2>행사 정보</h2><span className="event-status" data-archived={archived}>{archived?'판매 종료(보관됨)':'진행 중'}</span></header><div className="account-card-body">
-    <form className="account-form event-info-form" onSubmit={openInfo}><label>행사 이름<Input required maxLength={100} value={name} onChange={setName} disabled={busy||archived||Boolean(pending.current)}/></label><label>판매 시작일<input type="date" value={startsOn} required={Boolean(endsOn)} disabled={busy||archived||!scheduleReady||Boolean(pending.current)} onChange={e=>setStart(e.target.value)}/></label><label>판매 종료일<input type="date" value={endsOn} min={startsOn||undefined} required={Boolean(startsOn)} disabled={busy||archived||!scheduleReady||Boolean(pending.current)} onChange={e=>setEnd(e.target.value)}/></label><button className="management-add" disabled={busy||archived||!scheduleReady||!name.trim()}>행사 정보 저장</button></form>
+    <form className="account-form event-info-form" onSubmit={openInfo}><label>행사 이름<Input required maxLength={100} value={name} onChange={setName} disabled={busy||archived||Boolean(pending.current)}/></label><label>행사장 위치<Input maxLength={200} value={venue} onChange={setVenue} disabled={busy||archived||Boolean(pending.current)}/></label><label>판매 시작일<input type="date" value={startsOn} required={Boolean(endsOn)} disabled={busy||archived||!scheduleReady||Boolean(pending.current)} onChange={e=>setStart(e.target.value)}/></label><label>판매 종료일<input type="date" value={endsOn} min={startsOn||undefined} required={Boolean(startsOn)} disabled={busy||archived||!scheduleReady||Boolean(pending.current)} onChange={e=>setEnd(e.target.value)}/></label><button className="management-add" disabled={busy||archived||!scheduleReady||!name.trim()}>행사 정보 저장</button></form>
     </div></section>{request&&<EventAccessPanel request={request} project={project} onChange={onAccessChange} beforeChange={beforeAccessChange}/>}
    </>:null}
    {data&&<>

@@ -50,8 +50,11 @@ test('inventory deep links, direct refresh, back/forward and event history queri
   assert.equal(pageForHash('#/unknown'), null);
   await usePageRoute()[1]('dashboard');
   assert.equal(usePageRoute()[0], 'dashboard');
+  assert.equal(pageForHash('#/account/revenue'), 'revenue');
+  assert.equal(pageForHash('#/revenue'), 'revenue');
   await usePageRoute()[1]('revenue');
   assert.equal(usePageRoute()[0], 'revenue');
+  assert.equal(usePageRoute()[2], '#/account/revenue');
   await usePageRoute()[1]('/revenue?projectId=event%2Ftwo');
   assert.equal(usePageRoute()[0], 'revenue');
   assert.equal(usePageRoute()[2], '#/revenue?projectId=event%2Ftwo');
