@@ -1,4 +1,6 @@
 const paths = {
+  calendar: <><path d="M4 5h16v15H4zM8 3v4m8-4v4M4 10h16M8 14h3m-3 3h6" /></>,
+  star: <path d="m12 3 2.8 5.7 6.3.9-4.6 4.5 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9L12 3Z" />,
   pin: <><path d="m16 3 5 5-4 1-4 4v4l-2 2-3-5-5-3 2-2h4l4-4 1-4ZM8 16l-5 5" /></>,
   dashboard: <><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" /></>,
   account: <><circle cx="12" cy="8" r="4" /><path d="M4 21v-3a8 8 0 0 1 16 0v3" /></>,
