@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {dashboardEvents,dashboardFocus,countDashboardWaiting,dashboardAlerts} from '../src/utils/personalDashboard.js';
+import {dashboardEvents,dashboardFocus,countDashboardWaiting,dashboardAlerts,dashboardPastEvents,settlementDisplay} from '../src/utils/personalDashboard.js';
 
 const event=(id,start,end,extra={})=>({id,name:id,startsOn:start,endsOn:end,permissions:{canManage:true,canSell:true,canConfigure:true,canSettle:true},...extra});
 const today='2026-10-27';
@@ -62,7 +62,7 @@ test('attention prioritizes recovery and allocation and excludes unconfirmed neg
  assert.deepEqual(alerts.map(row=>row.type),['recovery','allocation','pending']);
  assert.equal(alerts[1].event.id,'live');
  const closedNegative={...rows[0],closed:true};
- assert.equal(dashboardAlerts([closedNegative],0)[0].type,'negative');
+ assert.equal(dashboardAlerts([closedNegative],0).some(row=>row.type==='negative'),false);
  assert.equal(dashboardAlerts(rows,0).some(row=>row.type==='allocation'),false);
 });
 
@@ -74,7 +74,9 @@ test('attention stays absent for clear, unconfirmed, unknown and unauthorized al
  ],today);
  assert.deepEqual(dashboardAlerts(rows,14),[]);
  const ended=dashboardEvents({},[event('past','2026-09-01','2026-09-02')],today);
- assert.deepEqual(dashboardAlerts(ended,14),[]);
+ assert.deepEqual(dashboardAlerts(ended,14).map(row=>row.type),['close']);
+ const viewerEnded=dashboardEvents({},[event('past','2026-09-01','2026-09-02',{permissions:{canViewPos:true}})],today);
+ assert.deepEqual(dashboardAlerts(viewerEnded,14),[]);
 });
 
 
@@ -84,4 +86,32 @@ test('pinned focus overrides automatic selection for any visible schedule and mi
  assert.equal(dashboardFocus(cards,'inaccessible').choices[0].id,'live');
  assert.equal(dashboardFocus(cards,'').choices[0].id,'live');
  assert.equal(dashboardFocus([],'removed').choices.length,0);
+});
+
+test('attention orders unsynced, recovery, close-needed and allocation',()=>{
+ const rows=dashboardEvents({inventory:[{allocations:[{projectId:'past',initial:6,sold:1,remaining:5}]}],waitingOrders:{live:2}},[
+  event('live','2026-10-26','2026-10-28'),event('past','2026-09-01','2026-09-02'),event('unclosed','2026-08-01','2026-08-02')
+ ],today);
+ assert.deepEqual(dashboardAlerts(rows,3).map(row=>row.type),['waiting','recovery','close','close','allocation']);
+});
+
+test('past events put follow-ups first, recent first, and classify settlement and stock',()=>{
+ const rows=dashboardEvents({inventory:[{allocations:[{projectId:'recover',initial:6,sold:1,remaining:5}]}],events:[
+  {projectId:'paid',closedAt:'2026-09-02',rows:[{net:1000,paid:1000,pending:0}],sales:[]},
+  {projectId:'unpaid',closedAt:'2026-09-20',rows:[{net:1000,paid:0,pending:1000}],sales:[]}]},[
+  event('paid','2026-09-01','2026-09-02'),event('unpaid','2026-09-19','2026-09-20'),event('recover','2026-08-01','2026-08-02'),event('live','2026-10-26','2026-10-28')
+ ],today);
+ const past=dashboardPastEvents(rows);
+ assert.deepEqual(past.rows.map(row=>row.event.id),['unpaid','recover','paid']);
+ assert.deepEqual(past.rows.map(row=>row.followUp),[true,true,false]);
+ assert.equal(past.followUps,2);
+ assert.equal(past.rows[2].settlement,'paid');assert.equal(past.rows[0].settlement,'closed');assert.equal(past.rows[1].settlement,'open');
+ assert.equal(past.rows[1].stock,'recover');assert.equal(past.rows[1].remaining,5);
+});
+
+test('negative estimates are explained and cost-only estimates are hidden',()=>{
+ assert.equal(settlementDisplay({net:-500,closed:true,metrics:{gross:1000}}).kind,'negative');
+ assert.equal(settlementDisplay({net:-500,closed:false,metrics:{gross:0}}).kind,'empty');
+ assert.equal(settlementDisplay({net:null}).kind,'none');
+ assert.equal(settlementDisplay({net:300,closed:false,metrics:{gross:1000}}).provisional,true);
 });

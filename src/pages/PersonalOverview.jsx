@@ -6,8 +6,9 @@ import PersonalDashboard from '../components/PersonalDashboard';
 import {useEventReadRefresh} from '../hooks/useEventReadRefresh';
 
 const noEvents=[];
+const oneYearAgo=()=>{const date=new Date(`${koreanDay(new Date())}T00:00:00Z`);if(Number.isNaN(date.getTime()))return '';date.setUTCFullYear(date.getUTCFullYear()-1);return date.toISOString().slice(0,10);};
 export default function PersonalOverview({request,projectId,dashboard=false,events=noEvents,readWaitingOrders}) {
- const [data,setData]=useState(null),[error,setError]=useState(''),[start,setStart]=useState(''),[end,setEnd]=useState('');
+ const [data,setData]=useState(null),[error,setError]=useState(''),[start,setStart]=useState(()=>projectId||dashboard?'':oneYearAgo()),[end,setEnd]=useState(()=>projectId||dashboard?'':koreanDay(new Date()));
  const readRevision=useEventReadRefresh(request);
  useEffect(()=>{let active=true;request('/api/booths?artists=history').then(async value=>{
   if(dashboard){const stock=await Promise.all(value.profiles.map(p=>request(`/api/booths?artists=stock&ownerId=${encodeURIComponent(p.owner_id)}`)));value={...value,inventory:[...new Map(stock.flatMap(s=>s.inventory).map(item=>[`${item.custodianId}:${item.inventoryId||item.id}`,item])).values()],stockEvents:[...new Map(stock.flatMap(s=>s.events||[]).map(event=>[event.id,event])).values()]};}

@@ -21,7 +21,7 @@ export default function ProjectsPage({ creating, booths=[], projects, selectedPr
     {id:'past',title:'종료 · 정산 마감 · 보관',statuses:['ended','closed','archived']},
   ].map(group=>({...group,projects:sortedProjects.filter(project=>
     group.statuses.includes(eventSchedule(project).status)
-  )})).filter(group=>group.projects.length);
+  )})).filter(group=>['upcoming','past'].includes(group.id)||group.projects.length);
   return <>
     <nav className="event-subnav inventory-management-nav menu-tabs" aria-label="행사 목록 하위 메뉴"><button type="button" aria-current={!creating?'page':undefined} onClick={()=>navigate('projects')}>행사 목록</button><button data-guide={!creating?'event':undefined} type="button" aria-current={creating?'page':undefined} onClick={()=>navigate('projectNew')}>새 행사 추가</button></nav>
     <main className="page-content projects-page"><div className="page-body event-picker">
@@ -52,6 +52,7 @@ export default function ProjectsPage({ creating, booths=[], projects, selectedPr
                 </div></details>}
               </article>;
             })}
+            {group.id==='upcoming'&&<button type="button" className="event-add-card" onClick={() => navigate('projectNew')}>+ 행사 추가하기</button>}
           </div>
         </section>)}
       </div>}

@@ -56,6 +56,7 @@ async function initDb() {
   if (initialized) return;
   assertPostgresConnectionString();
   await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS nickname TEXT`;
+  await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS avatar TEXT`;
   await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
   await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS email TEXT`;
   await sql`ALTER TABLE pos_admins ADD COLUMN IF NOT EXISTS password_hash TEXT`;
@@ -899,15 +900,20 @@ async function handler(req, res) {
     await initDb();
     if (!(await sql`SELECT id FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows.length) return res.status(401).json({ error: '인증이 필요합니다.' });
     if ((req.method === 'GET' && req.query?.account === 'true') || ['updateProfile', 'updateCredentials', 'deleteAccount'].includes(req.body?.action)) {
-      const account = (await sql`SELECT id,email,nickname FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows[0];
+      const account = (await sql`SELECT id,email,nickname,avatar FROM pos_admins WHERE id=${admin.id} AND deleted_at IS NULL FOR UPDATE`).rows[0];
       if (!account) return res.status(401).json({ error: '탈퇴했거나 존재하지 않는 계정입니다.' });
       if (req.method === 'GET') return res.status(200).json({ admin: account });
       if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
       const payload = req.body.payload || {};
       if (req.body.action === 'updateProfile') {
         if (typeof payload.nickname !== 'string' || !payload.nickname.trim() || payload.nickname.trim().length > 30) return res.status(400).json({ error: '닉네임은 1~30자로 입력해주세요.' });
-        await sql`UPDATE pos_admins SET nickname=${payload.nickname.trim()} WHERE id=${admin.id}`;
-        return res.status(200).json({ admin: { ...account, nickname: payload.nickname.trim() } });
+        let avatar = account.avatar;
+        if (payload.avatar !== undefined) {
+          if (payload.avatar !== '' && (typeof payload.avatar !== 'string' || payload.avatar.length > 20000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(payload.avatar))) return res.status(400).json({ error: '프로필 이미지를 확인해주세요.' });
+          avatar = payload.avatar || null;
+        }
+        await sql`UPDATE pos_admins SET nickname=${payload.nickname.trim()},avatar=${avatar} WHERE id=${admin.id}`;
+        return res.status(200).json({ admin: { ...account, nickname: payload.nickname.trim(), avatar } });
       }
       if (req.body.action === 'updateCredentials') {
         if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({error:'현재 비밀번호를 확인해주세요.'});

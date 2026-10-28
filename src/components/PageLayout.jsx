@@ -29,7 +29,7 @@ export function PageTabs({ id, label, tabs, selected, onSelect }) {
   </div>;
 }
 
-export function AppHeader({ page, navigate, project, projects = [], onSelectProject, saving, sync, selectionDisabled }) {
+export function AppHeader({ profileImage, page, navigate, project, projects = [], onSelectProject, saving, sync, selectionDisabled }) {
   const [open, setOpen] = useState(null);
   const root = useRef(null);
   const eventToggle = useRef(null);
@@ -90,16 +90,14 @@ export function AppHeader({ page, navigate, project, projects = [], onSelectProj
     {showEventNav ? <nav id="header-navigation" className={`primary-navigation event-workspace-navigation${open === 'menu' || open === 'more' ? ' is-open' : ''}`} aria-label="행사 메뉴">
       {eventMenu.map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={eventMenuCurrent(key) ? 'page' : undefined} onClick={follow(key)}><Icon name={key}/>{label}</a>)}
       <div className="primary-more">
-        <button ref={moreToggle} type="button" className={onPersonalPage ? 'is-active' : undefined} aria-expanded={open === 'more'} aria-controls="header-more-menu" onClick={() => setOpen(open === 'more' ? null : 'more')}><Icon name="account"/>내 계정 <span aria-hidden="true">▾</span></button>
+        <button ref={moreToggle} type="button" className={onPersonalPage ? 'is-active' : undefined} aria-expanded={open === 'more'} aria-controls="header-more-menu" onClick={() => setOpen(open === 'more' ? null : 'more')}>{profileImage ? <img className="header-avatar" src={profileImage} alt="" width="20" height="20" /> : <Icon name="account"/>}내 계정 <span aria-hidden="true">▾</span></button>
         {open === 'more' && <div id="header-more-menu" className="header-popover" aria-label="내 계정 메뉴">{accountMenu.map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || (key === 'projects' && ['projectNew','projectDuplicate'].includes(page)) || (key === 'inventory' && page === 'artistStock') ? 'page' : undefined} onClick={follow(key)}><Icon name={key}/>{label}</a>)}</div>}
       </div>
     </nav> : <nav id="header-navigation" className={`primary-navigation${open === 'menu' || open === 'more' ? ' is-open' : ''}`} aria-label="주 메뉴">
-      <a href={`#${pagePaths[destination]}`} className="primary-sales" aria-current={page === 'pos' ? 'page' : undefined} onClick={follow(destination)}><Icon name="pos"/>판매</a>
-      <a href="#/projects" aria-current={['projects','projectNew','projectDuplicate'].includes(page) ? 'page' : undefined} onClick={follow('projects')}><Icon name="projects"/>행사 목록</a>
-      <a href="#/inventory" aria-current={['inventory','artistStock'].includes(page) ? 'page' : undefined} onClick={follow('inventory')}><Icon name="inventory"/>내 재고관리</a>
+      <a href="#/projects" className="header-select-event" onClick={follow('projects')}>행사 선택하기 →</a>
       <div className="primary-more">
-        <button ref={moreToggle} type="button" className={moreActive ? 'is-active' : undefined} aria-expanded={open === 'more'} aria-controls="header-more-menu" onClick={() => setOpen(open === 'more' ? null : 'more')}><Icon name="more"/>더보기 <span aria-hidden="true">▾</span></button>
-        {open === 'more' && <div id="header-more-menu" className="header-popover" aria-label="더보기 메뉴">{[['dashboard','대시보드'],['account','마이페이지']].map(([key,label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || (key === 'account' && page === 'revenue') ? 'page' : undefined} onClick={follow(key)}><Icon name={key}/>{label}</a>)}</div>}
+        <button ref={moreToggle} type="button" className={onPersonalPage ? 'is-active' : undefined} aria-expanded={open === 'more'} aria-controls="header-more-menu" onClick={() => setOpen(open === 'more' ? null : 'more')}>{profileImage ? <img className="header-avatar" src={profileImage} alt="" width="20" height="20" /> : <Icon name="account"/>}내 계정 <span aria-hidden="true">▾</span></button>
+        {open === 'more' && <div id="header-more-menu" className="header-popover" aria-label="내 계정 메뉴">{accountMenu.map(([key,label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || (key === 'projects' && ['projectNew','projectDuplicate'].includes(page)) || (key === 'inventory' && page === 'artistStock') || (key === 'account' && page === 'revenue') ? 'page' : undefined} onClick={follow(key)}><Icon name={key}/>{label}</a>)}</div>}
       </div>
     </nav>}
   </header></>;

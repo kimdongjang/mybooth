@@ -17,7 +17,6 @@ function AuthForm({ mode, onAuthenticate }) {
   const [id, setId] = useState('');
   const [email, setEmail] = useState('');
   const [nickname, setNickname] = useState('');
-  const [allowOperatorStock,setAllowOperatorStock]=useState(true);
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState('');
@@ -33,7 +32,7 @@ function AuthForm({ mode, onAuthenticate }) {
     }
     setSubmitting(true);
     try {
-      await onAuthenticate({ mode, id, password, ...(signup ? { email, nickname,allowOperatorStock } : {}) });
+      await onAuthenticate({ mode, id, password, ...(signup ? { email, nickname } : {}) });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -52,7 +51,6 @@ function AuthForm({ mode, onAuthenticate }) {
       {signup && <label className="mb-3 block text-sm font-bold">닉네임 (선택)<input maxLength={30} value={nickname} onChange={event => setNickname(event.target.value)} placeholder="비워두면 랜덤 닉네임을 만들어드려요" className="mt-1 w-full rounded border border-line p-1.5 text-[13px]" /></label>}
       <PasswordField id={`${mode}-password`} label="패스워드" signup={signup} value={password} onChange={setPassword} />
       {signup && <PasswordField id="signup-password-confirmation" label="패스워드 확인" signup value={confirmation} onChange={setConfirmation} />}
-      {signup&&<div className="mb-3"><label className="stock-permission-checkbox"><input type="checkbox" checked={allowOperatorStock} onChange={e=>setAllowOperatorStock(e.target.checked)}/>행사 운영자의 재고관리 허용</label><p className="management-note">내가 참여한 부스의 운영자가 내 재고 수량을 수정할 수 있습니다. 설정에서 언제든 변경할 수 있습니다.</p></div>}
       {error && <div role="alert" className="mb-3 rounded bg-danger px-3 py-2 text-xs text-white">{error}</div>}
       <button disabled={submitting} className="w-full rounded-lg bg-register px-4 py-3 font-bold text-white disabled:opacity-60">{submitting ? '처리 중…' : signup ? '회원가입하고 시작' : '로그인'}</button>
       {!signup && <div className="auth-password-help">

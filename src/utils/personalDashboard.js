@@ -49,15 +49,40 @@ export function dashboardFocus(events,pinnedProjectId='') {
 export function dashboardAlerts(events,warehouse=0) {
  const alerts=events.flatMap(event=>{
   const rows=[];
-  if(event.closed&&event.net!=null&&event.net<0)rows.push({key:`negative:${event.id}`,type:'negative',event});
+  if(event.waiting>0)rows.push({key:`waiting:${event.id}`,type:'waiting',event});
   if(event.status==='ended'&&event.stock?.remaining>0)rows.push({key:`recovery:${event.id}`,type:'recovery',event});
+  if(event.status==='ended'&&!event.closed&&event.p.canSettle)rows.push({key:`close:${event.id}`,type:'close',event});
   if(event.closed&&event.pending>0)rows.push({key:`pending:${event.id}`,type:'pending',event});
+  if(event.status==='active'&&event.lowStock>0)rows.push({key:`stock:${event.id}`,type:'stock',event});
   return rows;
  });
  const eligible=events.filter(event=>!event.closed&&['active','upcoming'].includes(event.status)
   &&(event.operator||event.p.canConfigure||event.p.ownerIds?.length||event.allocations.length));
  const groups=dashboardFocus(eligible),target=groups.choices[0];
  if(warehouse>0&&target)alerts.push({key:'allocation',type:'allocation',event:target});
- const priority={recovery:0,allocation:1,pending:2,negative:3};
+ const priority={waiting:0,recovery:1,close:2,allocation:3,pending:4,stock:5};
  return alerts.sort((a,b)=>priority[a.type]-priority[b.type]);
+}
+
+export function dashboardRole(event) {
+ const p=event.p||{};
+ return p.canManage?'운영':p.canSell?'판매':p.ownerIds?.length||p.canReadOwnHistory?'제작자':'참여';
+}
+
+// A negative or cost-only estimate is explained, never presented as a warning.
+export function settlementDisplay(event) {
+ if(event.net==null)return {kind:'none'};
+ const gross=event.metrics?.gross;
+ if(!event.closed&&event.net<0&&!gross)return {kind:'empty',provisional:true};
+ return {kind:event.net<0?'negative':'value',amount:event.net,gross,fees:gross!=null?gross-event.net:null,provisional:!event.closed};
+}
+
+export function dashboardPastEvents(events) {
+ const rows=events.filter(event=>event.status==='ended'&&(event.canReport||event.operator||event.p.ownerIds?.length)).map(event=>{
+  const settlement=!event.closed?'open':event.pending>0?'closed':'paid';
+  const remaining=Number(event.stock?.remaining||0),stock=!event.stock?'na':remaining>0?'recover':'done';
+  const followUp=(!event.closed&&Boolean(event.p.canSettle))||stock==='recover'||(event.closed&&event.pending>0);
+  return {event,settlement,stock,remaining,followUp,role:dashboardRole(event),gross:event.metrics?.gross??null,net:event.net};
+ }).sort((a,b)=>Number(b.followUp)-Number(a.followUp)||timestamp(b.event.endedAt)-timestamp(a.event.endedAt)||a.event.name.localeCompare(b.event.name,'ko'));
+ return {rows,count:rows.length,gross:sum(rows.map(row=>({gross:row.gross})),'gross'),followUps:rows.filter(row=>row.followUp).length};
 }

@@ -59,6 +59,7 @@ async function requestJson(url, options = {}) {
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStore.getItem(AUTH_TOKEN_KEY));
+  const [profileImage, setProfileImage] = useState('');
   const [adminId, setAdminId] = useState(() => sessionStore.getItem(AUTH_ADMIN_KEY) || '');
   const [loading, setLoading] = useState(Boolean(token));
   const [projectLoading, setProjectLoading] = useState(Boolean(token));
@@ -409,6 +410,7 @@ export default function App() {
     const timer=window.setInterval(()=>{if(!document.hidden)refresh();},SYNC_INTERVAL_MS);window.addEventListener('online',refresh);
     return()=>{window.clearInterval(timer);window.removeEventListener('online',refresh);};
   },[token,adminId]);
+  useEffect(() => { let active = true; if (!token) { setProfileImage(''); return; } requestJson('/api/pos?account=true').then(data => { if (active) setProfileImage(data.admin?.avatar || ''); }).catch(() => {}); return () => { active = false; }; }, [token]);
   useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id, selectedProject?.boothId]);
 
   const login = async (credentials) => {
@@ -786,7 +788,7 @@ export default function App() {
     {analytics}
     <ApiReadIndicator/>
     <PaymentToast notice={paymentToast} onDismiss={setPaymentToast}/>
-    <AppHeader page={screen} navigate={setScreen} project={selectedProject} projects={projects} onSelectProject={selectProject} saving={saving} sync={sync} selectionDisabled={saving || loading || projectLoading} />
+    <AppHeader profileImage={profileImage} page={screen} navigate={setScreen} project={selectedProject} projects={projects} onSelectProject={selectProject} saving={saving} sync={sync} selectionDisabled={saving || loading || projectLoading} />
     {['dashboard','account','revenue'].includes(screen)&&<nav className="event-subnav inventory-management-nav menu-tabs" aria-label={screen==='dashboard'?'대시보드 하위 메뉴':'마이페이지 하위 메뉴'}>{(screen==='dashboard'?[['dashboard','대시보드']]:[['account','마이페이지'],['revenue','수익현황']]).map(([key,label])=><button key={key} type="button" aria-current={screen===key?'page':undefined} onClick={()=>setScreen(key)}>{label}</button>)}</nav>}
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
     {(selectedProject?.archivedAt || selectedProject?.settlementClosedAt) && !['inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">{selectedProject?.settlementClosedAt?'정산 마감 · 읽기 전용입니다.':'보관된 행사 · 읽기 전용입니다.'} <button type="button" className="event-text-link" onClick={() => setScreen(selectedProject?.settlementClosedAt?'log':'projectArchive')}>{selectedProject?.settlementClosedAt?'정산 마감 관리 →':'비밀번호로 보관 해제 →'}</button></div>}
@@ -796,7 +798,7 @@ export default function App() {
     {screen === 'revenue' && <PersonalOverview key={adminId} request={requestJson} />}
     {screen === 'inventory' && <PersonalInventory key={adminId} request={sharedStockRequest} routeHash={routeHash} navigate={setScreen} />}
     {screen === 'artistStock' && <ArtistStockPage key={adminId} request={sharedStockRequest} initialProjectId={selectedProject?.id} />}
-    {screen === 'account' && <AccountPage adminId={adminId} request={requestJson} logout={logout} beforeDelete={async () => { if (loading || projectLoading || saving || !navigator.onLine) throw new Error('온라인에서 행사 목록을 모두 불러온 뒤 다시 시도해주세요.'); const fresh = await requestJson('/api/pos'); if ((await Promise.all(fresh.projects.map(project => orderRepository.countWaiting(project.id)))).some(Boolean)) throw new Error('모든 행사의 미동기화 주문을 먼저 동기화해주세요.'); }} />}
+    {screen === 'account' && <AccountPage adminId={adminId} request={requestJson} logout={logout} onProfileImage={setProfileImage} beforeDelete={async () => { if (loading || projectLoading || saving || !navigator.onLine) throw new Error('온라인에서 행사 목록을 모두 불러온 뒤 다시 시도해주세요.'); const fresh = await requestJson('/api/pos'); if ((await Promise.all(fresh.projects.map(project => orderRepository.countWaiting(project.id)))).some(Boolean)) throw new Error('모든 행사의 미동기화 주문을 먼저 동기화해주세요.'); }} />}
     {['projects', 'projectNew','projectDuplicate'].includes(screen) && <ProjectsPage creating={screen !== 'projects'} booths={workspace.booths} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onManageProject={manageProject} onSelectProject={selectProject} navigate={setScreen} />}
 
     {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} request={eventReads.request} beforeAccessChange={async action=>{if(action==='removeEventArtist'&&await orderRepository.countWaiting(selectedProject.id))throw Object.assign(new Error('미동기화 주문을 먼저 처리해주세요.'),{status:409});}} onAccessChange={async action=>{await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true,background:action==='saveEventAccess'});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'sharedStockChanged',projectIds:[selectedProject.id]});channel.close();}}} onSettlementChange={async () => {const data=await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'settlementChanged',adminId,projectId:selectedProject.id,closedAt:data.settlementClosedAt});channel.close();}}} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
