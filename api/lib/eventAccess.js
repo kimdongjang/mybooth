@@ -1,6 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {createBoothArtist} from './artistLinking.js';
-import {authorizeBooth} from './boothFoundation.js';
+import {authorizeBooth,ownerIdOf} from './boothFoundation.js';
 
 const fail=(message,status=403)=>{throw Object.assign(new Error(message),{status});};
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
@@ -33,7 +33,7 @@ export async function initEventAccess(sql) {
 export async function boothManagementView(sql,userId,{boothId}) {
  const booth=await authorizeBooth(sql,userId,boothId,'manage');
  const members=(await sql`SELECT m.user_id,m.role,m.status,u.nickname FROM pos_booth_members m JOIN pos_admins u ON u.id=m.user_id WHERE m.booth_id=${boothId} ORDER BY m.user_id`).rows;
- const profiles=(await sql`SELECT p.id,p.owner_id,p.linked_user_id,o.display_name FROM pos_booth_artists a JOIN pos_artist_profiles p ON p.owner_id=a.owner_id JOIN pos_stock_owners o ON o.id=p.owner_id WHERE a.booth_id=${boothId} AND a.status IN ('active','proxy') ORDER BY p.id`).rows;
+ const profiles=(await sql`SELECT o.id,o.id AS owner_id,o.linked_user_id,o.display_name FROM pos_booth_artists a JOIN pos_stock_owners o ON o.id=a.owner_id WHERE a.booth_id=${boothId} AND a.status IN ('active','proxy') ORDER BY o.id`).rows;
  return {boothId,name:booth.name,role:booth.role,members,profiles};
 }
 
@@ -49,7 +49,7 @@ export async function saveBoothManagement(sql,userId,payload) {
   const previous=(await sql`SELECT role,status FROM pos_booth_members WHERE booth_id=${boothId} AND user_id=${targetUserId}`).rows[0];
   if(previous?.role==='owner')fail('부스 소유자 권한은 변경할 수 없습니다.');
   if((previous?.role||null)!==(expectedRole||null)||(previous?.status||null)!==(expectedStatus||null))fail('부스 권한이 변경되었습니다.',409);
-  if(status==='active'&&!(await sql`SELECT p.id FROM pos_artist_profiles p JOIN pos_booth_artists a ON a.owner_id=p.owner_id AND a.booth_id=${boothId} AND a.status IN ('active','proxy') JOIN pos_admins u ON u.id=p.linked_user_id AND u.deleted_at IS NULL WHERE p.linked_user_id=${targetUserId}`).rows.length)fail('계정이 연결된 부스 제작자를 선택해주세요.');
+  if(status==='active'&&!(await sql`SELECT o.id FROM pos_stock_owners o JOIN pos_booth_artists a ON a.owner_id=o.id AND a.booth_id=${boothId} AND a.status IN ('active','proxy') JOIN pos_admins u ON u.id=o.linked_user_id AND u.deleted_at IS NULL WHERE o.linked_user_id=${targetUserId}`).rows.length)fail('계정이 연결된 부스 제작자를 선택해주세요.');
   await sql`INSERT INTO pos_booth_members(booth_id,user_id,role,status) VALUES(${boothId},${targetUserId},${role},${status}) ON CONFLICT(booth_id,user_id) DO UPDATE SET role=EXCLUDED.role,status=EXCLUDED.status`;
  } else {
   if(typeof name!=='string'||!name.trim()||name.trim().length>80)fail('부스명을 확인해주세요.',400);
@@ -69,15 +69,15 @@ export async function eventPermissions(sql,userId,projectId) {
   const active=(await sql`SELECT id FROM pos_admins WHERE id=${userId} AND deleted_at IS NULL`).rows.length;
   const tables=(await sql`SELECT to_regclass('pos_event_staff') AS staff,to_regclass('pos_event_artists') AS artists`).rows[0];
   const staff=tables.staff?(await sql`SELECT s.* FROM pos_event_staff s WHERE s.project_id=${projectId} AND s.user_id=${userId} AND s.status='active'
-    AND EXISTS(SELECT 1 FROM pos_artist_profiles p JOIN pos_event_artists e ON e.owner_id=p.owner_id AND e.project_id=s.project_id AND e.status='active'
-      JOIN pos_booth_artists a ON a.owner_id=p.owner_id AND a.booth_id=${event.booth_id} AND a.status IN ('active','proxy') WHERE p.linked_user_id=s.user_id)`).rows[0]:null;
+    AND EXISTS(SELECT 1 FROM pos_stock_owners o JOIN pos_event_artists e ON e.owner_id=o.id AND e.project_id=s.project_id AND e.status='active'
+      JOIN pos_booth_artists a ON a.owner_id=o.id AND a.booth_id=${event.booth_id} AND a.status IN ('active','proxy') WHERE o.linked_user_id=s.user_id)`).rows[0]:null;
   const owners=tables.artists?(await sql`SELECT a.owner_id FROM pos_event_artists a JOIN pos_owner_members m ON m.owner_id=a.owner_id AND m.user_id=${userId}
     JOIN pos_booth_artists b ON b.owner_id=a.owner_id AND b.booth_id=${event.booth_id} AND b.status IN ('active','proxy')
     WHERE a.project_id=${projectId} AND a.status='active'`).rows.map(row=>row.owner_id):[];
   const operator=Boolean(active&&event.member_status==='active'&&['owner','manager'].includes(event.booth_role));
   const historical=(await sql`SELECT r.owner_id FROM pos_event_recipients e JOIN pos_recipients r ON r.id=e.recipient_id
     JOIN pos_owner_members m ON m.owner_id=r.owner_id AND m.user_id=${userId}
-    JOIN pos_artist_profiles p ON p.owner_id=r.owner_id AND p.linked_user_id=${userId} AND p.status='linked'
+    JOIN pos_stock_owners o ON o.id=r.owner_id AND o.linked_user_id=${userId} AND o.link_status='linked'
     WHERE e.project_id=${projectId} LIMIT 1`).rows.length>0;
   const seller=Boolean(active&&event.member_status==='active'&&event.booth_role==='seller');
   const canSell=Boolean(active&&(operator||seller||staff));
@@ -100,11 +100,11 @@ export async function authorizeEvent(sql,userId,projectId,capability='read',boot
 
 export async function eventAccessView(sql,userId,{projectId,boothId}) {
   const event=await authorizeEvent(sql,userId,projectId,'manage',boothId);
-  const profiles=(await sql`SELECT p.id,p.owner_id,p.linked_user_id,o.display_name,a.status AS booth_status,
-    e.status,e.version,e.requested_role,u.nickname,(SELECT m.role FROM pos_booth_members m WHERE m.booth_id=${event.booth_id} AND m.user_id=p.linked_user_id AND m.status='active') AS booth_role,(SELECT COUNT(*)::int FROM pos_event_product_identities i JOIN pos_products prod ON prod.project_id=i.project_id AND prod.id=i.product_id
+  const profiles=(await sql`SELECT o.id,o.id AS owner_id,o.linked_user_id,o.display_name,a.status AS booth_status,
+    e.status,e.version,e.requested_role,u.nickname,(SELECT m.role FROM pos_booth_members m WHERE m.booth_id=${event.booth_id} AND m.user_id=o.linked_user_id AND m.status='active') AS booth_role,(SELECT COUNT(*)::int FROM pos_event_product_identities i JOIN pos_products prod ON prod.project_id=i.project_id AND prod.id=i.product_id
       WHERE i.project_id=${projectId} AND i.owner_id=o.id AND prod.is_active IS DISTINCT FROM FALSE) AS product_count FROM pos_booth_artists a JOIN pos_stock_owners o ON o.id=a.owner_id
-    JOIN pos_artist_profiles p ON p.owner_id=o.id LEFT JOIN pos_admins u ON u.id=p.linked_user_id LEFT JOIN pos_event_artists e ON e.owner_id=o.id AND e.project_id=${projectId}
-    WHERE a.booth_id=${event.booth_id} ORDER BY p.id`).rows;
+    LEFT JOIN pos_admins u ON u.id=o.linked_user_id LEFT JOIN pos_event_artists e ON e.owner_id=o.id AND e.project_id=${projectId}
+    WHERE a.booth_id=${event.booth_id} ORDER BY o.id`).rows;
   const staff=(await sql`SELECT user_id,role,status,version FROM pos_event_staff WHERE project_id=${projectId} ORDER BY user_id`).rows;
   const schedule=(await sql`SELECT starts_on::text,ends_on::text FROM pos_event_stock_policy WHERE project_id=${projectId}`).rows[0]||null;
   return {projectId,boothId:event.booth_id,profiles,staff,schedule};
@@ -123,7 +123,7 @@ export async function saveEventAccess(sql,userId,payload) {
     if((previous?.version||0)!==version)fail('참여 내역이 변경되었습니다.',409);
     if(role!==undefined){
       if(!['seller','assistant'].includes(role)||status!=='active'||previous?.status!=='active')fail('행사 권한을 확인해주세요.',400);
-      const profile=(await sql`SELECT linked_user_id FROM pos_artist_profiles WHERE owner_id=${ownerId} FOR UPDATE`).rows[0];
+      const profile=(await sql`SELECT linked_user_id FROM pos_stock_owners WHERE id=${ownerId} FOR UPDATE`).rows[0];
       if(!profile||profile.linked_user_id)fail('계정 연결 상태가 변경되었습니다. 다시 확인해주세요.',409);
     }
     if(status==='ended'&&(await sql`SELECT p.id FROM pos_products p JOIN pos_event_product_identities i ON i.project_id=p.project_id AND i.product_id=p.id
@@ -131,11 +131,11 @@ export async function saveEventAccess(sql,userId,payload) {
     await sql`INSERT INTO pos_event_artists(project_id,owner_id,status,version,requested_role) VALUES(${projectId},${ownerId},${status},${version+1},${role??previous?.requested_role??null})
       ON CONFLICT(project_id,owner_id) DO UPDATE SET status=EXCLUDED.status,version=EXCLUDED.version,requested_role=EXCLUDED.requested_role`;
     if(status==='ended')await sql`UPDATE pos_event_staff SET status='ended',version=version+1 WHERE project_id=${projectId} AND user_id IN
-      (SELECT linked_user_id FROM pos_artist_profiles WHERE owner_id=${ownerId})`;
+      (SELECT linked_user_id FROM pos_stock_owners WHERE id=${ownerId} AND linked_user_id IS NOT NULL)`;
   } else {
     if(!['seller','assistant'].includes(role))fail('판매/부관리자 역할을 확인해주세요.',400);
-    if(status==='active'&&!(await sql`SELECT p.id FROM pos_artist_profiles p JOIN pos_event_artists e ON e.owner_id=p.owner_id
-      JOIN pos_admins u ON u.id=p.linked_user_id AND u.deleted_at IS NULL WHERE e.project_id=${projectId} AND e.status='active' AND p.linked_user_id=${targetUserId}`).rows.length)fail('계정이 연결된 행사 참여 제작자를 선택해주세요.');
+    if(status==='active'&&!(await sql`SELECT o.id FROM pos_stock_owners o JOIN pos_event_artists e ON e.owner_id=o.id
+      JOIN pos_admins u ON u.id=o.linked_user_id AND u.deleted_at IS NULL WHERE e.project_id=${projectId} AND e.status='active' AND o.linked_user_id=${targetUserId}`).rows.length)fail('계정이 연결된 행사 참여 제작자를 선택해주세요.');
     const previous=(await sql`SELECT * FROM pos_event_staff WHERE project_id=${projectId} AND user_id=${targetUserId}`).rows[0];
     if((previous?.version||0)!==version)fail('권한이 변경되었습니다.',409);
     await sql`INSERT INTO pos_event_staff(project_id,user_id,role,status,version,changed_by) VALUES(${projectId},${targetUserId},${role},${status},${version+1},${userId})
@@ -212,17 +212,17 @@ export async function linkEventArtistAccount(sql,userId,payload) {
  const prior=(await sql`SELECT * FROM pos_event_access_commands WHERE id=${requestId}`).rows[0];
  if(prior){if(prior.actor_id!==userId||prior.project_id!==projectId||prior.fingerprint!==fingerprint)fail('같은 요청 ID의 내용이 다릅니다.',409);return prior.result;}
  if(!(await sql`SELECT id FROM pos_admins WHERE id=${targetUserId} AND deleted_at IS NULL FOR UPDATE`).rows.length)fail('계정을 찾을 수 없습니다.',404);
- const profile=(await sql`SELECT p.*,o.origin_booth_id,e.requested_role FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id
-  JOIN pos_booth_artists a ON a.owner_id=p.owner_id AND a.booth_id=${boothId} AND a.status='proxy'
-  JOIN pos_event_artists e ON e.owner_id=p.owner_id AND e.project_id=${projectId} AND e.status='active'
-  WHERE p.id=${profileId} FOR UPDATE OF p,o,a,e`).rows[0];
- if(!profile||profile.status!=='unlinked'||profile.linked_user_id||profile.origin_booth_id!==boothId)fail('연결할 미연결 참여 제작자를 확인해주세요.',409);
- await sql`UPDATE pos_artist_profiles SET status='linked',linked_user_id=${targetUserId} WHERE id=${profileId}`;
- await sql`INSERT INTO pos_owner_members(owner_id,user_id) VALUES(${profile.owner_id},${targetUserId}) ON CONFLICT DO NOTHING`;
- await sql`UPDATE pos_stock_owners SET kind='artist' WHERE id=${profile.owner_id}`;
- await sql`UPDATE pos_booth_artists SET status='active',stock_management_confirmed=TRUE WHERE booth_id=${boothId} AND owner_id=${profile.owner_id}`;
- await sql`UPDATE pos_artist_invitations SET revoked_at=NOW() WHERE profile_id=${profileId} AND accepted_at IS NULL AND revoked_at IS NULL`;
- await sql`INSERT INTO pos_artist_link_audit(id,profile_id,booth_id,actor_id,action) VALUES(${randomUUID()},${profileId},${boothId},${userId},'profile_linked_by_operator')`;
+ const ownerId=await ownerIdOf(sql,profileId);
+ const profile=(await sql`SELECT o.*,e.requested_role FROM pos_stock_owners o
+  JOIN pos_booth_artists a ON a.owner_id=o.id AND a.booth_id=${boothId} AND a.status='proxy'
+  JOIN pos_event_artists e ON e.owner_id=o.id AND e.project_id=${projectId} AND e.status='active'
+  WHERE o.id=${ownerId} FOR UPDATE OF o,a,e`).rows[0];
+ if(!profile||profile.link_status!=='unlinked'||profile.linked_user_id||profile.origin_booth_id!==boothId)fail('연결할 미연결 참여 제작자를 확인해주세요.',409);
+ await sql`UPDATE pos_stock_owners SET link_status='linked',linked_user_id=${targetUserId},kind='artist' WHERE id=${ownerId}`;
+ await sql`INSERT INTO pos_owner_members(owner_id,user_id) VALUES(${ownerId},${targetUserId}) ON CONFLICT DO NOTHING`;
+ await sql`UPDATE pos_booth_artists SET status='active',stock_management_confirmed=TRUE WHERE booth_id=${boothId} AND owner_id=${ownerId}`;
+ await sql`UPDATE pos_artist_invitations SET revoked_at=NOW() WHERE owner_id=${ownerId} AND accepted_at IS NULL AND revoked_at IS NULL`;
+ await sql`INSERT INTO pos_artist_link_audit(id,owner_id,booth_id,actor_id,action) VALUES(${randomUUID()},${ownerId},${boothId},${userId},'profile_linked_by_operator')`;
  const linkedRole=payload.role??profile.requested_role;
  if(linkedRole!=null){
   if(!['seller','assistant'].includes(linkedRole))fail('행사 권한을 확인해주세요.',400);
@@ -238,13 +238,13 @@ export async function searchEventArtists(sql,userId,{projectId,boothId,q}) {
  await authorizeEvent(sql,userId,projectId,'manage',boothId);
  if(typeof q!=='string'||q.trim().length<2||q.length>100)fail('검색어를 2~100자로 입력해주세요.',400);
  const term=q.trim();
- const artists=(await sql`SELECT p.id,p.owner_id,p.linked_user_id,o.display_name,u.nickname,
-  EXISTS(SELECT 1 FROM pos_event_artists e WHERE e.project_id=${projectId} AND e.owner_id=p.owner_id AND e.status='active') AS registered
-  FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id LEFT JOIN pos_admins u ON u.id=p.linked_user_id
-  WHERE ((p.status='linked' AND u.deleted_at IS NULL AND u.id IS NOT NULL) OR
-   (p.status='unlinked' AND o.origin_booth_id=${boothId} AND EXISTS(SELECT 1 FROM pos_booth_artists a WHERE a.booth_id=${boothId} AND a.owner_id=p.owner_id AND a.status='proxy')))
+ const artists=(await sql`SELECT o.id,o.id AS owner_id,o.linked_user_id,o.display_name,u.nickname,
+  EXISTS(SELECT 1 FROM pos_event_artists e WHERE e.project_id=${projectId} AND e.owner_id=o.id AND e.status='active') AS registered
+  FROM pos_stock_owners o LEFT JOIN pos_admins u ON u.id=o.linked_user_id
+  WHERE ((o.link_status='linked' AND u.deleted_at IS NULL AND u.id IS NOT NULL) OR
+   (o.link_status='unlinked' AND o.origin_booth_id=${boothId} AND EXISTS(SELECT 1 FROM pos_booth_artists a WHERE a.booth_id=${boothId} AND a.owner_id=o.id AND a.status='proxy')))
   AND (strpos(lower(o.display_name),lower(${term}))>0 OR strpos(lower(COALESCE(u.nickname,'')),lower(${term}))>0 OR lower(u.id)=lower(${term}) OR lower(u.email)=lower(${term}))
-  ORDER BY o.display_name,p.id LIMIT 20`).rows;
+  ORDER BY o.display_name,o.id LIMIT 20`).rows;
  return {artists};
 }
 
@@ -255,7 +255,7 @@ export async function addEventArtist(sql,userId,payload) {
  const fingerprint=hash({userId,action:'addEventArtist',payload});
  const prior=(await sql`SELECT * FROM pos_event_access_commands WHERE id=${requestId}`).rows[0];
  if(prior){if(prior.actor_id!==userId||prior.project_id!==projectId||prior.fingerprint!==fingerprint)fail('같은 요청 ID의 내용이 다릅니다.',409);return prior.result;}
- const profile=(await sql`SELECT p.*,o.origin_booth_id FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE p.id=${profileId} FOR UPDATE OF p,o`).rows[0];
+ const profile=(await sql`SELECT o.*,o.id AS owner_id,o.link_status AS status FROM pos_stock_owners o WHERE o.id=${await ownerIdOf(sql,profileId)} FOR UPDATE`).rows[0];
  if(!profile)fail('제작자를 찾을 수 없습니다.',404);
  if(profile.linked_user_id){if(!(await sql`SELECT id FROM pos_admins WHERE id=${profile.linked_user_id} AND deleted_at IS NULL FOR UPDATE`).rows.length)fail('연결 계정을 확인해주세요.',404);}
  else if(profile.origin_booth_id!==boothId||profile.status!=='unlinked')fail('이 부스의 미연결 제작자를 선택해주세요.',403);
@@ -282,10 +282,9 @@ export async function createEventCreator(sql,userId,payload){
  const fingerprint=hash({userId,action:'createEventCreator',payload});
  const prior=(await sql`SELECT * FROM pos_event_access_commands WHERE id=${requestId}`).rows[0];
  if(prior){if(prior.actor_id!==userId||prior.project_id!==projectId||prior.fingerprint!==fingerprint)fail('같은 요청 ID의 내용이 다릅니다.',409);return prior.result;}
- const {profileId}=await createBoothArtist(sql,userId,{boothId,name});
- const profile=(await sql`SELECT owner_id FROM pos_artist_profiles WHERE id=${profileId}`).rows[0];
- if(!(await sql`SELECT owner_id FROM pos_event_artists WHERE project_id=${projectId} AND owner_id=${profile.owner_id} AND status='active'`).rows.length)await addEventArtist(sql,userId,{projectId,boothId,profileId,role:'none',requestId:randomUUID()});
- const result={added:true,profileId,ownerId:profile.owner_id};
+ const {ownerId}=await createBoothArtist(sql,userId,{boothId,name});
+ if(!(await sql`SELECT owner_id FROM pos_event_artists WHERE project_id=${projectId} AND owner_id=${ownerId} AND status='active'`).rows.length)await addEventArtist(sql,userId,{projectId,boothId,profileId:ownerId,role:'none',requestId:randomUUID()});
+ const result={added:true,profileId:ownerId,ownerId};
  await sql`INSERT INTO pos_event_access_commands(id,actor_id,project_id,fingerprint,result) VALUES(${requestId},${userId},${projectId},${fingerprint},${JSON.stringify(result)}::jsonb)`;
  return result;
 }
@@ -298,12 +297,11 @@ export async function removeEventArtist(sql,userId,payload) {
  const fingerprint=hash({userId,action:'removeEventArtist',payload});
  const prior=(await sql`SELECT * FROM pos_event_access_commands WHERE id=${requestId}`).rows[0];
  if(prior){if(prior.actor_id!==userId||prior.fingerprint!==fingerprint)fail('같은 요청의 내용이 다릅니다.',409);return prior.result;}
- const participation=(await sql`SELECT e.*,p.linked_user_id FROM pos_event_artists e JOIN pos_artist_profiles p ON p.owner_id=e.owner_id WHERE e.project_id=${projectId} AND e.owner_id=${ownerId} FOR UPDATE OF e`).rows[0];
+ const participation=(await sql`SELECT e.*,o.linked_user_id FROM pos_event_artists e JOIN pos_stock_owners o ON o.id=e.owner_id WHERE e.project_id=${projectId} AND e.owner_id=${ownerId} FOR UPDATE OF e`).rows[0];
  if(!participation||participation.status!=='active')fail('행사 참여 제작자를 찾을 수 없습니다.',404);
  if(participation.version!==version)fail('참여 제작자가 변경되었습니다. 새로고침해주세요.',409);
  const key=hash([boothId,'event-unassigned']),unassignedId=`unassigned-owner:${key}`;
  await sql`INSERT INTO pos_stock_owners(id,kind,display_name,origin_booth_id,legacy_key) VALUES(${unassignedId},'unverified','미지정',${boothId},${unassignedId}) ON CONFLICT DO NOTHING`;
- await sql`INSERT INTO pos_artist_profiles(id,owner_id) VALUES(${'unassigned-profile:'+key},${unassignedId}) ON CONFLICT DO NOTHING`;
  await sql`INSERT INTO pos_booth_artists(booth_id,owner_id,status) VALUES(${boothId},${unassignedId},'proxy') ON CONFLICT DO NOTHING`;
  await sql`INSERT INTO pos_event_artists(project_id,owner_id) VALUES(${projectId},${unassignedId}) ON CONFLICT DO NOTHING`;
  const recipientId='unassigned-recipient:'+key;
@@ -316,7 +314,7 @@ export async function removeEventArtist(sql,userId,payload) {
  await sql`UPDATE pos_products SET creator_name='미지정',updated_at=NOW() WHERE project_id=${projectId} AND id=ANY(${products}::text[])`;
  await sql`UPDATE pos_event_artists SET status='ended',version=version+1 WHERE project_id=${projectId} AND owner_id=${ownerId}`;
  // Keep independent booth roles and any other active creator profile's role intact.
- if(participation.linked_user_id&&!(await sql`SELECT p.id FROM pos_event_artists e JOIN pos_artist_profiles p ON p.owner_id=e.owner_id WHERE e.project_id=${projectId} AND e.status='active' AND p.linked_user_id=${participation.linked_user_id}`).rows.length)await sql`UPDATE pos_event_staff SET status='ended',version=version+1 WHERE project_id=${projectId} AND user_id=${participation.linked_user_id}`;
+ if(participation.linked_user_id&&!(await sql`SELECT o.id FROM pos_event_artists e JOIN pos_stock_owners o ON o.id=e.owner_id WHERE e.project_id=${projectId} AND e.status='active' AND o.linked_user_id=${participation.linked_user_id}`).rows.length)await sql`UPDATE pos_event_staff SET status='ended',version=version+1 WHERE project_id=${projectId} AND user_id=${participation.linked_user_id}`;
  await sql`INSERT INTO pos_event_archives(project_id,revision,snapshot) VALUES(${projectId},${'creator-delete:'+requestId},'{}'::jsonb) ON CONFLICT(project_id) DO UPDATE SET revision=EXCLUDED.revision`;
  const result={removed:true,removedOwnerId:ownerId,productIds:products,...await eventAccessView(sql,userId,{projectId,boothId})};
  await sql`INSERT INTO pos_event_access_commands(id,actor_id,project_id,fingerprint,result) VALUES(${requestId},${userId},${projectId},${fingerprint},${JSON.stringify(result)}::jsonb)`;

@@ -37,6 +37,37 @@ test('personal inventory defaults to owned profile and uses artist APIs rather t
  assert.ok(calls.some(url=>url.includes('ownerId=mine')));assert.ok(calls.some(url=>url.includes('ownerId=linked')));assert.ok(!calls.some(url=>url.includes('artists=participants')));assert.equal(tree.some(node=>node.type==='select'),false);assert.ok(!calls.some(url=>url.includes('ownerId=proxy')));
  assert.ok(!calls.some(url=>url.includes('/api/pos')));
 });
+test('personal inventory without a profile keeps the catalog and registration form visible without sending stock commands',async()=>{
+ const calls=[],opened=[];
+ const request=async(url,options)=>{calls.push({url,options});return {profiles:[],booths:[]};};
+ const h=await harness('pages/PersonalInventory.jsx');const props={request,routeHash:'#/inventory',navigate:path=>opened.push(path)};
+ let tree=h.render(props);assert.ok(tree.some(n=>n.type==='PersonalInventoryCatalog'));
+ await h.flush();tree=h.render(props);await h.flush();tree=h.render(props);
+ const catalog=tree.find(n=>n.type==='PersonalInventoryCatalog');assert.equal(catalog.props.items.length,0);assert.equal(catalog.props.events.length,0);
+ tree.find(n=>n.type==='button'&&n.props.children==='+ 새 상품 등록').props.onClick();assert.deepEqual(opened,['/inventory/new']);
+ tree=h.render({...props,routeHash:'#/inventory/new'});
+ assert.ok(tree.some(n=>n.type==='InventoryProductFields'&&n.props.disabled));
+ assert.equal(tree.some(n=>n.props.role==='alert'),false);
+ await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
+ assert.equal(calls.some(call=>call.options?.method==='POST'||call.url.includes('artists=stock')),false);
+ const list=await harness('components/PersonalInventoryCatalog.jsx',{'../utils/inventorySearch':{filterInventory}});
+ const empty=list.render(catalog.props);assert.ok(empty.some(n=>n.props.role==='search'));assert.ok(empty.some(n=>n.type==='table'));assert.ok(empty.some(n=>n.type==='thead'));
+});
+
+test('personal inventory registers the first product through the existing owned stock command',async()=>{
+ const calls=[],opened=[];const request=async(url,options)=>{
+  if(options?.method==='POST'){calls.push(JSON.parse(options.body));return {};}
+  if(url.includes('workspace=home'))return {profiles:[{owner_id:'mine',display_name:'나'}],booths:[]};
+  return {inventory:[],events:[]};
+ };
+ const h=await harness('pages/PersonalInventory.jsx'),props={request,routeHash:'#/inventory/new',navigate:path=>opened.push(path)};
+ h.render(props);await h.flush();h.render(props);await h.flush();let tree=h.render(props);
+ const fields=tree.find(n=>n.type==='InventoryProductFields');assert.equal(fields.props.disabled,false);
+ fields.props.onChange('name','첫 상품');tree=h.render(props);
+ await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
+ assert.equal(calls.length,1);assert.equal(calls[0].action,'createArtistStock');assert.equal(calls[0].payload.ownerId,'mine');assert.equal(calls[0].payload.name,'첫 상품');assert.equal(calls[0].payload.price,0);assert.equal(calls[0].payload.quantity,0);assert.deepEqual(opened,['inventory']);
+});
+
 test('physical SQL translation preserves values and snapshot keys; a delegate with no default booth sends its explicit event scope',()=>{
  const value={name:'pos_inventory',admin_id:'keep-me'};
  const query=storageQuery("SELECT admin_id,snapshot->>'admin_id' FROM pos_inventory WHERE product=$1::jsonb",[JSON.stringify(value)]);

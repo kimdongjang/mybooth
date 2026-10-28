@@ -35,22 +35,26 @@ export function createHandler(pool) {
         }
         if(req.query?.workspace==='stockParticipants') {
           await authorizeEvent(sql,actor.id,req.query.projectId,'configure',req.query.boothId);
-          const profiles=(await sql`SELECT p.id AS profile_id,p.owner_id,p.linked_user_id,CASE WHEN o.display_name='미지정' AND u.id IS NOT NULL THEN COALESCE(NULLIF(u.nickname,''),u.id) ELSE o.display_name END AS display_name FROM pos_event_artists e JOIN pos_artist_profiles p ON p.owner_id=e.owner_id
-            JOIN pos_stock_owners o ON o.id=e.owner_id LEFT JOIN pos_admins u ON u.id=p.linked_user_id AND u.deleted_at IS NULL WHERE e.project_id=${req.query.projectId} AND e.status='active' ORDER BY p.id`).rows;
-          const administrators=(await sql`SELECT p.owner_id,COALESCE(NULLIF(o.display_name,'미지정'),NULLIF(u.nickname,''),u.id,'관리자') AS display_name,u.id AS user_id
+          const profiles=(await sql`SELECT o.id AS profile_id,o.id AS owner_id,o.linked_user_id,CASE WHEN o.display_name='미지정' AND u.id IS NOT NULL THEN COALESCE(NULLIF(u.nickname,''),u.id) ELSE o.display_name END AS display_name FROM pos_event_artists e
+            JOIN pos_stock_owners o ON o.id=e.owner_id LEFT JOIN pos_admins u ON u.id=o.linked_user_id AND u.deleted_at IS NULL WHERE e.project_id=${req.query.projectId} AND e.status='active' ORDER BY o.id`).rows;
+          const administrators=(await sql`SELECT o.id AS owner_id,COALESCE(NULLIF(o.display_name,'미지정'),NULLIF(u.nickname,''),u.id,'관리자') AS display_name,u.id AS user_id
             FROM pos_booth_members m JOIN pos_admins u ON u.id=m.user_id AND u.deleted_at IS NULL
-            LEFT JOIN pos_artist_profiles p ON p.linked_user_id=u.id AND p.status='linked'
-            LEFT JOIN pos_stock_owners o ON o.id=p.owner_id
-            WHERE m.booth_id=${req.query.boothId} AND m.status='active' AND m.role IN ('owner','manager') ORDER BY u.id,p.id`).rows;
+            LEFT JOIN pos_stock_owners o ON o.linked_user_id=u.id AND o.link_status='linked'
+            WHERE m.booth_id=${req.query.boothId} AND m.status='active' AND m.role IN ('owner','manager') ORDER BY u.id,o.id`).rows;
           const event=await authorizeEvent(sql,actor.id,req.query.projectId,'configure',req.query.boothId);
           const choices=profiles.map(p=>({...p,catalog:true}));
-          const originals=(await sql`SELECT DISTINCT p.id AS profile_id,p.owner_id,p.linked_user_id,o.display_name FROM pos_inventory_links l JOIN pos_inventory_owners i ON i.admin_id=l.admin_id AND i.inventory_id=l.inventory_id JOIN pos_artist_profiles p ON p.owner_id=i.owner_id JOIN pos_stock_owners o ON o.id=p.owner_id WHERE l.project_id=${req.query.projectId}`).rows;
+          const originals=(await sql`SELECT DISTINCT o.id AS profile_id,o.id AS owner_id,o.linked_user_id,o.display_name FROM pos_inventory_links l JOIN pos_inventory_owners i ON i.admin_id=l.admin_id AND i.inventory_id=l.inventory_id JOIN pos_stock_owners o ON o.id=i.owner_id WHERE l.project_id=${req.query.projectId}`).rows;
           for(const original of originals)if(!choices.some(p=>p.owner_id===original.owner_id))choices.push({...original,catalog:true,stockOnly:true});
           if(event.permissions.canManage)for(const admin of administrators) {
             const ownerId=admin.owner_id||(admin.user_id===actor.id?`admin:${actor.id}`:null);
             if(ownerId&&!choices.some(p=>p.owner_id===ownerId))choices.push({owner_id:ownerId,display_name:admin.display_name,catalog:false});
           }
           await client.query('COMMIT');return res.status(200).json({profiles:choices});
+        }
+        if(req.method==='GET'&&req.query.workspace==='home'){
+          // 회원가입 정보(닉네임)로 내 제작자 프로필을 자동 생성한다. 프로필이 하나라도 있으면 건드리지 않는다.
+          const mine=(await sql`SELECT 1 FROM pos_stock_owners WHERE linked_user_id=${actor.id} AND link_status='linked' LIMIT 1`).rows[0];
+          if(!mine){const account=(await sql`SELECT nickname FROM pos_admins WHERE id=${actor.id}`).rows[0];await createArtistProfile(sql,actor.id,{name:(account?.nickname||'').trim().slice(0,80)||actor.id.slice(0,80)});}
         }
         const result=req.method==='POST'?await saveEventAccess(sql,actor.id,req.body.payload||{}):req.query.workspace==='access'
           ?await eventAccessView(sql,actor.id,req.query):{...await artistHome(sql,actor.id),events:await workspaceEvents(sql,actor.id)};

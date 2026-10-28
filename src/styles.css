@@ -2055,3 +2055,10 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
  .primary-navigation>a,.primary-more>button{padding-inline:20px}
  .primary-navigation .primary-more .header-popover{padding-left:20px}
 }
+.personal-inventory-page>.product-management{margin-top:16px}
+.management-details>.creator-field{margin:0;padding:0;border:0}
+.management-details>.creator-field .creator-field-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:8px}
+.management-details>.creator-field .creator-field-controls>label{grid-column:1/-1}
+.management-details>.creator-field .creator-field-controls>button{width:100%}
+.management-details>.creator-field>.management-field>input[readonly]{background:#f8fafc;color:#475569}
+.management-details>.management-add{justify-self:start}
