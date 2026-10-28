@@ -3,10 +3,11 @@ import {won,eventCreatorNameOf} from '../utils/productDisplay';
 
 export default function EventSalesCatalog({items,event,products=[],sales,renderDetail,renderProduct,onAdd,disabled,productId='',navigate}) {
  const [selectedId,setSelectedId]=useState('');
- const eventItems=items.filter(item=>item.allocations.some(row=>row.projectId===event.id));
- const selected=eventItems.find(item=>productId?item.allocations.some(row=>row.projectId===event.id&&row.productId===productId):item.id===selectedId);
  const allocation=item=>item.allocations.find(row=>row.projectId===event.id);
  const product=item=>products.find(row=>row.id===allocation(item)?.productId);
+ // 행사 상태 API는 활성 상품만 내려준다. 상품 관리에서 제거한 상품은 배정·판매 이력이 남아도 목록에서 뺀다.
+ const eventItems=items.filter(item=>allocation(item)&&product(item)&&product(item).isActive!==false);
+ const selected=eventItems.find(item=>productId?item.allocations.some(row=>row.projectId===event.id&&row.productId===productId):item.id===selectedId);
  return <section className="product-management event-sales-catalog">
   <header className="management-heading"><h2>{selected?'행사 상품 상세':'상품 목록'}</h2>{!selected&&onAdd&&<button type="button" className="management-add" disabled={disabled} onClick={onAdd}>+ 새 상품 등록</button>}{selected&&<button type="button" className="management-back" onClick={()=>navigate?navigate(`/products?projectId=${encodeURIComponent(event.id)}`):setSelectedId('')}>← 목록으로</button>}</header>
   {selected?renderProduct(selected,product(selected)||{id:productId} ):<>

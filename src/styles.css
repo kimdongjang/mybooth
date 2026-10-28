@@ -2062,3 +2062,9 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
 .management-details>.creator-field .creator-field-controls>button{width:100%}
 .management-details>.creator-field>.management-field>input[readonly]{background:#f8fafc;color:#475569}
 .management-details>.management-add{justify-self:start}
+/* Mobile menu opens over the page instead of pushing it down. */
+.header-menu-backdrop{display:none}
+@media(max-width:767px){
+ #root .sales-app-header .primary-navigation.is-open{position:absolute;top:100%;left:0;right:0;z-index:30;max-height:calc(100dvh - 64px);overflow-y:auto;background:#fff;border-top:1px solid #edf1f5;border-bottom:1px solid #dce3ed;box-shadow:0 12px 24px rgba(15,23,42,.12)}
+ .header-menu-backdrop{display:block;position:fixed;inset:64px 0 0;z-index:19;background:rgba(15,23,42,.32)}
+}
