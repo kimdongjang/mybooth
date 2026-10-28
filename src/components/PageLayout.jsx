@@ -34,13 +34,14 @@ export function AppHeader({ page, navigate, project, projects = [], onSelectProj
   const root = useRef(null);
   const eventToggle = useRef(null);
   const moreToggle = useRef(null);
+  const menuToggle = useRef(null);
   useEffect(() => { setOpen(null); }, [page, project?.id]);
   useEffect(() => {
     if (!open) return;
     const onEscape = event => {
       if (event.key === 'Escape') {
         setOpen(null);
-        (open === 'events' ? eventToggle : moreToggle).current?.focus();
+        (open === 'events' ? eventToggle : open === 'menu' ? menuToggle : moreToggle).current?.focus();
       }
     };
     const onOutside = event => { if (!root.current?.contains(event.target)) setOpen(null); };
@@ -62,9 +63,13 @@ export function AppHeader({ page, navigate, project, projects = [], onSelectProj
   };
   const destination = eventDestination(project);
   const personalPages = ['projects', 'projectNew', 'projectDuplicate', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'];
-  const showEventNav = project && !personalPages.includes(page);
+  const showEventNav = Boolean(project);
+  const onPersonalPage = personalPages.includes(page);
   const moreActive = ['dashboard', 'account', 'revenue'].includes(page);
-  const eventPages = showEventNav;
+  const permissions = project?.permissions || {};
+  const eventMenu = showEventNav ? [['pos', '판매'], ['log', '판매현황'], ['settings', '행사 판매 설정'], ['project', '행사 관리']].filter(([key]) => key === 'pos' ? permissions.canSell || permissions.canViewPos : key === 'project' ? permissions.canManage : key === 'log' ? permissions.canSettle || permissions.canReadOwnHistory || permissions.ownerIds?.length : permissions.canConfigure || permissions.ownerIds?.length) : [];
+  const eventMenuCurrent = key => !onPersonalPage && (page === key || key === 'project' && page.startsWith('project') || key === 'settings' && ['productNew','bundleNew'].includes(page));
+  const accountMenu = [['projects','행사 목록'],['inventory','내 재고관리'],['dashboard','대시보드'],['account','마이페이지']];
   return <><header ref={root} className="app-header sales-app-header border-b border-line bg-white text-ink">
     <div className="header-brand"><a href={`#${pagePaths[destination]}`} className="display-font brand-title font-bold" onClick={follow(destination)} aria-label="WithBooth 판매"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
     <div className="event-switcher">
@@ -81,17 +86,21 @@ export function AppHeader({ page, navigate, project, projects = [], onSelectProj
       </section>}
     </div>
     {project && <div className="header-sync"><SyncStatus sync={sync} /></div>}
-    <nav className="primary-navigation" aria-label="주 메뉴">
-      <a href={`#${pagePaths[destination]}`} className={`primary-sales${eventPages ? ' is-active' : ''}`} aria-current={page === 'pos' ? 'page' : undefined} onClick={follow(destination)}><Icon name="pos"/>판매</a>
-      <a href="#/projects" aria-current={['projects','projectNew','projectDuplicate'].includes(page) ? 'page' : undefined} onClick={follow('projects')}>행사 목록</a>
-      <a href="#/inventory" aria-current={['inventory','artistStock'].includes(page) ? 'page' : undefined} onClick={follow('inventory')}>내 재고관리</a>
+    <button ref={menuToggle} type="button" className="header-menu-toggle" aria-label="메뉴" aria-expanded={open === 'menu' || open === 'more'} aria-controls="header-navigation" onClick={() => setOpen(open === 'menu' || open === 'more' ? null : 'menu')}><span aria-hidden="true"/><span aria-hidden="true"/><span aria-hidden="true"/></button>
+    {showEventNav ? <nav id="header-navigation" className={`primary-navigation event-workspace-navigation${open === 'menu' || open === 'more' ? ' is-open' : ''}`} aria-label="행사 메뉴">
+      {eventMenu.map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={eventMenuCurrent(key) ? 'page' : undefined} onClick={follow(key)}><Icon name={key}/>{label}</a>)}
       <div className="primary-more">
-        <button ref={moreToggle} type="button" className={moreActive ? 'is-active' : undefined} aria-expanded={open === 'more'} aria-controls="header-more-menu" onClick={() => setOpen(open === 'more' ? null : 'more')}>더보기 <span aria-hidden="true">▾</span></button>
-        {open === 'more' && <div id="header-more-menu" className="header-popover" aria-label="더보기 메뉴">{[['dashboard','대시보드'],['account','마이페이지'],['revenue','수익현황']].map(([key,label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key ? 'page' : undefined} onClick={follow(key)}>{label}</a>)}</div>}
+        <button ref={moreToggle} type="button" className={onPersonalPage ? 'is-active' : undefined} aria-expanded={open === 'more'} aria-controls="header-more-menu" onClick={() => setOpen(open === 'more' ? null : 'more')}><Icon name="account"/>내 계정 <span aria-hidden="true">▾</span></button>
+        {open === 'more' && <div id="header-more-menu" className="header-popover" aria-label="내 계정 메뉴">{accountMenu.map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || (key === 'projects' && ['projectNew','projectDuplicate'].includes(page)) || (key === 'inventory' && page === 'artistStock') ? 'page' : undefined} onClick={follow(key)}><Icon name={key}/>{label}</a>)}</div>}
       </div>
-    </nav>
-  </header>
-  {showEventNav && <div className="header-secondary">
-    <nav className="event-subnav menu-tabs" aria-label="행사 메뉴">{[['pos', '판매'], ['log', '판매현황'], ['settings', '행사 판매 설정'], ['project', '행사 관리']].filter(([key]) => key === 'pos' ? project.permissions?.canSell || project.permissions?.canViewPos : key === 'project' ? project.permissions?.canManage : key === 'log' ? project.permissions?.canSettle || project.permissions?.canReadOwnHistory || project.permissions?.ownerIds?.length : project.permissions?.canConfigure || project.permissions?.ownerIds?.length).map(([key, label]) => <button key={key} type="button" data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={page === key || key === 'project' && page.startsWith('project') || key === 'settings' && ['productNew','bundleNew'].includes(page) ? 'page' : undefined} onClick={() => go(key)}>{label}</button>)}</nav>
-  </div>}</>;
+    </nav> : <nav id="header-navigation" className={`primary-navigation${open === 'menu' || open === 'more' ? ' is-open' : ''}`} aria-label="주 메뉴">
+      <a href={`#${pagePaths[destination]}`} className="primary-sales" aria-current={page === 'pos' ? 'page' : undefined} onClick={follow(destination)}><Icon name="pos"/>판매</a>
+      <a href="#/projects" aria-current={['projects','projectNew','projectDuplicate'].includes(page) ? 'page' : undefined} onClick={follow('projects')}><Icon name="projects"/>행사 목록</a>
+      <a href="#/inventory" aria-current={['inventory','artistStock'].includes(page) ? 'page' : undefined} onClick={follow('inventory')}><Icon name="inventory"/>내 재고관리</a>
+      <div className="primary-more">
+        <button ref={moreToggle} type="button" className={moreActive ? 'is-active' : undefined} aria-expanded={open === 'more'} aria-controls="header-more-menu" onClick={() => setOpen(open === 'more' ? null : 'more')}><Icon name="more"/>더보기 <span aria-hidden="true">▾</span></button>
+        {open === 'more' && <div id="header-more-menu" className="header-popover" aria-label="더보기 메뉴">{[['dashboard','대시보드'],['account','마이페이지']].map(([key,label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || (key === 'account' && page === 'revenue') ? 'page' : undefined} onClick={follow(key)}><Icon name={key}/>{label}</a>)}</div>}
+      </div>
+    </nav>}
+  </header></>;
 }
