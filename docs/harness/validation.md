@@ -1440,3 +1440,10 @@ PR #78 기반의 격리 작업 트리에서 이번 화면·장소/일정 변경�
 - 최신 원격 main(1383da7)에서 별도 `codex/sales-first-navigation` 브랜치를 만들고 판매 중심 메뉴·행사 변경·목록·대시보드·기본 진입 변경만 분리했다. 기존 작업 트리의 판매 스냅샷/재고/API/DB 수정, 백업 복원 제거, 행사 장소 필수 여부 변경, 문서 전체 보관/재편은 포함하지 않는다.
 - `node --experimental-vm-modules --test --test-name-pattern="sales navigation|revenue and dashboard remain|event switcher|event list retains|dashboard summarizes|dashboard preserves|event destinations|last event restores|App default entry|App event switching|inventory deep links|uncached event reads coalesce|event entry renders the actor|event creation offers empty" tests/workspace-ui.test.js tests/event-navigation.test.js tests/inventory-route.test.js tests/background-sync.test.js`: 선택한 14개 통과. 권한별 메뉴/진입, 선택 취소·수락, 개인 집계와 기간 필터, 계정·환경·부스별 복원, 기본 진입·인증 전 딥링크·뒤로/앞으로·쿼리, 이전 캐시 응답 차단, 생성/구성 가져오기·기존 복원 경로를 확인했다.
 - PR 작업 트리에서 `npm run build` 1회 통과. 기존 500kB 초과 청크 경고가 남는다. diff 공백 검사 통과. 전체 테스트·브라우저 자동화·스크린샷·실기기·운영 DB 검증은 실행하지 않았다. VM/UI 모형과 기존 캐시 회귀 범위이며 실제 로그인 세션·터치 조작 확인을 대신하지 않는다.
+
+## 제작자 프로필 테이블 은퇴 검증 (2026-10-28)
+
+- `tests/booth-foundation.test.js` 43건 통과(레거시 스키마 이관 테스트 추가: 연결 정보 복사, 초대·감사 owner_id 매핑, 은퇴 테이블 보존, 재실행 무변경, 연결 CHECK). `tests/workspace-ui.test.js`의 내 재고·제작자·행사 상품 14건 통과. `npm run build` 통과.
+- 로컬 PGlite: 백업 후 적용, 프로필 3건(연결 1) 이관.
+- 운영 DB backup 브랜치(Neon): `scripts/retireArtistProfiles.mjs` 리허설 통과 후 ROLLBACK. 제작자 11·프로필 11(연결 1)·초대 0·감사 1, 나머지 42개 `pos_*` 테이블 지문 불변.
+- 미실행: 검증 브랜치 COMMIT 후 앱 동작, 로그인 브라우저 확인, 전체 `npm test`.

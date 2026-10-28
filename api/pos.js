@@ -2,7 +2,7 @@ import { initEventSettlements } from './lib/eventSettlement.js';
 import {authorizeEvent} from './lib/eventAccess.js';
 import {canonicalSql} from './lib/storageContract.js';
 import { accountSnapshot, stockMovement } from './lib/accountInventory.js';
-import { migratedBooth, migrateLegacyBooth, foundationReport, authorizeBooth, boothCapability, protectMigratedLifecycle, reconcileBoothFoundation, recipientMap, productIdentity, authorizeOriginalProduct, decorateEventProducts, legacySnapshot, legacyStockActions, guardLegacyStock, recordLegacyStockChanges,lockSharedStockCustodians,guardSharedStockWrites,decorateSharedInventory,enforceBoothContract,boothContracts } from './lib/boothFoundation.js';
+import { migratedBooth, migrateLegacyBooth, foundationReport, authorizeBooth, boothCapability, protectMigratedLifecycle, reconcileBoothFoundation, recipientMap, productIdentity, authorizeOriginalProduct, decorateEventProducts, legacySnapshot, legacyStockActions, guardLegacyStock, recordLegacyStockChanges,lockSharedStockCustodians,guardSharedStockWrites,decorateSharedInventory,enforceBoothContract,boothContracts,retireArtistProfiles } from './lib/boothFoundation.js';
 import { sql as pool } from '@vercel/postgres';
 import { assertPostgresConnectionString, requireAuth, hashPassword, validateAdminPassword } from './lib/auth.js';
 import { CURRENT_SEED_VERSION, getDefaultBundles, getDefaultProducts } from './lib/defaultData.js';
@@ -165,6 +165,7 @@ async function initDb() {
     END $$`;
   await initInventory();
   await initEventSettlements(sql);
+  await retireArtistProfiles(sql);
   initialized = true;
 }
 
@@ -762,7 +763,7 @@ async function snapshot(projectId) {
   const exists=async name=>(await sql`SELECT to_regclass(${name}) AS name`).rows[0]?.name;
   const settlements=await exists('pos_settlements')?(await sql`SELECT creator,version,deductions,payments FROM pos_settlements WHERE admin_id=${context?.scopeAdminId || (await sql`SELECT admin_id FROM pos_projects WHERE id=${projectId}`).rows[0].admin_id} AND project_id=${projectId}`).rows:[];
   const closure=(await sql`SELECT version,costs,snapshot,closed_at,history FROM pos_event_settlements WHERE project_id=${projectId}`).rows[0]||null;
-  const creators=await exists('pos_event_product_identities')?(await sql`SELECT i.product_id,CASE WHEN o.display_name='미지정' AND p.linked_user_id IS NOT NULL THEN COALESCE(u.nickname,p.linked_user_id) ELSE o.display_name END AS name,r.legacy_creator FROM pos_event_product_identities i JOIN pos_stock_owners o ON o.id=i.owner_id JOIN pos_recipients r ON r.id=i.recipient_id LEFT JOIN pos_artist_profiles p ON p.owner_id=i.owner_id LEFT JOIN pos_admins u ON u.id=p.linked_user_id AND u.deleted_at IS NULL WHERE i.project_id=${projectId}`).rows:[];
+  const creators=await exists('pos_event_product_identities')?(await sql`SELECT i.product_id,CASE WHEN o.display_name='미지정' AND o.linked_user_id IS NOT NULL THEN COALESCE(u.nickname,o.linked_user_id) ELSE o.display_name END AS name,r.legacy_creator FROM pos_event_product_identities i JOIN pos_stock_owners o ON o.id=i.owner_id JOIN pos_recipients r ON r.id=i.recipient_id LEFT JOIN pos_admins u ON u.id=o.linked_user_id AND u.deleted_at IS NULL WHERE i.project_id=${projectId}`).rows:[];
   const schedule=await exists('pos_event_stock_policy')?(await sql`SELECT starts_on,ends_on FROM pos_event_stock_policy WHERE project_id=${projectId}`).rows[0]||null:null;
   // Portable event data only: no credentials, account links, other event stock or queues.
   return { format: 'my-booth-project', version: 2, exportedAt: new Date().toISOString(), project, products, bundles, sales,settlements,closure,creators,schedule };
@@ -859,7 +860,6 @@ async function importProject(adminId, name, backup, duplicate = false, sourcePro
         if(!owners.has(key)) {
           const ownerId=uid(),recipientId=uid(),legacyKey=`${key} (복원 ${id.slice(0,8)})`;
           await sql`INSERT INTO pos_stock_owners(id,kind,display_name,origin_booth_id,legacy_key) VALUES(${ownerId},'unverified',${row.name},${context.boothId},${legacyKey})`;
-          await sql`INSERT INTO pos_artist_profiles(id,owner_id) VALUES(${uid()},${ownerId})`;
           await sql`INSERT INTO pos_booth_artists(booth_id,owner_id,status) VALUES(${context.boothId},${ownerId},'proxy')`;
           await sql`INSERT INTO pos_recipients(id,booth_id,legacy_creator,display_name,owner_id) VALUES(${recipientId},${context.boothId},${legacyKey},${row.name},${ownerId})`;
           owners.set(key,{ownerId,recipientId,legacyKey});
@@ -1190,9 +1190,9 @@ export default async function transactionalHandler(req, res) {
         body.recipientMappings=await recipientMap(sql,booth.legacy_admin_id);
         if(body.projects) body.projects=body.projects.map(project=>({...project,boothId:booth.id}));
         if(body.inventory) {
-          const owners=(await sql`SELECT i.inventory_id,i.owner_id,p.id AS artist_id,a.status,
+          const owners=(await sql`SELECT i.inventory_id,i.owner_id,i.owner_id AS artist_id,a.status,
             EXISTS(SELECT 1 FROM pos_owner_members m WHERE m.owner_id=i.owner_id AND m.user_id=${actor.id}) AS is_owner
-            FROM pos_inventory_owners i JOIN pos_artist_profiles p ON p.owner_id=i.owner_id
+            FROM pos_inventory_owners i
             LEFT JOIN pos_booth_artists a ON a.owner_id=i.owner_id AND a.booth_id=${booth.id} WHERE i.admin_id=${booth.legacy_admin_id}`).rows;
           body.inventory=body.inventory.filter(item=>{const owner=owners.find(row=>row.inventory_id===item.id);return owner?.is_owner || ['active','proxy'].includes(owner?.status);})
             .map(item=>{const owner=owners.find(row=>row.inventory_id===item.id);return {...item,ownerId:owner.owner_id,artistId:owner.artist_id};});

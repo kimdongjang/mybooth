@@ -1017,3 +1017,13 @@ public/robots.txt는 홈 및 렌더링 자산 크롤링을 허용하고 /api/, /
 ## 로컬 DB 실행 복구 (2026-10-28)
 
 누락된 `dev:local` 명령과 `scripts/local`을 복구했다. Node 모듈 훅으로 네이티브 API의 `@vercel/postgres`를 영속 PGlite 어댑터로 연결하며, 풀 연결을 직렬화해 요청 간 트랜잭션 혼합을 막는다. Vite는 localdb 모드에서 환경 파일을 읽지 않고 서버 자격 증명을 제거한 프로세스를 사용한다. 기존 DB·인증 키·이미지는 보존하고 관리자 자동 생성 대신 회원가입을 사용한다. 로컬 로그인 키와 IndexedDB 이름을 일반 모드와 분리한다. [실행 방법](../local-development.md)을 따른다.
+
+## 제작자 프로필 테이블 은퇴 (2026-10-28)
+
+`pos_artist_profiles`를 제거 대상으로 전환했다. 계정 연결 정보는 `pos_stock_owners.linked_user_id`·`link_status`(unlinked/linked, 일관성 CHECK)로 옮기고, `pos_artist_invitations`·`pos_artist_link_audit`는 `owner_id`(→ `pos_stock_owners`)를 기준으로 쓴다. 기존 `profile_id`는 `legacy_profile_id`로, 기존 테이블은 `pos_artist_profiles_retired`로 이름만 바꿔 롤백·이전 ID 해석용으로 보존한다(삭제는 후속).
+
+- `retireArtistProfiles`(boothFoundation)가 `initBoothFoundation`·`initArtistLinking`·`pos.js` 초기화에서 실행된다. 이미 적용된 DB는 카탈로그 조회 2회 후 반환하고, 적용은 advisory 트랜잭션 잠금 안에서 한 번만 수행한다. 원본 재고·거래·정산 행은 수정하지 않는다.
+- API 응답의 `id`/`profile_id`/`profileId`는 제작자(owner) ID와 같은 값이다. 요청의 `profileId`는 `ownerIdOf`로 owner ID 또는 은퇴 테이블의 이전 프로필 ID를 해석한다.
+- 내 제작자는 로그인 계정에서 결정적 ID(`personal-owner:<sha256(userId)>`)로 만들며, `workspace=home` 조회에서 없으면 닉네임(없으면 아이디)으로 자동 생성한다. 마이페이지의 프로필 만들기 폼과 내 재고 등록 화면의 제작자 입력은 제거했다.
+- 행사 상품 등록에서 운영자가 제작자를 고르지 않으면 부스별 고정 "미지정" 제작자(`unassigned-owner:*`)로 저장한다. `pos_inventory_owners.owner_id`가 NOT NULL이므로 NULL 대신 이 행을 사용한다.
+- 로컬·운영 DB 모두 새 코드의 첫 API 요청 초기화에서 자동 적용된다. 운영 DB는 백업 후 복사본(Neon 브랜치 등)에서 `node scripts/retireArtistProfiles.mjs --env-file <파일>`(`RETIRE_PROFILES_DATABASE_URL`, 기본 리허설·ROLLBACK)로 검증한다. 검사 항목은 제작자 행 수·기본 열 불변, 연결 정보 복사, 초대·감사의 owner_id 매핑, 나머지 pos_* 테이블 지문 불변이다. `--apply --confirm-target`만 COMMIT 한다. IndexedDB 주문 큐에는 프로필 데이터가 없어 변경이 없다.
