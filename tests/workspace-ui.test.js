@@ -481,11 +481,11 @@ test('sales navigation stays visible and event tools follow server capabilities'
  ]) {
   const h=await harness('components/PageLayout.jsx');
   const tree=h.render({page:'settings',navigate(){},project:{id:'e',name:'행사',permissions}},'AppHeader');
-  const nav=nodes(tree.find(n=>n.props['aria-label']==='주 메뉴'));
-  assert.deepEqual(nav.filter(n=>n.type==='a').map(n=>n.props.href),[permissions.canSell||permissions.canViewPos?'#/sales':'#/settlement','#/projects','#/inventory']);
-  assert.ok(nav.some(n=>n.type==='button'&&n.props.children[0]==='더보기 '));
   const event=nodes(tree.find(n=>n.props['aria-label']==='행사 메뉴'));
-  assert.deepEqual(event.filter(n=>n.type==='button').map(n=>n.props.children),expected);
+  assert.equal(tree.some(n=>n.props['aria-label']==='주 메뉴'),false);
+  assert.equal(tree.some(n=>n.props.className==='header-secondary'),false);
+  assert.deepEqual(event.filter(n=>n.type==='a').map(n=>n.props.children.filter(c=>typeof c==='string')[0]),expected);
+  assert.ok(event.some(n=>n.type==='button'&&n.props.children.includes('내 계정 ')));
  }
 });
 
@@ -498,8 +498,8 @@ test('revenue and dashboard remain reachable through more while sales without an
  tree.find(n=>n.type==='button'&&n.props['aria-controls']==='header-more-menu').props.onClick();
  tree=header.render(props,'AppHeader');await header.flush();
  const menu=nodes(tree.find(n=>n.props['aria-label']==='더보기 메뉴'));
- assert.deepEqual(menu.filter(n=>n.type==='a').map(n=>n.props.href),['#/dashboard','#/account','#/account/revenue']);
- assert.equal(menu.find(n=>n.props['aria-current']==='page').props.href,'#/account/revenue');
+ assert.deepEqual(menu.filter(n=>n.type==='a').map(n=>n.props.href),['#/dashboard','#/account']);
+ assert.equal(menu.find(n=>n.props['aria-current']==='page').props.href,'#/account');
  header.listeners.get('keydown')({key:'Escape'});
  assert.equal(header.render(props,'AppHeader').some(n=>n.props.id==='header-more-menu'),false);
  const overview=await harness('pages/PersonalOverview.jsx');
