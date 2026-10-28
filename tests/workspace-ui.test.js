@@ -5,6 +5,7 @@ import ts from 'typescript';
 import {readFile} from 'node:fs/promises';
 import {dashboardEvents,dashboardFocus,dashboardAlerts} from '../src/utils/personalDashboard.js';
 import {eventSchedule,sortEventsBySchedule} from '../src/utils/eventSchedule.js';
+import {eventDestination,eventActionLabel} from '../src/utils/eventNavigation.js';
 import {storageQuery} from '../api/lib/storageContract.js';
 import {createApiContractContext} from '../src/utils/apiContractContext.js';
 import {allocationPlan} from '../src/utils/inventoryAllocationPlan.js';
@@ -14,25 +15,14 @@ const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
 async function harness(file,mocks={}) {
  let cursor=0,effectIndex=0;const states=[],effects=[],deps=[];
  const react={useId:()=> 'inventory-plan-form',useRef:value=>{const i=cursor++;return states[i]||=( {current:value});},useState:value=>{const i=cursor++;if(!(i in states))states[i]=typeof value==='function'?value():value;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},useEffect:(effect,dependencies)=>{const i=effectIndex++;if(!deps[i]||dependencies.some((v,j)=>!Object.is(v,deps[i][j]))){deps[i]=dependencies;effects.push(effect);}}};
- const base={'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project/manage'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
- const context=vm.createContext({crypto:globalThis.crypto,URLSearchParams,URL,sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},alert:message=>{throw new Error(message);}});
+ const base={'../utils/eventNavigation':{eventDestination,eventActionLabel},'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project/manage'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
+ const listeners=new Map();
+ const context=vm.createContext({document:{addEventListener:(key,fn)=>listeners.set(key,fn),removeEventListener:key=>listeners.delete(key)},crypto:globalThis.crypto,URLSearchParams,URL,sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},alert:message=>{throw new Error(message);}});
  const source=await readFile(new URL('../src/'+file,import.meta.url),'utf8');
  const module=new vm.SourceTextModule(ts.transpileModule(source,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext}}).outputText,{context});
  await module.link(name=>{assert.ok(base[name],name);return new vm.SyntheticModule(Object.keys(base[name]),function(){for(const[k,v]of Object.entries(base[name]))this.setExport(k,v);},{context});});await module.evaluate();
- return {render:(props,exportName='default')=>{cursor=effectIndex=0;return nodes(module.namespace[exportName](props));},flush:async()=>{while(effects.length)effects.shift()();await new Promise(resolve=>setImmediate(resolve));}};
+ return {listeners,render:(props,exportName='default')=>{cursor=effectIndex=0;return nodes(module.namespace[exportName](props));},flush:async()=>{while(effects.length)effects.shift()();await new Promise(resolve=>setImmediate(resolve));}};
 }
-test('four primary menus and artist/assistant/operator event navigation follow server capabilities',async()=>{
- for(const [role,permissions,expected] of [
-  ['viewer',{ownerIds:[],canSell:false,canViewPos:true,canConfigure:false,canManage:false},['판매 목록']],
-  ['artist',{ownerIds:['own'],canSell:false,canConfigure:false,canManage:false},['행사 판매 설정','판매현황']],
-  ['assistant',{ownerIds:['own'],canSell:true,canConfigure:true,canManage:false},['판매 목록','행사 판매 설정','판매현황']],
-  ['operator',{ownerIds:[],canSell:true,canConfigure:true,canManage:true,canSettle:true},['판매 목록','행사 판매 설정','판매현황','행사 관리']]
- ]) {
-  const h=await harness('components/PageLayout.jsx');const tree=h.render({page:'settings',navigate(){},project:{id:'e',name:'행사',permissions}},'AppHeader');
-  const nav=tree.find(n=>n.props.className?.split(' ').includes('nav-screens'));assert.deepEqual(nodes(nav).filter(n=>n.type==='a').map(n=>n.props.children[1]),['대시보드','행사 선택','내 재고관리','마이페이지']);
-  const event=tree.find(n=>n.props['aria-label']==='행사 메뉴');assert.deepEqual(nodes(event).filter(n=>n.type==='button').map(n=>n.props.children),expected,role);
- }
-});
 test('personal revenue reads only the artist history contract and event view excludes other events without exposing payout editing',async()=>{
  const h=await harness('pages/PersonalOverview.jsx');const calls=[];
  const request=async url=>{calls.push(url);return {events:[{projectId:'mine',eventName:'내 행사',boothName:'부스',closedAt:'2026',rows:[{recipientId:'r',artistName:'제작자',gross:100,fees:10,net:90,paid:20,pending:70}],sales:[{time:'2026-10-22',items:[{amount:100}]}]},{projectId:'other',rows:[{artistName:'다른 행사 이름',gross:999}],sales:[]}]};};
@@ -362,22 +352,6 @@ test('event creators use role controls and delete instead of participation toggl
 });
 
 
-test('revenue belongs to the account menu and keeps its own page title',async()=>{
- const header=await harness('components/PageLayout.jsx');
- const tree=header.render({page:'revenue',navigate(){},project:{id:'e'}},'AppHeader');
- const nav=tree.find(n=>n.props.className?.split(' ').includes('nav-screens'));
- const active=nodes(nav).filter(n=>n.type==='a'&&n.props['aria-current']==='page');
- assert.equal(active.length,1);assert.equal(active[0].props.href,'#/account');
- assert.equal(tree.some(n=>n.props['aria-label']==='행사 메뉴'),false);
- const overview=await harness('pages/PersonalOverview.jsx');
- const revenue=overview.render({request:async()=>({events:[]})});
- assert.equal(revenue.find(n=>n.type==='h1').props.children,'수익현황');
- assert.equal(revenue.find(n=>n.type==='h1').props.className,'sr-only');
- const dashboard=overview.render({request:async()=>({events:[]}),dashboard:true});
- assert.ok(dashboard.some(n=>n.type==='PersonalDashboard'));
- assert.equal(dashboard.some(n=>n.type==='a'&&n.props.href==='#/account'),false);
-});
-
 test('personal sales search submits and resets; table sorts numeric amounts in both directions',async()=>{
  const h=await harness('components/PersonalSalesHistory.jsx',{'./LoadingState':{default:'LoadingState'}});
  const request=async()=>({events:[{projectId:'event',eventName:'행사',sales:[
@@ -398,21 +372,6 @@ test('personal sales search submits and resets; table sorts numeric amounts in b
  assert.deepEqual(names(),['상품 A']);
  tree.find(n=>n.type==='button'&&n.props.children==='검색 조건 초기화').props.onClick();tree=h.render(props);
  assert.equal(names().length,2);
-});
-
-
-test('dashboard has a detailed focus and chronological upcoming list',async()=>{
- const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
- const props={pinnedProjectId:'now',data:{events:[],inventory:[],stockEvents:[]},events:[
-  {id:'later',name:'나중 행사',venue:'벡스코',startsOn:'2099-12-05',endsOn:'2099-12-06',permissions:{canViewPos:true}},
-  {id:'now',name:'현재 행사',venue:'킨텍스',startsOn:'2020-01-01',endsOn:'2090-12-31',permissions:{canSell:true}},
-  {id:'earlier',name:'먼저 행사',venue:'세텍',startsOn:'2099-01-05',endsOn:'2099-01-06',permissions:{canViewPos:true}}
- ]};
- const tree=h.render(props);
- const panel=tree.find(n=>n.props.className==='dashboard-card home-focus');
- assert.deepEqual(nodes(panel).filter(n=>n.type==='h3').map(n=>n.props.children),['현재 행사']);
- const future=tree.find(n=>n.props.className==='home-upcoming-rows');
- assert.deepEqual(nodes(future).filter(n=>n.type==='h3').map(n=>n.props.children),['먼저 행사','나중 행사']);
 });
 
 
@@ -440,25 +399,6 @@ test('event list puts the nearest upcoming event first without changing the sour
  ];
  assert.deepEqual(sortEventsBySchedule(rows,'2026-10-26').map(row=>row.id),['next','later','now','unknown','past']);
  assert.equal(rows[0].id,'past');
-});
-
-
-test('dashboard follows event selection without automatic switching and limits upcoming rows to three',async()=>{
- const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:()=> '2026-10-27'}});
- const permissions={canManage:true,canSell:true,canConfigure:true,canSettle:true};
- const active=(id,last)=>({id,name:id,startsOn:'2026-10-26',endsOn:'2026-10-28',permissions,summary:{total:1000,sales:1,products:1,initialStock:10,remainingStock:9,artistCount:1,lastSaleAt:last}});
- const props={pinnedProjectId:'new',data:{events:[],inventory:[]},events:[active('old','2026-10-26'),active('new','2026-10-27'),...[1,2,3,4].map(day=>({id:`future${day}`,name:`미래${day}`,startsOn:`2026-11-0${day}`,endsOn:`2026-11-0${day}`,permissions})),{id:'unknown',name:'일정 미정 행사',permissions}]};
- let tree=h.render(props);
- const focus=()=>tree.find(n=>n.props.className==='dashboard-card home-focus');
- assert.equal(nodes(focus()).find(n=>n.type==='h3').props.children,'new');
- assert.ok(nodes(focus()).some(n=>n.type==='a'&&n.props.href==='#/products?projectId=new'));
- props.pinnedProjectId='old';tree=h.render(props);
- assert.equal(nodes(focus()).find(n=>n.type==='h3').props.children,'old');
- assert.ok(nodes(focus()).some(n=>n.type==='a'&&n.props.href==='#/products?projectId=old'));
- let future=tree.find(n=>n.props.className==='home-upcoming-rows');assert.equal(nodes(future).filter(n=>n.type==='li').length,3);
- tree.find(n=>n.type==='button'&&n.props['aria-controls']==='home-future-list').props.onClick();tree=h.render(props);
- future=tree.find(n=>n.props.className==='home-upcoming-rows');assert.equal(nodes(future).filter(n=>n.type==='li').length,5);
- assert.equal(nodes(future).filter(n=>n.type==='h3').at(-1).props.children,'일정 미정 행사');
 });
 
 
@@ -525,84 +465,105 @@ test('event role conflicts refresh the version and allow another selection',asyn
  assert.equal(calls[1].payload.version,2);assert.equal(tree.find(n=>n.type==='select').props.value,'assistant');
 });
 
-test('event menu pins and unpins for viewers without exposing management actions',async()=>{
- const h=await harness('pages/ProjectsPage.jsx');
- const calls=[],project={id:'viewer-event',name:'조회 행사',createdAt:'2026-10-01',permissions:{canManage:false,canViewPos:true}};
- const props={projects:[project],onPinProject:id=>calls.push(id)};
- let tree=h.render(props);
- const pin=tree.find(n=>n.type==='button'&&n.props.children?.includes?.('지금 집중할 행사로 지정'));
- assert.ok(pin);
- assert.equal(tree.some(n=>n.type==='a'&&n.props.href?.startsWith('#/project/manage?')),false);
- const details={open:true};
- pin.props.onClick({currentTarget:{closest:()=>details}});
- assert.deepEqual(calls,['viewer-event']);assert.equal(details.open,false);
- tree=h.render({...props,pinnedProjectId:project.id});
- tree.find(n=>n.type==='button'&&n.props.children?.includes?.('집중 행사 고정 해제')).props.onClick({currentTarget:{closest:()=>details}});
- assert.deepEqual(calls,['viewer-event','']);
-});
-
-test('dashboard displays the selected event with a static star title and respects viewer access',async()=>{
- const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
- const tree=h.render({data:{events:[],inventory:[]},events:[{id:'pin',name:'고정 행사',permissions:{canViewPos:true}}],pinnedProjectId:'pin'});
- assert.equal(tree.find(n=>n.type==='h3').props.children,'고정 행사');
- assert.ok(tree.some(n=>n.type==='Icon'&&n.props.name==='star'));
- assert.equal(tree.some(n=>n.props.className==='home-focus-picker-trigger'),false);
- assert.equal(tree.some(n=>n.type==='a'&&n.props.href==='#/project/manage?projectId=pin'),false);
-});
-
-
-test('dashboard clears the selected event on unpin and offers a focus picker button',async()=>{
- const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:()=> '2026-10-27'}});
- const props={data:{events:[],inventory:[]},events:[{id:'live',name:'진행 행사',startsOn:'2026-10-26',endsOn:'2026-10-28',permissions:{canSell:true}}],pinnedProjectId:'live'};
- let tree=h.render(props);
- const panel=()=>nodes(tree.find(n=>n.props.className==='dashboard-card home-focus'));
- assert.equal(panel().find(n=>n.type==='h3').props.children,'진행 행사');
- props.pinnedProjectId='';tree=h.render(props);
- assert.equal(panel().some(n=>n.type==='h3'),false);
- assert.ok(panel().some(n=>n.type==='p'&&n.props.children==='집중할 행사를 선택해주세요'));
- assert.ok(panel().some(n=>n.type==='a'&&n.props.children==='+'&&n.props.href==='#/projects'&&n.props['aria-label']==='집중할 행사 선택'));
- props.pinnedProjectId='live';tree=h.render(props);
- assert.equal(panel().find(n=>n.type==='h3').props.children,'진행 행사');
- props.events=[];tree=h.render(props);
- assert.ok(panel().some(n=>n.type==='p'&&n.props.children==='집중할 행사를 선택해주세요'));
-});
-
-test('dashboard focus provides preparation, inventory, sales status and management links in order',async()=>{
- const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:()=> '2026-10-27'}});
- const tree=h.render({pinnedProjectId:'event',data:{events:[],inventory:[]},events:[{id:'event',name:'행사',startsOn:'2026-11-01',endsOn:'2026-11-02',permissions:{canManage:true,canConfigure:true,canSettle:true}}]});
- const footer=nodes(tree.find(node=>node.props.className==='home-focus-actions'));
- assert.deepEqual(footer.filter(node=>node.type==='a').map(node=>node.props.children),['행사 준비 →','재고 관리','판매현황','관리']);
- assert.deepEqual(footer.filter(node=>node.type==='a').map(node=>node.props.href),['#/products?projectId=event','#/inventory','#/settlement?projectId=event','#/project/manage?projectId=event']);
- assert.equal(tree.some(node=>node.type==='dialog'||node.props.className==='home-focus-picker-trigger'),false);
-});
-
-test('dashboard without a focus offers event selection navigation instead of a picker dialog',async()=>{
- const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'}});
- const tree=h.render({data:{events:[],inventory:[]},events:[],onPinProject:()=>{throw new Error('must not change focus');}});
- assert.ok(tree.find(node=>node.type==='a'&&node.props.className==='home-focus-add'&&node.props.href==='#/projects'));
- assert.equal(tree.some(node=>node.type==='dialog'||node.props['aria-haspopup']==='dialog'),false);
-});
-
-test('overview passes the account focus callback to the dashboard',async()=>{
- const h=await harness('pages/PersonalOverview.jsx'),calls=[];
- const tree=h.render({dashboard:true,pinnedProjectId:'mine',onPinProject:id=>calls.push(id),request:async()=>({events:[]})});
- const dashboard=tree.find(n=>n.type==='PersonalDashboard');
- dashboard.props.onPinProject('chosen');assert.deepEqual(calls,['chosen']);assert.equal(dashboard.props.pinnedProjectId,'mine');
-});
-
-test('event picker keeps focused and selected markers inside their calendar sections without duplicating cards',async()=>{
- const h=await harness('pages/ProjectsPage.jsx');
- const projects=[{id:'future',name:'예정',startsOn:'2099-01-01',endsOn:'2099-01-02'},{id:'live',name:'진행',startsOn:'2020-01-01',endsOn:'2090-01-01'},{id:'unknown',name:'미설정'},{id:'past',name:'종료',startsOn:'2020-01-01',endsOn:'2020-01-02'}];
- const selected=[];const tree=h.render({projects,pinnedProjectId:'future',selectedProject:projects[0],onSelectProject:project=>selected.push(project.id)});
- const sections=tree.filter(n=>n.type==='section'&&n.props.className?.startsWith('event-picker-group '));
- assert.deepEqual(sections.map(n=>n.props['aria-labelledby']),['event-group-active','event-group-upcoming','event-group-unscheduled','event-group-past']);
- assert.equal(tree.filter(n=>n.type==='article').length,4);
- const upcoming=nodes(sections[1]);assert.ok(upcoming.some(n=>n.props.className==='event-picker-focus-label'));assert.ok(upcoming.some(n=>n.props.className==='event-picker-selected-label'));
- upcoming.find(n=>n.type==='button'&&n.props.className==='event-picker-card').props.onClick();assert.deepEqual(selected,['future']);
-});
 test('event settings catalog shows local sales and stock while its cached inventory is older',async()=>{
  const h=await harness('components/EventSalesCatalog.jsx');
  const tree=h.render({event:{id:'event'},items:[{id:'inventory',name:'무료 상품',allocations:[{projectId:'event',productId:'p',initial:10,remaining:10,sold:0,price:1000}]}],products:[{id:'p',price:0,initialStockQty:10,stockQty:5,saleNumber:1}],sales:[{lines:[{type:'product',id:'p',qty:1},{type:'bundle',qty:1,subItems:[{productId:'p',qty:1}]}]},{voided:true,lines:[{type:'product',id:'p',qty:10}]}]});
  const cell=label=>tree.find(node=>node.type==='td'&&node.props['data-label']===label).props.children;
  assert.equal(cell('판매수량')[0],'2');assert.equal(cell('남은 재고')[0],'5');assert.equal(cell('배정 수량')[0],'10');assert.equal(cell('판매가')[0],'0');
+});
+
+test('sales navigation stays visible and event tools follow server capabilities',async()=>{
+ for(const [permissions,expected] of [
+  [{canViewPos:true},['판매']],
+  [{ownerIds:['own']},['판매현황','행사 판매 설정']],
+  [{canSell:true,canConfigure:true,ownerIds:['own']},['판매','판매현황','행사 판매 설정']],
+  [{canSell:true,canConfigure:true,canManage:true,canSettle:true},['판매','판매현황','행사 판매 설정','행사 관리']]
+ ]) {
+  const h=await harness('components/PageLayout.jsx');
+  const tree=h.render({page:'settings',navigate(){},project:{id:'e',name:'행사',permissions}},'AppHeader');
+  const nav=nodes(tree.find(n=>n.props['aria-label']==='주 메뉴'));
+  assert.deepEqual(nav.filter(n=>n.type==='a').map(n=>n.props.href),[permissions.canSell||permissions.canViewPos?'#/sales':'#/settlement','#/projects','#/inventory']);
+  assert.ok(nav.some(n=>n.type==='button'&&n.props.children[0]==='더보기 '));
+  const event=nodes(tree.find(n=>n.props['aria-label']==='행사 메뉴'));
+  assert.deepEqual(event.filter(n=>n.type==='button').map(n=>n.props.children),expected);
+ }
+});
+
+test('revenue and dashboard remain reachable through more while sales without an event opens the list',async()=>{
+ const header=await harness('components/PageLayout.jsx'),routes=[];
+ const props={page:'revenue',navigate:key=>routes.push(key)};
+ let tree=header.render(props,'AppHeader');await header.flush();
+ assert.equal(tree.find(n=>n.props.className==='primary-sales').props.href,'#/projects');
+ assert.equal(tree.some(n=>n.props['aria-label']==='행사 메뉴'),false);
+ tree.find(n=>n.type==='button'&&n.props['aria-controls']==='header-more-menu').props.onClick();
+ tree=header.render(props,'AppHeader');await header.flush();
+ const menu=nodes(tree.find(n=>n.props['aria-label']==='더보기 메뉴'));
+ assert.deepEqual(menu.filter(n=>n.type==='a').map(n=>n.props.href),['#/dashboard','#/account','#/account/revenue']);
+ assert.equal(menu.find(n=>n.props['aria-current']==='page').props.href,'#/account/revenue');
+ header.listeners.get('keydown')({key:'Escape'});
+ assert.equal(header.render(props,'AppHeader').some(n=>n.props.id==='header-more-menu'),false);
+ const overview=await harness('pages/PersonalOverview.jsx');
+ assert.equal(overview.render({request:async()=>({events:[]})}).find(n=>n.type==='h1').props.children,'수익현황');
+});
+
+test('event switcher shows current scope, dates and status and reuses guarded selection',async()=>{
+ const h=await harness('components/PageLayout.jsx'),chosen=[];
+ const projects=[{id:'a',boothId:'b',name:'현재 행사',startsOn:'2099-01-01',endsOn:'2099-01-02',permissions:{canSell:true}},{id:'v',name:'조회 행사',permissions:{canViewPos:true}}];
+ let accepted=false;
+ const props={page:'pos',navigate(){},project:projects[0],projects,onSelectProject:async p=>{chosen.push(p.id);return accepted;}};
+ let tree=h.render(props,'AppHeader');await h.flush();
+ tree.find(n=>n.props['aria-controls']==='header-event-list').props.onClick();
+ tree=h.render(props,'AppHeader');await h.flush();
+ const options=()=>tree.filter(n=>n.props.className==='event-switcher-option');
+ assert.equal(options().length,2);assert.equal(options().find(n=>n.props['aria-current']==='true').props['aria-label'],'현재 행사 · 판매 화면 열기');
+ assert.ok(JSON.stringify(tree).includes('99.01.01~01.02'));
+ const viewer=()=>options().find(n=>n.props['aria-label']==='조회 행사 · 상품 목록 열기');
+ await viewer().props.onClick();tree=h.render(props,'AppHeader');assert.ok(tree.some(n=>n.props.id==='header-event-list'));
+ accepted=true;await viewer().props.onClick();tree=h.render(props,'AppHeader');assert.equal(tree.some(n=>n.props.id==='header-event-list'),false);
+ assert.deepEqual(chosen,['v','v']);
+});
+
+test('event list retains calendar sections and selection without focus or aggregate cards',async()=>{
+ const h=await harness('pages/ProjectsPage.jsx');
+ const projects=[{id:'future',name:'예정',venue:'킨텍스',startsOn:'2099-01-01',endsOn:'2099-01-02',permissions:{canSell:true},summary:{total:999999}},{id:'live',name:'진행',startsOn:'2020-01-01',endsOn:'2090-01-01',permissions:{canSell:true}},{id:'unknown',name:'미설정',permissions:{canViewPos:true}},{id:'past',name:'종료',startsOn:'2020-01-01',endsOn:'2020-01-02',permissions:{canReadOwnHistory:true}}];
+ const chosen=[];const tree=h.render({projects,selectedProject:projects[0],onSelectProject:p=>chosen.push(p.id)});
+ const sections=tree.filter(n=>n.type==='section'&&n.props.className?.startsWith('event-picker-group '));
+ assert.deepEqual(sections.map(n=>n.props['aria-labelledby']),['event-group-active','event-group-upcoming','event-group-unscheduled','event-group-past']);
+ assert.equal(tree.filter(n=>n.type==='article').length,4);
+ assert.ok(tree.some(n=>n.type==='PageIntro'&&n.props.title==='행사 목록'));
+ assert.equal(tree.filter(n=>n.props.className==='event-current-label').length,1);
+ assert.equal(JSON.stringify(tree).includes('집중'),false);assert.equal(JSON.stringify(tree).includes('999999'),false);
+ assert.ok(JSON.stringify(tree).includes('킨텍스'));
+ nodes(sections[1]).find(n=>n.props.className==='event-list-open').props.onClick();assert.deepEqual(chosen,['future']);
+ assert.equal(tree.some(n=>n.type==='details'),false);
+ const managed=h.render({projects:[{...projects[0],permissions:{canManage:true,canSell:true}}]});
+ assert.ok(managed.some(n=>n.type==='a'&&n.props.href==='#/project/manage?projectId=future'));
+ assert.ok(managed.some(n=>n.type==='button'&&n.props.children==='이 행사 구성으로 새 행사 만들기'));
+});
+
+test('dashboard summarizes own stock and settlement, filters only sales and has no event focus UI',async()=>{
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
+ const data={events:[{projectId:'e',closedAt:'2026-01-01',rows:[{net:900,paid:400,pending:500}],sales:[{time:'2020-01-01',items:[{amount:1000}]},{time:'2026-10-27',items:[{amount:2000}]},{time:'2026-10-27',voided:true,items:[{amount:99999}]}]}],inventory:[{remaining:7,warehouse:3,stockSummary:{sold:2,eventRemaining:4}}]};
+ const props={data,events:[{id:'e',name:'행사',permissions:{canManage:true},summary:{total:888888}}]};
+ let tree=h.render(props);
+ assert.equal(tree.find(n=>n.type==='h1').props.children,'대시보드');assert.equal(tree.find(n=>n.type==='h1').props.className,undefined);
+ assert.equal(tree.some(n=>n.props.className==='home-focus'||n.props.className==='home-upcoming'),false);
+ assert.equal(JSON.stringify(tree).includes('888888'),false);
+ const finance=()=>nodes(tree.find(n=>n.props.className==='dashboard-card home-finance'));
+ assert.ok(finance().some(n=>n.type==='strong'&&n.props.children==='3000원'));
+ assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='500원'));
+ tree.find(n=>n.type==='button'&&n.props.children==='올해').props.onClick();tree=h.render(props);
+ assert.ok(finance().some(n=>n.type==='strong'&&n.props.children==='2000원'));
+ assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='500원'));
+ assert.ok(tree.some(n=>n.type==='a'&&n.props.href==='#/projects'));
+});
+
+test('dashboard preserves warnings for every event and overview passes no focus state',async()=>{
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:()=> '2026-10-27'}});
+ const tree=h.render({data:{events:[],inventory:[],waitingOrders:{e:2}},events:[{id:'e',name:'행사',startsOn:'2026-10-26',endsOn:'2026-10-28',permissions:{canManage:true,canSell:true,canConfigure:true},summary:{lowStockProducts:1}}]});
+ assert.ok(tree.some(n=>n.type==='a'&&n.props.href==='#/sales?projectId=e'));
+ assert.ok(tree.some(n=>n.type==='a'&&n.props.href==='#/products?projectId=e'));
+ const overview=await harness('pages/PersonalOverview.jsx');
+ const dashboard=overview.render({dashboard:true,request:async()=>({events:[]})}).find(n=>n.type==='PersonalDashboard');
+ assert.equal(dashboard.props.pinnedProjectId,undefined);assert.equal(dashboard.props.onPinProject,undefined);
 });
