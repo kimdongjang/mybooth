@@ -6,7 +6,7 @@ import PersonalDashboard from '../components/PersonalDashboard';
 import {useEventReadRefresh} from '../hooks/useEventReadRefresh';
 
 const noEvents=[];
-export default function PersonalOverview({request,projectId,dashboard=false,pinnedProjectId='',onPinProject,events=noEvents,readWaitingOrders}) {
+export default function PersonalOverview({request,projectId,dashboard=false,events=noEvents,readWaitingOrders}) {
  const [data,setData]=useState(null),[error,setError]=useState(''),[start,setStart]=useState(''),[end,setEnd]=useState('');
  const readRevision=useEventReadRefresh(request);
  useEffect(()=>{let active=true;request('/api/booths?artists=history').then(async value=>{
@@ -14,7 +14,7 @@ export default function PersonalOverview({request,projectId,dashboard=false,pinn
   if(dashboard&&readWaitingOrders){const counts=await Promise.all(events.filter(event=>event.permissions?.canSell||event.permissions?.canManage).map(async event=>[event.id,await readWaitingOrders(event.id).catch(()=>undefined)]));value={...value,waitingOrders:Object.fromEntries(counts)};}
   if(active)setData(value);
  }).catch(e=>{if(active){setError(e.message);if([401,403,404].includes(e.status))setData(null);}});return()=>{active=false;};},[request,projectId,dashboard,readWaitingOrders,events,readRevision]);
- if(dashboard)return <PersonalDashboard pinnedProjectId={pinnedProjectId} onPinProject={onPinProject} data={data} error={error} events={events}/>;
+ if(dashboard)return <PersonalDashboard data={data} error={error} events={events}/>;
  const selected=(data?.events||[]).filter(e=>!projectId||e.projectId===projectId);
  const rows=selected.flatMap(e=>e.rows.map(row=>({...row,event:e})));
  const gross=selected.flatMap(e=>e.sales).filter(s=>!s.voided&&(!start||koreanDay(s.time)>=start)&&(!end||koreanDay(s.time)<=end)).flatMap(s=>s.items).reduce((s,i)=>s+i.amount,0);

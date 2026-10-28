@@ -106,4 +106,13 @@ test('inventory deep links, direct refresh, back/forward and event history queri
   assert.equal(usePageRoute()[0],'inventory');
   state=undefined;mounted=false;
   assert.equal(usePageRoute()[0],'inventory');
+  await usePageRoute()[1]('/sales?projectId=chosen-event');
+  assert.equal(usePageRoute()[0],'pos');
+  assert.equal(window.location.hash,'#/sales?projectId=chosen-event');
+  await usePageRoute()[1]('/project/manage?projectId=chosen-event');
+  assert.equal(usePageRoute()[0],'project');
+  assert.equal(window.location.hash,'#/project/manage?projectId=chosen-event');
+  state=undefined;mounted=false;window.location.hash='';
+  assert.equal(usePageRoute()[0],'pos');
+  assert.equal(usePageRoute()[2],'');
 });

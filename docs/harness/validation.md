@@ -1433,3 +1433,10 @@ PR #78 기반의 격리 작업 트리에서 이번 화면·장소/일정 변경�
 - workspace-ui / personal-dashboard / react-hooks 관련 회귀 53개 통과. 초기 회귀의 분리된 예전 DOM 핸들러 호출 기대를 현재 화면 후보 제거 검사로 보완한 뒤 통과했다.
 - npm run build 통과(기존 500kB 청크 경고). API/DB/판매 큐 저장 계약은 변경하지 않았다.
 - 브라우저/Android의 native dialog 포커스 복귀, 실제 계정 전환·재시작 후 localStorage 보존, 다기기 확인은 미실행이다. 현재 기기 계정별 설정이며 다른 기기로 동기화되지 않는다.
+
+
+## 판매 중심 내비게이션 PR 검증 (2026-10-28)
+
+- 최신 원격 main(1383da7)에서 별도 `codex/sales-first-navigation` 브랜치를 만들고 판매 중심 메뉴·행사 변경·목록·대시보드·기본 진입 변경만 분리했다. 기존 작업 트리의 판매 스냅샷/재고/API/DB 수정, 백업 복원 제거, 행사 장소 필수 여부 변경, 문서 전체 보관/재편은 포함하지 않는다.
+- `node --experimental-vm-modules --test --test-name-pattern="sales navigation|revenue and dashboard remain|event switcher|event list retains|dashboard summarizes|dashboard preserves|event destinations|last event restores|App default entry|App event switching|inventory deep links|uncached event reads coalesce|event entry renders the actor|event creation offers empty" tests/workspace-ui.test.js tests/event-navigation.test.js tests/inventory-route.test.js tests/background-sync.test.js`: 선택한 14개 통과. 권한별 메뉴/진입, 선택 취소·수락, 개인 집계와 기간 필터, 계정·환경·부스별 복원, 기본 진입·인증 전 딥링크·뒤로/앞으로·쿼리, 이전 캐시 응답 차단, 생성/구성 가져오기·기존 복원 경로를 확인했다.
+- PR 작업 트리에서 `npm run build` 1회 통과. 기존 500kB 초과 청크 경고가 남는다. diff 공백 검사 통과. 전체 테스트·브라우저 자동화·스크린샷·실기기·운영 DB 검증은 실행하지 않았다. VM/UI 모형과 기존 캐시 회귀 범위이며 실제 로그인 세션·터치 조작 확인을 대신하지 않는다.

@@ -3,8 +3,9 @@ import { Input } from '../components/PosUI';
 import { PageIntro } from '../components/PageLayout';
 import Icon from '../components/Icon';
 import {eventSchedule,sortEventsBySchedule} from '../utils/eventSchedule';
+import {eventActionLabel} from '../utils/eventNavigation';
 
-export default function ProjectsPage({ pinnedProjectId='', onPinProject, creating, booths=[], projects, selectedProject, newProjectName, setNewProjectName, onCreateProject, onManageProject, onSelectProject, navigate }) {
+export default function ProjectsPage({ creating, booths=[], projects, selectedProject, newProjectName, setNewProjectName, onCreateProject, onManageProject, onSelectProject, navigate }) {
   const [mode,setMode]=useState('empty'),[sourceId,setSourceId]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [venue,setVenue]=useState(''),[startsOn,setStart]=useState(''),[endsOn,setEnd]=useState('');
   const pending=useRef(null);
@@ -22,9 +23,9 @@ export default function ProjectsPage({ pinnedProjectId='', onPinProject, creatin
     group.statuses.includes(eventSchedule(project).status)
   )})).filter(group=>group.projects.length);
   return <>
-    <nav className="event-subnav inventory-management-nav menu-tabs" aria-label="행사 선택 하위 메뉴"><button type="button" aria-current={!creating?'page':undefined} onClick={()=>navigate('projects')}>행사 선택</button><button data-guide={!creating?'event':undefined} type="button" aria-current={creating?'page':undefined} onClick={()=>navigate('projectNew')}>새 행사 추가</button></nav>
+    <nav className="event-subnav inventory-management-nav menu-tabs" aria-label="행사 목록 하위 메뉴"><button type="button" aria-current={!creating?'page':undefined} onClick={()=>navigate('projects')}>행사 목록</button><button data-guide={!creating?'event':undefined} type="button" aria-current={creating?'page':undefined} onClick={()=>navigate('projectNew')}>새 행사 추가</button></nav>
     <main className="page-content projects-page"><div className="page-body event-picker">
-    {creating?<PageIntro title="새 행사 추가"/>:<h1 className="sr-only">행사 선택</h1>}
+    <PageIntro title={creating ? "새 행사 추가" : "행사 목록"}/>
     <div>
       {creating ? <><div className="page-tabs purchase-tabs menu-tabs" role="group" aria-label="새 행사 만들기 방식"><button type="button" disabled={busy||Boolean(pending.current)} aria-pressed={mode==='empty'} onClick={()=>setMode('empty')}>빈 행사로 시작</button><button type="button" disabled={busy||Boolean(pending.current)} aria-pressed={mode==='copy'} onClick={()=>setMode('copy')}>지난 행사 구성 가져오기</button><button type="button" disabled={busy||Boolean(pending.current)} onClick={()=>navigate('restore')}>백업 파일에서 복원</button></div>{mode==='copy'?<form onSubmit={copy} className="event-panel account-form"><h2>지난 행사 구성으로 새 행사 만들기</h2><p>상품·세트·가격·제작자 구성을 가져옵니다. 배정 재고와 판매 내역은 0으로 시작합니다.</p><fieldset disabled={busy||Boolean(pending.current)} className="event-form-fields"><label>가져올 행사<select required value={sourceId} onChange={e=>setSourceId(e.target.value)}><option value="">행사 선택</option>{sources.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>새 행사 이름<Input required maxLength={100} value={newProjectName} onChange={setNewProjectName}/></label>{fields}<label>계정 비밀번호<Input required type="password" autoComplete="current-password" value={password} onChange={setPassword}/></label></fieldset><button className="management-add" disabled={busy||!sourceId||!password||!newProjectName.trim()}>{pending.current?'같은 요청 다시 확인':'새 행사 만들기'}</button>{error&&<p role="alert">{error}</p>}</form>:<form onSubmit={onCreateProject} className="event-panel event-create-form">
         {managedBooths.length > 1 ? <label className="event-field">운영 부스<select name="boothId" required>{managedBooths.map(booth => <option key={booth.id} value={booth.id}>{booth.name}</option>)}</select></label> : <input type="hidden" name="boothId" value={managedBooths[0]?.id || ''} />}
@@ -35,15 +36,22 @@ export default function ProjectsPage({ pinnedProjectId='', onPinProject, creatin
       </form>}</> : <div className="event-picker-groups">
         {eventGroups.map(group=><section key={group.id} className={`event-picker-group is-${group.id}`} aria-labelledby={`event-group-${group.id}`}>
           <header className="event-picker-group-heading"><h2 id={`event-group-${group.id}`}>{group.title}</h2><span className="event-picker-group-count">{group.projects.length}개</span></header>
-          <div className="project-grid event-picker-grid">
-        {group.projects.map(project => {const schedule=eventSchedule(project);return <article key={project.id} className={`event-picker-entry is-${schedule.status}${pinnedProjectId===project.id?' is-focused':''}`}><button type="button" onClick={() => onSelectProject(project)} className="event-picker-card" aria-pressed={selectedProject?.id === project.id}>
-          <span className="event-picker-topline"><span className="event-picker-badges"><span className={`inventory-event-status is-${schedule.status}`}>{schedule.label}</span>{schedule.countdown&&<span className="event-countdown">{schedule.countdown}</span>}</span>
-          {(pinnedProjectId===project.id||selectedProject?.id===project.id)&&<span className="event-picker-markers">{selectedProject?.id===project.id&&<span className="event-picker-selected-label"><span aria-hidden="true">✓</span> 선택된 행사</span>}{pinnedProjectId===project.id&&<span className="event-picker-focus-label"><Icon name="star"/>집중 행사</span>}</span>}</span>
-          <strong className="event-picker-heading"><span className="event-picker-name"><span className={`event-picker-symbol is-${pinnedProjectId===project.id?'focused':schedule.status}`} role={pinnedProjectId===project.id?'img':undefined} aria-label={pinnedProjectId===project.id?'지금 집중할 행사':undefined} aria-hidden={pinnedProjectId===project.id?undefined:true}><Icon name={pinnedProjectId===project.id?'star':'calendar'}/></span><span>{project.boothName&&!/^기본\s*부스$/.test(project.boothName.trim())?`${project.boothName} · `:''}{project.name}</span></span>{schedule.period&&<time dateTime={project.startsOn}>{schedule.period}</time>}</strong>
-          {project.venue&&<span className="event-muted">{project.venue}</span>}
-          {project.summary && <span className="event-summary"><span>판매 {project.summary.sales.toLocaleString()}건 · {project.summary.total.toLocaleString()}원</span><span>상품 {project.summary.products.toLocaleString()}종 · 남은 재고 {project.summary.remainingStock.toLocaleString()}개</span></span>}
-          <span className="event-picker-action">{project.archivedAt?'행사 내역 열기':project.permissions?.canSell?'판매 화면 열기':project.permissions?.canViewPos?'상품 목록 열기':'내 정산 열기'} →</span>
-        </button><details className="event-picker-more"><summary aria-label={`${project.name} 행사 메뉴`}>⋯</summary><div className="event-picker-menu">{onPinProject&&<button type="button" className="event-picker-menu-item" onClick={event=>{onPinProject(pinnedProjectId===project.id?'':project.id);event.currentTarget.closest('details').open=false;}}><Icon name="star" className={pinnedProjectId===project.id?'event-focus-star':''}/>{pinnedProjectId===project.id?'집중 행사 고정 해제':'지금 집중할 행사로 지정'}</button>}{project.permissions?.canManage!==false&&<><a className="event-picker-menu-item" href={`#/project/manage?projectId=${encodeURIComponent(project.id)}`}><Icon name="project"/>행사 관리</a><button type="button" className="event-picker-menu-item" onClick={()=>{setSourceId(project.id);setMode('copy');setNewProjectName(`${project.name} 새 행사`.slice(0,100));navigate('projectNew');}}><Icon name="projects"/>이 행사 구성으로 새 행사 만들기</button></>}</div></details></article>;})}
+          <div className="event-list">
+            {group.projects.map(project => {
+              const schedule = eventSchedule(project);
+              const selected = selectedProject?.id === project.id;
+              return <article key={project.id} className={`event-list-row${selected ? ' is-selected' : ''}`}>
+                <div className="event-list-info">
+                  <div className="event-list-name"><h3>{project.boothName && !/^기본\s*부스$/.test(project.boothName.trim()) && <span>{project.boothName} · </span>}{project.name}</h3>{selected && <span className="event-current-label">✓ 선택된 행사</span>}</div>
+                  <div className="event-list-meta"><span className={`inventory-event-status is-${schedule.status}`}>{schedule.label}</span><span>{schedule.period || '일정 미설정'}</span>{project.venue && <span>{project.venue}</span>}</div>
+                </div>
+                <button type="button" className="event-list-open" aria-label={`${project.name} · ${eventActionLabel(project)}`} onClick={() => onSelectProject(project)}>{eventActionLabel(project)} →</button>
+                {project.permissions?.canManage && <details className="event-list-more"><summary aria-label={`${project.name} 행사 메뉴`}>⋯</summary><div className="event-picker-menu">
+                  <a className="event-picker-menu-item" href={`#/project/manage?projectId=${encodeURIComponent(project.id)}`}><Icon name="project"/>행사 관리</a>
+                  <button type="button" className="event-picker-menu-item" onClick={() => {setSourceId(project.id);setMode('copy');setNewProjectName(`${project.name} 새 행사`.slice(0,100));navigate('projectNew');}}>이 행사 구성으로 새 행사 만들기</button>
+                </div></details>}
+              </article>;
+            })}
           </div>
         </section>)}
       </div>}

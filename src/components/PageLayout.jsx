@@ -2,6 +2,8 @@ import Icon from './Icon';
 import { useEffect, useRef, useState } from 'react';
 import { SyncStatus } from './SyncStatus';
 import { pagePaths } from '../hooks/usePageRoute';
+import { eventDestination, eventActionLabel } from '../utils/eventNavigation';
+import { eventSchedule, sortEventsBySchedule } from '../utils/eventSchedule';
 
 export function PageIntro({ title, children, actions, hideTitle = false }) {
   return <div className={hideTitle && !children && !actions ? "sr-only page-intro" : "page-intro"}>
@@ -27,39 +29,69 @@ export function PageTabs({ id, label, tabs, selected, onSelect }) {
   </div>;
 }
 
-export function AppHeader({ page, navigate, project, saving, sync, onReleaseProject, releaseDisabled }) {
-  const [open, setOpen] = useState(false);
-  const toggle = useRef(null);
-  useEffect(() => { setOpen(false); }, [page, project?.id]);
+export function AppHeader({ page, navigate, project, projects = [], onSelectProject, saving, sync, selectionDisabled }) {
+  const [open, setOpen] = useState(null);
+  const root = useRef(null);
+  const eventToggle = useRef(null);
+  const moreToggle = useRef(null);
+  useEffect(() => { setOpen(null); }, [page, project?.id]);
   useEffect(() => {
     if (!open) return;
-    const onEscape = event => { if (event.key === 'Escape') { setOpen(false); toggle.current?.focus(); } };
+    const onEscape = event => {
+      if (event.key === 'Escape') {
+        setOpen(null);
+        (open === 'events' ? eventToggle : moreToggle).current?.focus();
+      }
+    };
+    const onOutside = event => { if (!root.current?.contains(event.target)) setOpen(null); };
+    const onBlur = event => { if (!root.current?.contains(event.relatedTarget)) setOpen(null); };
     document.addEventListener('keydown', onEscape);
-    return () => document.removeEventListener('keydown', onEscape);
+    document.addEventListener('pointerdown', onOutside);
+    const header = root.current;
+    header?.addEventListener('focusout', onBlur);
+    return () => {
+      document.removeEventListener('keydown', onEscape);
+      document.removeEventListener('pointerdown', onOutside);
+      header?.removeEventListener('focusout', onBlur);
+    };
   }, [open]);
-  const go = key => { setOpen(false); navigate(key); };
+  const go = key => { setOpen(null); return navigate(key); };
   const follow = key => event => {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
-    event.preventDefault(); go(key);
+    event.preventDefault(); void go(key);
   };
-  const showEventNav = project && !['projects', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(page);
-  const eventDestination = project ? (project.permissions?.canSell || project.permissions?.canViewPos ? 'pos' : 'log') : 'projects';
-  const eventContext = (<div className="header-event">
-      <a className="event-context-link" href={`#${pagePaths[eventDestination]}`} onClick={follow(eventDestination)}>
-        <Icon name="project" /><span className="event-context-name" title={project?.name}>{project?.name || '행사 선택'}</span>
-      </a>
-    </div>);
-  return <><header className="app-header border-b border-line bg-white text-ink">
-    <div className="header-brand"><a href={`#${pagePaths[eventDestination]}`} className="display-font brand-title font-bold" onClick={follow(eventDestination)}><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
-    <div className="header-event-desktop">{eventContext}</div>
+  const destination = eventDestination(project);
+  const personalPages = ['projects', 'projectNew', 'projectDuplicate', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'];
+  const showEventNav = project && !personalPages.includes(page);
+  const moreActive = ['dashboard', 'account', 'revenue'].includes(page);
+  const eventPages = showEventNav;
+  return <><header ref={root} className="app-header sales-app-header border-b border-line bg-white text-ink">
+    <div className="header-brand"><a href={`#${pagePaths[destination]}`} className="display-font brand-title font-bold" onClick={follow(destination)} aria-label="WithBooth 판매"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
+    <div className="event-switcher">
+      <button ref={eventToggle} type="button" className="event-switcher-trigger" aria-expanded={open === 'events'} aria-controls="header-event-list" onClick={() => setOpen(open === 'events' ? null : 'events')}><Icon name="project"/><span className="event-context-name" title={project?.name}>{project?.name || '행사 선택'}</span><span aria-hidden="true">▾</span></button>
+      {open === 'events' && <section id="header-event-list" className="header-popover event-switcher-panel" aria-label="행사 변경">
+        <ul>{sortEventsBySchedule(projects).map(item => {
+          const schedule = eventSchedule(item);
+          return <li key={item.id}><button type="button" className="event-switcher-option" aria-current={item.id === project?.id ? 'true' : undefined} disabled={selectionDisabled} aria-label={`${item.name} · ${eventActionLabel(item)}`} onClick={async () => { if (await onSelectProject(item) !== false) { setOpen(null); eventToggle.current?.focus(); } }}>
+            <span className="event-switcher-name">{item.boothName && !/^기본\s*부스$/.test(item.boothName.trim()) && <span>{item.boothName} · </span>}{item.name}{item.id === project?.id && <span className="event-current-label">✓ 선택된 행사</span>}</span>
+            <span className="event-switcher-meta"><span className={`inventory-event-status is-${schedule.status}`}>{schedule.label}</span><span>{schedule.period || '일정 미설정'}</span></span>
+          </button></li>;
+        })}</ul>
+        <a className="event-switcher-all" href="#/projects" onClick={follow('projects')}>전체 행사 보기 →</a>
+      </section>}
+    </div>
     {project && <div className="header-sync"><SyncStatus sync={sync} /></div>}
-    <div className="header-controls"><button data-guide={project && page === 'pos' && !open ? 'menu' : undefined} ref={toggle} type="button" className={`menu-toggle ${open ? 'is-open' : ''}`} aria-label={open ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={open} aria-controls="booth-navigation" onClick={() => setOpen(!open)}><span className="hamburger-lines" aria-hidden="true"><span /><span /><span /></span></button></div>
-    <nav id="booth-navigation" aria-label="부스 메뉴" className={`booth-navigation ${open ? 'is-open' : ''}`}>
-      <div className="nav-screens menu-tabs">{[['dashboard', '대시보드'], ['projects', '행사 선택'], ['inventory', '내 재고관리'], ['account', '마이페이지']].map(([key, label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || key === 'account' && page === 'revenue' ? 'page' : undefined} className={page === key || key === 'account' && page === 'revenue' ? 'is-active' : ''} onClick={follow(key)}><Icon name={(key.startsWith('inventory') || key === 'artistStock') ? 'settings' : key==='projects'?'project':key} />{label}</a>)}</div>
+    <nav className="primary-navigation" aria-label="주 메뉴">
+      <a href={`#${pagePaths[destination]}`} className={`primary-sales${eventPages ? ' is-active' : ''}`} aria-current={page === 'pos' ? 'page' : undefined} onClick={follow(destination)}><Icon name="pos"/>판매</a>
+      <a href="#/projects" aria-current={['projects','projectNew','projectDuplicate'].includes(page) ? 'page' : undefined} onClick={follow('projects')}>행사 목록</a>
+      <a href="#/inventory" aria-current={['inventory','artistStock'].includes(page) ? 'page' : undefined} onClick={follow('inventory')}>내 재고관리</a>
+      <div className="primary-more">
+        <button ref={moreToggle} type="button" className={moreActive ? 'is-active' : undefined} aria-expanded={open === 'more'} aria-controls="header-more-menu" onClick={() => setOpen(open === 'more' ? null : 'more')}>더보기 <span aria-hidden="true">▾</span></button>
+        {open === 'more' && <div id="header-more-menu" className="header-popover" aria-label="더보기 메뉴">{[['dashboard','대시보드'],['account','마이페이지'],['revenue','수익현황']].map(([key,label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key ? 'page' : undefined} onClick={follow(key)}>{label}</a>)}</div>}
+      </div>
     </nav>
-    </header>
-    {showEventNav && <div className="header-secondary">
-      <nav className="event-subnav menu-tabs" aria-label="행사 메뉴">{[['pos', '판매 목록'], ['settings', '행사 판매 설정'], ['log', '판매현황'], ['project', '행사 관리']].filter(([key])=>key==='pos'?project.permissions?.canSell||project.permissions?.canViewPos:key==='project'?project.permissions?.canManage:key==='log'?project.permissions?.canSettle||project.permissions?.canReadOwnHistory||project.permissions?.ownerIds?.length:project.permissions?.canConfigure||project.permissions?.ownerIds?.length).map(([key, label]) => <button key={key} type="button" data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={page === key || key === 'project' && page.startsWith('project') ? 'page' : undefined} onClick={() => go(key)}>{label}</button>)}</nav>
-    </div>}
-  </>;
+  </header>
+  {showEventNav && <div className="header-secondary">
+    <nav className="event-subnav menu-tabs" aria-label="행사 메뉴">{[['pos', '판매'], ['log', '판매현황'], ['settings', '행사 판매 설정'], ['project', '행사 관리']].filter(([key]) => key === 'pos' ? project.permissions?.canSell || project.permissions?.canViewPos : key === 'project' ? project.permissions?.canManage : key === 'log' ? project.permissions?.canSettle || project.permissions?.canReadOwnHistory || project.permissions?.ownerIds?.length : project.permissions?.canConfigure || project.permissions?.ownerIds?.length).map(([key, label]) => <button key={key} type="button" data-guide={key === 'settings' && page === 'pos' ? 'manage' : undefined} aria-current={page === key || key === 'project' && page.startsWith('project') || key === 'settings' && ['productNew','bundleNew'].includes(page) ? 'page' : undefined} onClick={() => go(key)}>{label}</button>)}</nav>
+  </div>}</>;
 }
