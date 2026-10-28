@@ -294,7 +294,7 @@ export default function InventoryPage({ projects = [], adminId, api, routeHash, 
         <a href={`#/products?projectId=${encodeURIComponent(row.project_id)}&productId=${encodeURIComponent(row.product_id)}`} onClick={event => {
           if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
           event.preventDefault(); setDeleteBlockers(null); navigate(`/products?projectId=${encodeURIComponent(row.project_id)}&productId=${encodeURIComponent(row.product_id)}`);
-        }}><span><strong>{row.event_name}</strong><small>남은 수량 {won(row.stock)}개</small></span><span className="inventory-blocker-link">행사 판매 설정 →</span></a>
+        }}><span><strong>{row.event_name}</strong><small>남은 수량 {won(row.stock)}개</small></span><span className="inventory-blocker-link">상품 관리 →</span></a>
       </li>)}</ul>
       <button type="button" className="management-back inventory-dialog-dismiss" onClick={() => setDeleteBlockers(null)}>닫기</button>
     </dialog>}

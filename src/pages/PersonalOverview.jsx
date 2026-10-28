@@ -21,7 +21,7 @@ export default function PersonalOverview({request,projectId,dashboard=false,even
  const gross=selected.flatMap(e=>e.sales).filter(s=>!s.voided&&(!start||koreanDay(s.time)>=start)&&(!end||koreanDay(s.time)<=end)).flatMap(s=>s.items).reduce((s,i)=>s+i.amount,0);
  const sum=key=>rows.reduce((s,r)=>s+Number(r[key]||0),0);
  return <main className="page-content">
-  {projectId?<header className="inventory-page-header"><nav className="inventory-breadcrumb" aria-label="현재 위치"><ol><li><h1 aria-current="page">판매현황</h1></li></ol></nav></header>:<h1 className="sr-only">{dashboard?'대시보드':'수익현황'}</h1>}
+  {projectId?<header className="inventory-page-header"><nav className="inventory-breadcrumb" aria-label="현재 위치"><ol><li><h1 aria-current="page">판매 현황</h1></li></ol></nav></header>:<h1 className="sr-only">{dashboard?'대시보드':'수익현황'}</h1>}
   <div className="page-body revenue-page">
   {error&&<p role="alert" className="inventory-error">{error}</p>}{!data&&!error&&<LoadingState/>}
   {data&&<><div className="revenue-period"><label>판매 시작일<input type="date" value={start} onChange={e=>setStart(e.target.value)}/></label><label>판매 종료일<input type="date" min={start} value={end} onChange={e=>setEnd(e.target.value)}/></label></div>

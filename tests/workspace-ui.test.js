@@ -291,6 +291,13 @@ test('event inventory expands only operator/owned context and binds its save to 
 });
 
 
+test('event product list hides products removed from the event while keeping active ones',async()=>{
+ const h=await harness('components/EventSalesCatalog.jsx');
+ const items=[{id:'kept',name:'남은 상품',allocations:[{projectId:'e',productId:'a'}]},{id:'gone',name:'제거한 상품',allocations:[{projectId:'e',productId:'r'}]},{id:'missing',name:'응답에 없는 상품',allocations:[{projectId:'e',productId:'x'}]}];
+ const names=tree=>tree.filter(n=>n.props?.className==='management-name-link').map(n=>n.props['aria-label']);
+ assert.deepEqual(names(h.render({items,event:{id:'e'},products:[{id:'a',isActive:true},{id:'r',isActive:false}]})),['남은 상품 상세보기']);
+ assert.deepEqual(names(h.render({items,event:{id:'e'},products:[{id:'a',isActive:true}]})),['남은 상품 상세보기']);
+});
 test('event product list displays event creator on desktop and mobile without changing inventory ownership',async()=>{
  const h=await harness('components/EventSalesCatalog.jsx');
  const item={id:'stock',name:'상품',creatorName:'원본 제작자',allocations:[{projectId:'e',productId:'p'}]};
@@ -506,9 +513,9 @@ test('event settings catalog shows local sales and stock while its cached invent
 test('sales navigation stays visible and event tools follow server capabilities',async()=>{
  for(const [permissions,expected] of [
   [{canViewPos:true},['판매']],
-  [{ownerIds:['own']},['판매현황','행사 판매 설정']],
-  [{canSell:true,canConfigure:true,ownerIds:['own']},['판매','판매현황','행사 판매 설정']],
-  [{canSell:true,canConfigure:true,canManage:true,canSettle:true},['판매','판매현황','행사 판매 설정','행사 관리']]
+  [{ownerIds:['own']},['상품 관리','판매 현황']],
+  [{canSell:true,canConfigure:true,ownerIds:['own']},['판매','상품 관리','판매 현황']],
+  [{canSell:true,canConfigure:true,canManage:true,canSettle:true},['판매','상품 관리','판매 현황','행사 관리']]
  ]) {
   const h=await harness('components/PageLayout.jsx');
   const tree=h.render({page:'settings',navigate(){},project:{id:'e',name:'행사',permissions}},'AppHeader');

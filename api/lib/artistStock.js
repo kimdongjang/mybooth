@@ -518,7 +518,7 @@ export async function removeArtistStock(sql,userId,payload){
  if(item.product.removedAt)fail('이미 제거된 상품입니다.');
  if(item.version!==version)fail('상품이 변경되었습니다. 새로고침해주세요.');
  const active=(await sql`SELECT p.id FROM pos_inventory_links l JOIN pos_products p ON p.project_id=l.project_id AND p.id=l.product_id JOIN pos_projects e ON e.id=l.project_id WHERE l.admin_id=${item.admin_id} AND l.inventory_id=${item.id} AND e.archived_at IS NULL AND COALESCE(p.is_active,TRUE)=TRUE`).rows;
- if(active.length)fail('활성 행사에 등록된 상품이 있습니다. 행사 판매 설정에서 먼저 제거해주세요.');
+ if(active.length)fail('활성 행사에 등록된 상품이 있습니다. 상품 관리에서 먼저 제거해주세요.');
  await sql`UPDATE pos_inventory SET product=${JSON.stringify({...item.product,removedAt:new Date().toISOString()})}::jsonb,version=version+1 WHERE admin_id=${item.admin_id} AND id=${item.id}`;
  return receipt(sql,userId,'removeArtistStock',payload,prior.fingerprint,{removed:true,id,change:{reason:'remove'}});
 }
