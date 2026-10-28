@@ -13,7 +13,7 @@ export default function EventSalesCatalog({items,event,products=[],sales,renderD
    <div className="management-summary"><span>상품 <b>{eventItems.length}개</b></span></div>
    <div className="management-table-wrap event-product-table-wrap"><table className="management-table event-product-number-table"><caption className="sr-only">판매 번호, 상품 이름, 제작자, 판매가, 배정 수량, 판매 수량, 남은 재고, 등록일</caption>
     <thead><tr>{['판매 번호','상품 이름','제작자','판매가','배정 수량','판매수량','남은 재고','등록일'].map((label,index)=><th scope="col" key={label} className={[2,4,7].includes(index)?'event-product-extra-column':undefined}>{label}</th>)}</tr></thead>
-    <tbody>{eventItems.map(item=>{const master=product(item),row={...allocation(item)};
+    <tbody>{!eventItems.length&&<tr className="table-empty-row"><td colSpan={8}><p>등록된 상품이 없어요. 첫 상품을 등록하고 판매를 시작해 보세요.</p>{onAdd&&<button type="button" className="management-add" disabled={disabled} onClick={onAdd}>+ 새 상품 등록</button>}</td></tr>}{eventItems.map(item=>{const master=product(item),row={...allocation(item)};
      if(master){row.initial=master.initialStockQty??row.initial;row.remaining=master.stockQty??master.stock??row.remaining;row.price=master.price??row.price;
       if(sales)row.sold=sales.filter(sale=>!sale.voided).reduce((sum,sale)=>sum+(sale.lines||[]).reduce((qty,line)=>qty+(line.type==='product'&&line.id===master.id?Number(line.qty):line.type==='bundle'?(line.subItems||[]).filter(part=>part.productId===master.id).reduce((count,part)=>count+Number(part.qty)*Number(line.qty),0):0),0),0);
      }return <tr key={item.id}>

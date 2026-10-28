@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {readFile} from 'node:fs/promises';
-import {dashboardEvents,dashboardFocus,dashboardAlerts} from '../src/utils/personalDashboard.js';
+import {dashboardEvents,dashboardFocus,dashboardAlerts,dashboardPastEvents,dashboardRole,settlementDisplay} from '../src/utils/personalDashboard.js';
 import {eventSchedule,sortEventsBySchedule} from '../src/utils/eventSchedule.js';
 import {eventDestination,eventActionLabel} from '../src/utils/eventNavigation.js';
 import {storageQuery} from '../api/lib/storageContract.js';
@@ -15,7 +15,7 @@ const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
 async function harness(file,mocks={}) {
  let cursor=0,effectIndex=0;const states=[],effects=[],deps=[];
  const react={useId:()=> 'inventory-plan-form',useRef:value=>{const i=cursor++;return states[i]||=( {current:value});},useState:value=>{const i=cursor++;if(!(i in states))states[i]=typeof value==='function'?value():value;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},useEffect:(effect,dependencies)=>{const i=effectIndex++;if(!deps[i]||dependencies.some((v,j)=>!Object.is(v,deps[i][j]))){deps[i]=dependencies;effects.push(effect);}}};
- const base={'../utils/eventNavigation':{eventDestination,eventActionLabel},'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project/manage'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
+ const base={'../utils/eventNavigation':{eventDestination,eventActionLabel},'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project/manage'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts,dashboardPastEvents,dashboardRole,settlementDisplay},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
  const listeners=new Map();
  const context=vm.createContext({document:{addEventListener:(key,fn)=>listeners.set(key,fn),removeEventListener:key=>listeners.delete(key)},crypto:globalThis.crypto,URLSearchParams,URL,sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},alert:message=>{throw new Error(message);}});
  const source=await readFile(new URL('../src/'+file,import.meta.url),'utf8');
@@ -49,10 +49,10 @@ test('personal inventory catalog searches own stock and opens the selected produ
  const h=await harness('components/PersonalInventoryCatalog.jsx',{'../utils/inventorySearch':{filterInventory}});
  const opened=[];const items=[{id:'a',name:'아크릴',goodsType:'스탠드',genre:'시리즈',remaining:8,warehouse:3,totalStock:10,allocations:[{projectId:'event'}]},{id:'b',name:'스티커',remaining:5,warehouse:5,totalStock:5,allocations:[]}];
  const props={items,events:[{id:'event',name:'행사'}],detailId:'',navigate:path=>opened.push(path),renderDetail:item=>({type:'detail',props:{id:item.id}})};
- let tree=h.render(props);assert.equal(tree.filter(n=>n.type==='tbody')[0].props.children.length,2);
+ let tree=h.render(props);assert.equal(tree.filter(n=>n.type==='tbody')[0].props.children[1].length,2);
  tree.find(n=>n.props.type==='search').props.onChange({target:{value:'아크릴'}});
  tree=h.render(props);tree.find(n=>n.props.role==='search').props.onSubmit({preventDefault(){}});
- tree=h.render(props);assert.equal(tree.filter(n=>n.type==='tbody')[0].props.children.length,1);
+ tree=h.render(props);assert.equal(tree.filter(n=>n.type==='tbody')[0].props.children[1].length,1);
  tree.find(n=>n.type==='a').props.onClick({button:0,preventDefault(){}});assert.deepEqual(opened,['/inventory/a']);
  tree=h.render({...props,detailId:'b'});assert.equal(tree.find(n=>n.type==='detail').props.id,'b');assert.equal(tree.some(n=>n.props.role==='search'),false);
 });
@@ -493,12 +493,13 @@ test('revenue and dashboard remain reachable through more while sales without an
  const header=await harness('components/PageLayout.jsx'),routes=[];
  const props={page:'revenue',navigate:key=>routes.push(key)};
  let tree=header.render(props,'AppHeader');await header.flush();
- assert.equal(tree.find(n=>n.props.className==='primary-sales').props.href,'#/projects');
+ assert.equal(tree.find(n=>n.props.className==='header-select-event').props.href,'#/projects');
+ assert.equal(tree.find(n=>n.props.className==='header-select-event').props.children,'행사 선택하기 →');
  assert.equal(tree.some(n=>n.props['aria-label']==='행사 메뉴'),false);
  tree.find(n=>n.type==='button'&&n.props['aria-controls']==='header-more-menu').props.onClick();
  tree=header.render(props,'AppHeader');await header.flush();
- const menu=nodes(tree.find(n=>n.props['aria-label']==='더보기 메뉴'));
- assert.deepEqual(menu.filter(n=>n.type==='a').map(n=>n.props.href),['#/dashboard','#/account']);
+ const menu=nodes(tree.find(n=>n.props['aria-label']==='내 계정 메뉴'));
+ assert.deepEqual(menu.filter(n=>n.type==='a').map(n=>n.props.href),['#/projects','#/inventory','#/dashboard','#/account']);
  assert.equal(menu.find(n=>n.props['aria-current']==='page').props.href,'#/account');
  header.listeners.get('keydown')({key:'Escape'});
  assert.equal(header.render(props,'AppHeader').some(n=>n.props.id==='header-more-menu'),false);
@@ -541,19 +542,19 @@ test('event list retains calendar sections and selection without focus or aggreg
  assert.ok(managed.some(n=>n.type==='button'&&n.props.children==='이 행사 구성으로 새 행사 만들기'));
 });
 
-test('dashboard summarizes own stock and settlement, filters only sales and has no event focus UI',async()=>{
+test('dashboard summarizes own revenue, filters only sales and keeps operator totals out',async()=>{
  const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'},'../utils/revenueSummary':{koreanDay:value=>new Date(value).toISOString().slice(0,10)}});
  const data={events:[{projectId:'e',closedAt:'2026-01-01',rows:[{net:900,paid:400,pending:500}],sales:[{time:'2020-01-01',items:[{amount:1000}]},{time:'2026-10-27',items:[{amount:2000}]},{time:'2026-10-27',voided:true,items:[{amount:99999}]}]}],inventory:[{remaining:7,warehouse:3,stockSummary:{sold:2,eventRemaining:4}}]};
  const props={data,events:[{id:'e',name:'행사',permissions:{canManage:true},summary:{total:888888}}]};
  let tree=h.render(props);
  assert.equal(tree.find(n=>n.type==='h1').props.children,'대시보드');assert.equal(tree.find(n=>n.type==='h1').props.className,undefined);
- assert.equal(tree.some(n=>n.props.className==='home-focus'||n.props.className==='home-upcoming'),false);
- assert.equal(JSON.stringify(tree).includes('888888'),false);
  const finance=()=>nodes(tree.find(n=>n.props.className==='dashboard-card home-finance'));
- assert.ok(finance().some(n=>n.type==='strong'&&n.props.children==='3000원'));
+ assert.ok(finance().some(n=>n.type==='h2'&&n.props.children==='내 수익현황'));
+ assert.ok(finance().some(n=>n.type==='a'&&n.props.href==='#/account/revenue'&&n.props.children==='수익현황 →'));
+ assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='3000원'));
  assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='500원'));
  tree.find(n=>n.type==='button'&&n.props.children==='올해').props.onClick();tree=h.render(props);
- assert.ok(finance().some(n=>n.type==='strong'&&n.props.children==='2000원'));
+ assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='2000원'));
  assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='500원'));
  assert.ok(tree.some(n=>n.type==='a'&&n.props.href==='#/projects'));
 });

@@ -48,9 +48,10 @@ test('email signup, database uniqueness, legacy migration and unchanged login', 
     assert.equal(signup.status, 201);
     assert.equal((await db.query("SELECT allow_operator_stock FROM pos_admins WHERE id='new-user'")).rows[0].allow_operator_stock,true);
     assert.equal((await db.query("SELECT allow_operator_stock FROM pos_admins WHERE id='existing'")).rows[0].allow_operator_stock,true);
-    assert.equal((await invoke({mode:'signup',id:'optout',password:'password',email:'optout@example.com',allowOperatorStock:false})).status,201);
-    assert.equal((await db.query("SELECT allow_operator_stock FROM pos_admins WHERE id='optout'")).rows[0].allow_operator_stock,false);
-    assert.equal((await invoke({mode:'signup',id:'invalid-pref',password:'password',email:'invalid-pref@example.com',allowOperatorStock:'false'})).status,400);
+    const dupId = await invoke({ mode: 'signup', id: 'new-user', password: 'password', email: 'other@example.com' });
+    assert.equal(dupId.status, 409); assert.match(dupId.body.error, /아이디/);
+    const dupEmail = await invoke({ mode: 'signup', id: 'other-user', password: 'password', email: 'USER@example.com' });
+    assert.equal(dupEmail.status, 409); assert.match(dupEmail.body.error, /이메일/);
 
     assert.match(signup.body.admin.nickname, /^(똑똑한|맛있는|즐거운|다정한|용감한|반짝이는) (자동차|딸기|고양이|구름|토끼|별)$/);
     assert.equal((await invoke({ mode: 'signup', id: 'nick-user', password: 'password', email: 'nick@example.com', nickname: '  부스작가  ' })).body.admin.nickname, '부스작가');

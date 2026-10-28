@@ -4,9 +4,10 @@ import { PageIntro } from '../components/PageLayout';
 import SettlementEditor from '../components/SettlementEditor';
 import { orderRepository } from '../database/orderRepository';
 import { loadDashboard } from '../utils/dashboardSummary';
-import { periodRange, revenueSummary, settlementStatus, settlementCsv } from '../utils/revenueSummary';
+import { koreanDay, periodRange, revenueSummary, settlementStatus, settlementCsv } from '../utils/revenueSummary';
 import { won } from '../utils/productDisplay';
 
+const oneYearAgo = () => { const date = new Date(`${koreanDay(new Date())}T00:00:00Z`); date.setUTCFullYear(date.getUTCFullYear() - 1); return date.toISOString().slice(0, 10); };
 const link = id => `#/settlement?projectId=${encodeURIComponent(id)}`;
 const cash = amount => `${won(Math.round(amount))}원`;
 function Status({ row }) {
@@ -19,7 +20,7 @@ function download(creators) {
 }
 export default function RevenuePage({ request }) {
   const [data,setData]=useState(null), [records,setRecords]=useState([]), [closures,setClosures]=useState([]), [error,setError]=useState('');
-  const [refresh,setRefresh]=useState(0), [period,setPeriod]=useState('all'), [start,setStart]=useState(''), [end,setEnd]=useState('');
+  const [refresh,setRefresh]=useState(0), [period,setPeriod]=useState('custom'), [start,setStart]=useState(oneYearAgo), [end,setEnd]=useState(()=>koreanDay(new Date()));
   const [editing,setEditing]=useState(null);
   const [mappings,setMappings]=useState([]);
   const active=useRef(true);
@@ -54,6 +55,7 @@ export default function RevenuePage({ request }) {
       <div className="revenue-layout">
         <section className="dashboard-card revenue-creators" id="creator-settlements"><div className="dashboard-card-heading"><h2>제작자별 정산 · 전체 기간</h2><button type="button" className="event-text-link" onClick={()=>download(summary.creators)}>정산표 CSV</button></div>
           <div className="revenue-table-heading" aria-hidden="true"><span>제작자</span><span>총 판매액</span><span>정산 예정</span><span>지급 완료</span><span>남은 정산</span></div>
+          {summary.creators.length===0&&<p className="account-dashboard-empty">조회된 값이 없습니다.</p>}
           {summary.creators.map(creator=><details key={creator.name} className="revenue-creator"><summary><div className="revenue-creator-values"><strong>{creator.name}</strong><span data-label="총 판매액">{cash(creator.gross)}</span><span data-label="정산 예정">{cash(creator.net)}</span><span data-label="지급 완료">{cash(creator.paid)}</span><strong data-label="남은 정산">{cash(creator.pending)}</strong></div><Status row={creator} /></summary>
             <div className="revenue-creator-details"><div className="revenue-creator-tools"><span>차감 합계 {cash(creator.fees)}</span><button type="button" className="event-text-link" onClick={()=>download([creator])}>제작자 정산서 CSV</button></div>
               {creator.rows.map(row=><div className="revenue-event-settlement" key={row.projectId}><div className="account-dashboard-event-title"><a href={link(row.projectId)}>{row.projectName}</a><Status row={row} /></div><dl className="revenue-mini-metrics">{[[row.confirmed?'확정 판매액':'예상 판매액',row.gross],['차감',row.fees],['정산 예정',row.net],['지급 완료',row.paid],['남은 정산',row.pending]].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{cash(value)}</dd></div>)}</dl>{row.adjustmentNeeded>0&&<p role="alert" className="inventory-error">차감액이 판매액을 {cash(row.adjustmentNeeded)} 초과합니다.</p>}{row.overpaid>0&&<p role="alert" className="inventory-error">초과 지급 {cash(row.overpaid)}</p>}
@@ -63,11 +65,11 @@ export default function RevenuePage({ request }) {
             </div></details>)}
         </section>
         <aside className="revenue-side">
-          <section className="dashboard-card"><div className="dashboard-card-heading"><h2>행사별 판매액</h2></div>{summary.events.map(event=><a key={event.id} className="revenue-event-bar" href={link(event.id)}><div className="account-dashboard-rank-heading"><strong>{event.name}</strong><span>{cash(event.amount)}</span></div><div className="account-dashboard-bar"><span style={{width:`${summary.events[0]?.amount?event.amount/summary.events[0].amount*100:0}%`}} /></div></a>)}</section>
+          <section className="dashboard-card"><div className="dashboard-card-heading"><h2>행사별 판매액</h2></div>{summary.events.length===0&&<p className="account-dashboard-empty">조회된 값이 없습니다.</p>}{summary.events.map(event=><a key={event.id} className="revenue-event-bar" href={link(event.id)}><div className="account-dashboard-rank-heading"><strong>{event.name}</strong><span>{cash(event.amount)}</span></div><div className="account-dashboard-bar"><span style={{width:`${summary.events[0]?.amount?event.amount/summary.events[0].amount*100:0}%`}} /></div></a>)}</section>
           <section className="dashboard-card"><div className="dashboard-card-heading"><h2>결제수단별 판매액</h2></div><div className="account-dashboard-ratio" role="img" aria-label={`현금 ${cash(summary.cash)}, 계좌이체 ${cash(summary.transfer)}`}><span style={{background:'#2563eb',width:`${summary.total?summary.cash/summary.total*100:0}%`}}/><span style={{background:'#94a3b8',width:`${summary.total?summary.transfer/summary.total*100:0}%`}}/></div><dl className="revenue-payment-totals"><div><dt>현금</dt><dd>{cash(summary.cash)}</dd></div><div><dt>계좌이체</dt><dd>{cash(summary.transfer)}</dd></div></dl><p className="dashboard-caption">운영비·수수료 차감 합계 · 전체 기간 {cash(summary.fees)}</p></section>
         </aside>
       </div>
-      <section className="dashboard-card revenue-event-list"><div className="dashboard-card-heading"><h2>행사별 수익 목록</h2></div>{summary.events.map(event=><a key={event.id} href={link(event.id)} className="revenue-event-list-row"><strong>{event.name}</strong><span>{event.start?`${event.start} ~ ${event.end}`:'—'}</span><span>{cash(event.amount)} · {won(event.count)}건</span><Status row={event}/></a>)}</section>
+      <section className="dashboard-card revenue-event-list"><div className="dashboard-card-heading"><h2>행사별 수익 목록</h2></div>{summary.events.length===0&&<p className="account-dashboard-empty">조회된 값이 없습니다.</p>}{summary.events.map(event=><a key={event.id} href={link(event.id)} className="revenue-event-list-row"><strong>{event.name}</strong><span>{event.start?`${event.start} ~ ${event.end}`:'—'}</span><span>{cash(event.amount)} · {won(event.count)}건</span><Status row={event}/></a>)}</section>
     </>}
   </div></main>;
 }
