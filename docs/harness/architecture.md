@@ -89,9 +89,9 @@ POST deleteAccount는 로그인 계정 ID와 현재 패스워드를 재확인하
 
 계정 전체 데이터 이전의 권장 범위와 기존 행사 백업의 차이는 [데이터 이전 검토](../data-portability.md)를 따른다. 전체 이전 구현은 이번 범위에 포함하지 않았다. 상품 등록 버그 조사도 사용자가 별도 확인하기로 하여 제외했다.
 
-## WithBooth 브랜드와 최종 로고 (2026-10-21)
+## 위드부스 브랜드와 최종 로고 (2026-10-21)
 
-표시 이름을 WithBooth(위드부스)로 통일한다. 공통/인증 헤더는 /brand/withbooth-final-logo.png의 파란 원 안 흰 W·파란 ithBooth를 표시한다. /favicon.svg와 Android 런처/스플래시는 파란 배경 흰 Wb다. 웹 메타데이터·Android API origin은 https://withbooth.vercel.app으로 변경하고 기존 공유 설명은 보존한다. SW v120으로 새 로고를 선캐시한다.
+표시 이름을 위드부스로 통일한다. 공통/인증 헤더는 /brand/withbooth-final-logo.png의 파란 원 안 흰 W·파란 ithBooth를 표시한다. /favicon.svg와 Android 런처/스플래시는 파란 배경 흰 Wb다. 웹 메타데이터·Android API origin은 https://withbooth.vercel.app으로 변경하고 기존 공유 설명은 보존한다. SW v120으로 새 로고를 선캐시한다.
 
 Android 앱 ID com.mybooth.pos, IndexedDB 이름, 인증 저장 키, 백업 format my-booth-project는 데이터 호환성을 위해 보존한다. DB/Blob 이전이나 서버 판매/동기화 계약 변경은 없다. 별도 pos.html도 표시 이름만 변경한다.
 
@@ -991,7 +991,7 @@ duplicateProject는 상품/가격/세트와 제작자 참여 구성을 가져오
 
 ## 공개 홈 검색 노출
 
-대표 검색 주소는 https://withbooth.vercel.app/ 이다. index.html에 굿즈 부스·행사 판매/재고 관리 제목과 설명, canonical, index/follow, Open Graph/Twitter 로고 이미지 및 WebSite JSON-LD(WithBooth/위드부스)를 제공한다. 초기 root에는 기존 AuthPage의 공개 소개를 정적으로 제공하며 React 마운트 때 정상 화면으로 교체한다. 소개 문구 변경 시 양쪽의 공개 기능 설명을 함께 맞춘다. 로그인 후 계정/행사 데이터는 초기 HTML에 포함하지 않는다.
+대표 검색 주소는 https://withbooth.vercel.app/ 이다. index.html에 굿즈 부스·행사 판매/재고 관리 제목과 설명, canonical, index/follow, Open Graph/Twitter 로고 이미지 및 WebSite JSON-LD(위드부스)를 제공한다. 초기 root에는 기존 AuthPage의 공개 소개를 정적으로 제공하며 React 마운트 때 정상 화면으로 교체한다. 소개 문구 변경 시 양쪽의 공개 기능 설명을 함께 맞춘다. 로그인 후 계정/행사 데이터는 초기 HTML에 포함하지 않는다.
 
 public/robots.txt는 홈 및 렌더링 자산 크롤링을 허용하고 /api/, /mobile-updates/, 별도 구형 /pos.html 크롤링을 제외한다. robots 규칙은 접근제어나 검색 결과 삭제 보장이 아니며 기존 서버 인증이 데이터 접근을 통제한다. public/sitemap.xml에는 공개 canonical 홈 한 개만 기재한다. hash 기반 내부 화면은 독립 공개 검색 페이지로 등록하지 않는다. Vercel filesystem 라우트가 SPA 폴백보다 먼저 정적 파일을 제공한다. 도메인 변경 시 canonical·구조화 데이터·공유 메타·robots의 Sitemap 주소·사이트맵 loc를 함께 변경한다.
 

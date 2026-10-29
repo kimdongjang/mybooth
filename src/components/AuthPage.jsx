@@ -41,7 +41,7 @@ function AuthForm({ mode, onAuthenticate }) {
   };
   return <form onSubmit={submit} className="auth-card">
     <div className="auth-card-heading">
-      <a href="#/login" className="brand-title" aria-label="WithBooth 로그인"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>
+      <a href="#/login" className="brand-title" aria-label="위드부스 로그인"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="위드부스" width="1930" height="815" /></a>
       <h1 className="sr-only">{signup ? '회원가입' : '로그인'}</h1>
       <p className="auth-card-description">{signup ? '새로운 부스의 시작을 함께해요.' : '행사별 상품과 판매 내역을 한곳에서 관리하세요.'}</p>
     </div>
@@ -67,7 +67,7 @@ function AuthForm({ mode, onAuthenticate }) {
 
 export default function AuthPage({ onAuthenticate, mode }) {
   // Remounting clears credentials, errors and password visibility on every switch.
-  return <div className="auth-shell min-h-full flex flex-col bg-paper text-ink"><header className="auth-header border-b border-line bg-white"><a href="#/login" className="display-font brand-title font-bold"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a></header><main className="auth-main">
+  return <div className="auth-shell min-h-full flex flex-col bg-paper text-ink"><header className="auth-header border-b border-line bg-white"><a href="#/login" className="display-font brand-title font-bold"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="위드부스" width="1930" height="815" /></a></header><main className="auth-main">
     <section className="auth-intro" aria-labelledby="auth-intro-title">
       <span className="auth-eyebrow">여러 제작자가 함께하는 굿즈 부스</span>
       <h2 id="auth-intro-title">함께 만드는 부스,<br /><span>판매 관리는 가볍게.</span></h2>
@@ -75,7 +75,7 @@ export default function AuthPage({ onAuthenticate, mode }) {
       <div className="auth-benefits">
         <div><span className="auth-benefit-icon"><Icon name="log" /></span><div><h3>같이 팔고, 제작자별로 확인하세요.</h3><p>함께 운영하는 부스도 제작자별 판매금액을 한눈에.</p></div></div>
         <div><span className="auth-benefit-icon"><Icon name="settings" /></span><div><h3>첫 행사도 차근차근.</h3><p>이미지로 상품을 구분하고, 세트 판매와 남은 재고까지.</p></div></div>
-        <div><span className="auth-benefit-icon"><Icon name="project" /></span><div><h3>다음 행사에도, WithBooth.</h3><p>내 상품은 여러 행사에 가져오고 판매 기록은 행사별로 관리하세요.</p></div></div>
+        <div><span className="auth-benefit-icon"><Icon name="project" /></span><div><h3>다음 행사에도, 위드부스.</h3><p>내 상품은 여러 행사에 가져오고 판매 기록은 행사별로 관리하세요.</p></div></div>
       </div>
     </section>
     <AuthForm key={mode} mode={mode} onAuthenticate={onAuthenticate} />

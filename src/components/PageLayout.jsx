@@ -71,7 +71,7 @@ export function AppHeader({ profileImage, page, navigate, project, projects = []
   const eventMenuCurrent = key => !onPersonalPage && (page === key || key === 'project' && page.startsWith('project') || key === 'settings' && ['productNew','bundleNew'].includes(page));
   const accountMenu = [['projects','행사 목록'],['inventory','내 재고관리'],['dashboard','대시보드'],['account','마이페이지']];
   return <><header ref={root} className="app-header sales-app-header border-b border-line bg-white text-ink">
-    <div className="header-brand"><a href={`#${pagePaths[destination]}`} className="display-font brand-title font-bold" onClick={follow(destination)} aria-label="WithBooth 판매"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
+    <div className="header-brand"><a href={`#${pagePaths[destination]}`} className="display-font brand-title font-bold" onClick={follow(destination)} aria-label="위드부스 판매"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="위드부스" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
     <div className="event-switcher">
       <button ref={eventToggle} type="button" className="event-switcher-trigger" aria-expanded={open === 'events'} aria-controls="header-event-list" onClick={() => setOpen(open === 'events' ? null : 'events')}><Icon name="project"/><span className="event-context-name" title={project?.name}>{project?.name || '행사 선택'}</span><span aria-hidden="true">▾</span></button>
       {open === 'events' && <section id="header-event-list" className="header-popover event-switcher-panel" aria-label="행사 변경">
