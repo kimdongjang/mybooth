@@ -2095,7 +2095,7 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
  .header-menu-backdrop{display:block;position:fixed;inset:64px 0 0;z-index:19;background:rgba(15,23,42,.32)}
 }
 
-/* Event settlement: keep actions with their section and scroll only the tables. */
+
 .event-settlement-panel .account-card{min-width:0;margin:0}
 .event-cost-heading{gap:12px;flex-wrap:wrap}
 .event-cost-heading>button{margin:0}
@@ -2136,8 +2136,6 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
 .event-settlement-report-table td:first-child{white-space:normal;overflow-wrap:anywhere}
 .event-settlement-report-table :is(th,td):nth-child(5){text-align:center;white-space:nowrap}
 .event-settlement-report-table[data-closed="false"] :is(th,td):last-child{text-align:center}
-.home-own-settlements{min-width:0}
-.home-own-settlements .management-table{min-width:520px}
 
 .event-settlement-report-table[data-closed="true"] :is(th,td):nth-last-child(-n+2){text-align:center;white-space:nowrap}
 .event-settlement-report-table[data-closed="true"] .event-settlement-row-actions{justify-content:center}
