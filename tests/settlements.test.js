@@ -26,13 +26,13 @@ async function fixture({beforeQuery=()=>{}}={}) {
   const pool={connect:async()=>{connects++;const prior=tail;let release;tail=new Promise(resolve=>release=resolve);await prior;return {sql(parts,...values){return this.query(parts.reduce((s,p,i)=>s+(i?`$${i}`:'')+p,''),values);},async query(query,values){statements.push(query);await beforeQuery(query,values);return db.query(query,values);},release(){releases++;release();}};}};
   const context=vm.createContext({});
   const module=new vm.SourceTextModule(await readFile(new URL('../api/settlements.js',import.meta.url),'utf8'),{context});
-  await module.link(name=>{const exports=name==='@vercel/postgres'?{sql:pool}:name.endsWith('auth.js')?{assertPostgresConnectionString(){},requireAuth(req,res){if(req.adminId)return{id:req.adminId};res.status(401).json({error:'Unauthorized'});return null;}}:name.endsWith('storageContract.js')?storageContract:name.endsWith('boothFoundation.js')?boothFoundation:name.endsWith('eventSettlement.js')?eventSettlement:{settlementMoneyEntries};return new vm.SyntheticModule(Object.keys(exports),function(){for(const[key,value]of Object.entries(exports))this.setExport(key,value);},{context});});
+  await module.link(name=>{const exports=name==='@vercel/postgres'?{sql:pool}:name.endsWith('auth.js')?{assertPostgresConnectionString(){},validateAdminPassword:async(_id,password)=>password==='test-password',requireAuth(req,res){if(req.adminId)return{id:req.adminId};res.status(401).json({error:'Unauthorized'});return null;}}:name.endsWith('storageContract.js')?storageContract:name.endsWith('boothFoundation.js')?boothFoundation:name.endsWith('eventSettlement.js')?eventSettlement:{settlementMoneyEntries};return new vm.SyntheticModule(Object.keys(exports),function(){for(const[key,value]of Object.entries(exports))this.setExport(key,value);},{context});});
   await module.evaluate();
   const invoke=async(body=null,adminId='a',query={})=>{const result={};await module.namespace.default({adminId,method:body?'POST':'GET',body,query},{status(status){result.status=status;return this;},json(value){result.body=JSON.parse(JSON.stringify(value));return this;}});return result;};
   const close=async()=>{
    const result=await invoke(null,'a',{projectId:'event'});assert.equal(result.status,200,JSON.stringify(result.body));
    const event=result.body.eventSettlements.find(row=>row.projectId==='event') || {version:0,costs:[]};
-   return invoke({action:'closeEventSettlement',projectId:'event',version:event.version,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(eventSettlementPreview(result.body.state,event.costs,result.body.settlements))});
+   return invoke({action:'closeEventSettlement',password:'test-password',projectId:'event',version:event.version,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(eventSettlementPreview(result.body.state,event.costs,result.body.settlements))});
   };
   return{db,invoke,close,statements,connects:()=>connects,releases:()=>releases};
 }
@@ -119,7 +119,7 @@ test('event costs split by ratio/equal, close freezes figures, payment gates reo
   assert.equal(expected.fees,7500);assert.equal(expected.net,2500);
   assert.equal(expected.rows.find(r=>r.creator==='작가').net,6000);
   assert.equal(expected.rows.find(r=>r.creator==='최신 이름').net,-3500);
-  const close={action:'closeEventSettlement',projectId:'event',version:1,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(expected)};
+  const close={action:'closeEventSettlement',password:'test-password',projectId:'event',version:1,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(expected)};
   const closed=await f.invoke(close);assert.equal(closed.status,200,JSON.stringify(closed.body));assert.equal((await f.invoke(close)).status,200);
   assert.equal(closed.body.eventSettlement.snapshot.fees,7500);
   assert.equal((await f.invoke({...save,version:2,requestId:crypto.randomUUID()})).status,409);
@@ -137,10 +137,26 @@ test('event costs split by ratio/equal, close freezes figures, payment gates reo
  }finally{await f.db.close();}
 });
 
+test('event closing requires reauthentication and never persists the password in receipts',async()=>{
+ const f=await fixture();try{
+  const state=(await f.invoke(null,'a',{projectId:'event'})).body;
+  const close={action:'closeEventSettlement',projectId:'event',version:0,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(eventSettlementPreview(state.state,[],[]))};
+  assert.equal((await f.invoke(close)).status,403);assert.equal((await f.invoke({...close,password:'wrong'})).status,403);
+  assert.equal((await f.db.query('SELECT * FROM pos_event_settlements')).rows.length,0);
+  assert.equal((await f.invoke({...close,password:'test-password'},'b')).status,404);
+  const protectedClose={...close,password:'test-password'};const result=await f.invoke(protectedClose);assert.equal(result.status,200,JSON.stringify(result.body));
+  assert.equal((await f.invoke(protectedClose)).status,200);
+  const receipts=(await f.db.query('SELECT fingerprint FROM pos_settlement_commands')).rows;
+  assert.equal(receipts.length,1);assert.equal(receipts[0].fingerprint.includes('test-password'),false);assert.equal(Object.hasOwn(JSON.parse(receipts[0].fingerprint),'password'),false);
+  const reopened=await f.invoke({action:'reopenEventSettlement',projectId:'event',version:1,requestId:crypto.randomUUID()});assert.equal(reopened.status,200,JSON.stringify(reopened.body));
+  const costs=await f.invoke({action:'saveEventCosts',projectId:'event',version:2,requestId:crypto.randomUUID(),costs:[]});assert.equal(costs.status,200,JSON.stringify(costs.body));
+ }finally{await f.db.close();}
+});
+
 test('close detects changed sales, rejects stale versions and rolls back snapshot and revision when receipt fails',async()=>{
  const f=await fixture();try{
   const before=(await f.invoke(null,'a',{projectId:'event'})).body;
-  const close={action:'closeEventSettlement',projectId:'event',version:0,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(eventSettlementPreview(before.state,[],[]))};
+  const close={action:'closeEventSettlement',password:'test-password',projectId:'event',version:0,requestId:crypto.randomUUID(),expectedPreview:JSON.stringify(eventSettlementPreview(before.state,[],[]))};
   await f.db.query("UPDATE pos_sales SET lines='[{\"type\":\"product\",\"id\":\"p\",\"creatorName\":\"작가\",\"qty\":1,\"unitPrice\":500}]'");
   assert.equal((await f.invoke(close)).status,409);
   assert.equal((await f.invoke()).body.eventSettlements.length,0);
@@ -202,5 +218,40 @@ test('settlement serialization retry is bounded and never retries permission or 
   armed=false;let count=f.connects();
   assert.equal((await f.invoke(command('saveDeductions',0,{projectId:'foreign',deductions:[]}))).status,404);assert.equal(f.connects()-count,1);
   count=f.connects();assert.equal((await f.invoke(command('unknown',0))).status,400);assert.equal(f.connects()-count,1);
+ }finally{await f.db.close();}
+});
+
+
+test('settlement lifecycle completion is scoped, idempotent, reversible and gates finish including zero net',async()=>{
+ const f=await fixture();try{
+  assert.equal((await f.invoke(command('completeRecipientSettlement',0,{paidAt:'2026-10-29'}))).status,409);
+  assert.equal((await f.close()).status,200);
+  const finish=command('finishEventSettlement',1);
+  assert.equal((await f.invoke(finish)).status,409);
+  assert.equal((await f.invoke(command('completeRecipientSettlement',0,{paidAt:'2026-10-29'}),'b')).status,404);
+  assert.equal((await f.invoke(command('completeRecipientSettlement',0,{paidAt:'2026-10-29'}))).status,409);
+  const partial=command('addPayment',0,{amount:4000,paidAt:'2026-10-28',memo:''});
+  assert.equal((await f.invoke(partial)).status,200);
+  assert.equal((await f.invoke(command('completeRecipientSettlement',1,{paidAt:'2026-10-29'}))).status,409);
+  assert.equal((await f.invoke(command('addPayment',1,{amount:6000,paidAt:'2026-10-29',memo:''}))).status,200);
+  assert.equal((await f.invoke(finish)).status,409);
+  const pay=command('completeRecipientSettlement',2,{paidAt:'2026-10-29'});
+  let result=await f.invoke(pay);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.settlement.payments[2].amount,0);assert.equal(result.body.settlement.payments.reduce((sum,p)=>sum+p.amount,0),10000);
+  assert.equal((await f.invoke(pay)).body.settlement.payments.length,3);
+  assert.equal((await f.invoke({...pay,paidAt:'2026-10-30'})).status,409);
+  assert.equal((await f.invoke(finish)).status,409);
+  const zero=command('completeRecipientSettlement',0,{creator:'최신 이름',paidAt:'2026-10-29'});
+  result=await f.invoke(zero);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.settlement.payments[0].amount,0);
+  assert.equal(result.body.settlement.payments[0].settlementComplete,true);
+  result=await f.invoke(finish);assert.equal(result.status,200,JSON.stringify(result.body));assert.ok(result.body.eventSettlement.finishedAt);
+  assert.equal((await f.invoke(finish)).status,200);
+  const reverse=command('reversePayment',1,{creator:'최신 이름',paymentId:zero.requestId,paidAt:'2026-10-29'});
+  assert.equal((await f.invoke(reverse)).status,409);
+  assert.equal((await f.invoke(command('reopenEventSettlement',2))).status,409);
+  result=await f.invoke(command('resumeEventSettlement',2));assert.equal(result.status,200);assert.equal(result.body.eventSettlement.finishedAt,null);
+  result=await f.invoke(reverse);assert.equal(result.status,200);assert.equal(result.body.settlement.payments.reduce((sum,p)=>sum+p.amount,0),0);
+  assert.equal((await f.invoke(command('finishEventSettlement',3))).status,409);
+  assert.equal((await f.invoke(command('completeRecipientSettlement',2,{creator:'최신 이름',paidAt:'2026-10-29'}))).status,200);
+  assert.equal((await f.invoke(command('finishEventSettlement',3))).status,200);
  }finally{await f.db.close();}
 });

@@ -40,3 +40,21 @@ export function eventSettlementPreview({products=[],bundles=[],sales=[]}, costs=
   }
   return {gross,costs:items,rows,fees:rows.reduce((sum,row)=>sum+row.fees,0),net:rows.reduce((sum,row)=>sum+row.net,0),transactions:sales.length};
 }
+
+
+export function settlementFinishedAt(event) {
+  if(!event?.closedAt && !event?.closed_at)return null;
+  const last=(event.history||[]).at(-1);
+  return last?.action==='finish'?last.at:null;
+}
+export function recipientSettled(row, payments=[]) {
+  const paid=payments.reduce((sum,p)=>sum+p.amount,0);
+  if(row.net>0 && paid<row.net)return false;
+  return payments.some(p=>p.settlementComplete && !payments.some(item=>item.reversalOf===p.id));
+}
+export function settlementPhaseLabel(event) {
+  return event?.finishedAt?'정산 종료':event?.closedAt?'정산 진행 중':'정산 시작 전';
+}
+export function recipientSettlementLabel(event,row) {
+  return !event?.closedAt?'정산 시작 전':(row.completed??(row.net>0&&row.paid>=row.net))?'정산 완료':row.net>0&&row.paid>=row.net?'지급 완료':row.paid>0?'일부 지급':'정산 대기';
+}

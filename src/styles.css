@@ -2068,3 +2068,74 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
  #root .sales-app-header .primary-navigation.is-open{position:absolute;top:100%;left:0;right:0;z-index:30;max-height:calc(100dvh - 64px);overflow-y:auto;background:#fff;border-top:1px solid #edf1f5;border-bottom:1px solid #dce3ed;box-shadow:0 12px 24px rgba(15,23,42,.12)}
  .header-menu-backdrop{display:block;position:fixed;inset:64px 0 0;z-index:19;background:rgba(15,23,42,.32)}
 }
+
+
+.event-settlement-panel .account-card{min-width:0;margin:0}
+.event-cost-heading{gap:12px;flex-wrap:wrap}
+.event-cost-heading>button{margin:0}
+.event-cost-row-actions{display:flex;align-items:center;gap:8px}
+.event-cost-row-actions>button{margin:0;white-space:nowrap}
+.event-cost-actions{justify-content:flex-end}
+.event-settlement-panel .management-table :is(th,td){vertical-align:top}
+.event-settlement-report-table :is(th,td):not(:first-child):not(:last-child){text-align:right}
+.event-settlement-report-table td{font-variant-numeric:tabular-nums}
+.event-settlement-panel :is(.event-cost-table-wrap,.event-settlement-report-scroll):focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+.event-settlement-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0;padding-top:16px;border-top:1px solid #e2e8f0}
+.event-settlement-totals>div{min-width:0}
+.event-settlement-totals dt{color:#64748b}
+.event-settlement-totals dd{margin:4px 0 0;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.event-settlement-panel :is(.event-cost-dialog,.app-confirm-dialog){max-height:calc(100dvh - 32px);overflow-y:auto}
+@media(max-width:767px){
+ .event-settlement-actions{width:100%;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+ .event-settlement-actions>button{width:100%;margin:0}
+ .event-cost-actions>button{flex:1;margin:0}
+ .event-cost-heading>button{flex-shrink:0}
+ .event-settlement-panel :is(.event-cost-row-actions,.event-settlement-row-actions)>button{min-height:40px}
+ .event-cost-dialog .management-fields{grid-template-columns:minmax(0,1fr)}
+}
+
+.event-settlement-panel>.event-cost-card,.event-settlement-panel>.event-settlement-report{border:1px solid #e2e8f0;border-radius:12px;background:#fff;overflow:hidden}
+.event-settlement-panel .account-card-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.event-settlement-report-table[data-closed="false"] :is(th,td):last-child{text-align:right}
+@media(max-width:767px){.event-settlement-panel .account-card-heading{padding:12px 16px}}
+
+/* Settlement lifecycle and compact creator reports. */
+.event-cost-fields{display:grid;gap:12px;min-width:0;margin:0;padding:0;border:0}
+#root .event-settlement-report-table{width:100%;min-width:520px;table-layout:auto}
+#root .event-settlement-report-table[data-closed="true"]{min-width:800px}
+.event-settlement-report-table :is(th,td){padding:10px 12px}
+.event-settlement-report-table th:first-child{width:18%}
+.event-settlement-report-table th:last-child{width:120px}
+.event-settlement-report-table[data-closed="true"] th:last-child{width:104px}
+.event-settlement-report-table td:first-child{white-space:normal;overflow-wrap:anywhere}
+.event-settlement-report-table :is(th,td):nth-child(5){text-align:center;white-space:nowrap}
+.event-settlement-report-table[data-closed="false"] :is(th,td):last-child{text-align:center}
+
+.event-settlement-report-table[data-closed="true"] :is(th,td):nth-last-child(-n+2){text-align:center;white-space:nowrap}
+.event-settlement-report-table[data-closed="true"] .event-settlement-row-actions{justify-content:center}
+
+#root .event-settlement-report-table .event-settlement-action-cell{width:104px;min-width:104px;max-width:104px;padding:10px 8px;text-align:center;white-space:nowrap}
+.event-settlement-action-cell .event-settlement-row-actions>button{width:88px;padding:8px 10px}
+.event-payment-overlay{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:16px;background:#0007}
+.event-payment-overlay .event-payment-modal{position:relative;inset:auto;margin:0;width:min(440px,100%);max-height:calc(100dvh - 32px);overflow:auto}
+
+/* Payment modal lives outside #root; keep its typography and form layout explicit. */
+.event-payment-overlay .event-payment-modal{padding:24px;border:1px solid #e2e8f0;border-radius:16px;color:#17233b;font-size:14px;line-height:1.5}
+.event-payment-modal .account-form{max-width:none;gap:20px}
+.event-payment-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.event-payment-modal .event-payment-heading h2{margin:0;font-size:18px;font-weight:700;line-height:1.5}
+.event-payment-heading>span{min-width:0;color:#64748b;overflow-wrap:anywhere;text-align:right}
+.event-payment-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0;padding:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px}
+.event-payment-summary>div{min-width:0}
+.event-payment-summary dt{color:#64748b}
+.event-payment-summary dd{margin:6px 0 0;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.event-payment-summary dd>span{margin-left:4px;font-size:14px;font-weight:400}
+.event-payment-summary>div:last-child dd{color:#2563eb}
+.event-payment-modal .account-form .event-cost-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.event-payment-modal .account-form label{min-width:0;gap:8px;color:#475569;font-weight:500}
+.event-payment-modal .account-form input{box-sizing:border-box;width:100%;min-width:0;min-height:44px;margin:0;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;background:white;color:#17233b;font:inherit;font-variant-numeric:tabular-nums}
+.event-payment-modal .account-form input:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+.event-payment-modal .app-confirm-actions{margin:4px 0 0;padding-top:16px;border-top:1px solid #e2e8f0;gap:8px}
+.event-payment-modal .app-confirm-actions>button{min-width:88px;min-height:42px;margin:0;padding:10px 16px;font:inherit;font-weight:600;border-radius:8px}
+.event-payment-modal .inventory-error{margin:0}
+@media(max-width:480px){.event-payment-overlay .event-payment-modal{padding:20px}.event-payment-summary{gap:12px;padding:14px}.event-payment-modal .app-confirm-actions>button{flex:1}}
