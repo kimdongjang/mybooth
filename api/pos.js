@@ -990,7 +990,7 @@ async function handler(req, res) {
       await initDb();
       const project = (await sql`SELECT id, archived_at FROM pos_projects WHERE id = ${projectId} AND admin_id = ${admin.id} FOR UPDATE`).rows[0];
       if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.' });
-      if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
+      if (action === 'archiveProject' && !await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
       if (action === 'backupProject') {
         const backup = await snapshot(projectId);
         if (encodeURIComponent(JSON.stringify(backup)).replace(/%[0-9A-F]{2}/g, 'x').length > 3 * 1024 * 1024) return res.status(413).json({ error: '프로젝트가 백업 파일 한도(3MiB)를 초과했습니다. 별도 데이터 내보내기가 필요합니다.' });
@@ -1030,7 +1030,6 @@ async function handler(req, res) {
       if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없거나 접근 권한이 없습니다.' });
       if (action === 'renameProject'||action==='updateProjectInfo') {
         if(project.deleted_at)return res.status(404).json({error:'삭제된 행사입니다.'});
-        if (!await checkPassword(admin.id, payload.password, sql)) return res.status(403).json({ error: '패스워드가 올바르지 않습니다.' });
         if (project.archived_at) return res.status(409).json({ error: '보관된 행사입니다. 보관을 해제한 뒤 변경해주세요.' });
         const name = typeof payload.name === 'string' ? payload.name.trim() : '';
         if (!name || name.length > 100) return res.status(400).json({ error: '프로젝트 이름은 1~100자로 입력해주세요.' });

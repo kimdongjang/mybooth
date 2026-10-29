@@ -115,3 +115,11 @@ test('negative estimates are explained and cost-only estimates are hidden',()=>{
  assert.equal(settlementDisplay({net:null}).kind,'none');
  assert.equal(settlementDisplay({net:300,closed:false,metrics:{gross:1000}}).provisional,true);
 });
+
+
+test('past personal settlement does not treat zero payable as complete and shows explicit finish',()=>{
+ const cards=dashboardEvents({events:[{projectId:'zero',closedAt:'2026-09-02',rows:[{net:0,paid:0,pending:0,completed:false}],sales:[]}]},[{id:'zero',name:'행사',startsOn:'2026-09-01',endsOn:'2026-09-02',permissions:{canReadOwnHistory:true}}],today);
+ assert.equal(dashboardPastEvents(cards).rows[0].settlement,'closed');
+ cards[0].history.rows[0].completed=true;assert.equal(dashboardPastEvents(cards).rows[0].settlement,'paid');
+ cards[0].history.finishedAt='2026-10-29';assert.equal(dashboardPastEvents(cards).rows[0].settlement,'finished');
+});

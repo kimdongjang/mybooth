@@ -617,7 +617,7 @@ export async function enforceBoothContract(sql,booth,req,{settlement=false}={}) 
   if(!policy.legacyWritesClosed||req.method!=='POST')return policy;
   if(req.body?.boothId!==booth.id)fail('구형 부스 쓰기 계약이 종료되었습니다. 부스 ID를 포함한 최신 요청이 필요합니다.',410);
   const action=req.body?.action;
-  if(settlement&&['saveDeductions','addPayment','reversePayment'].includes(action)) {
+  if(settlement&&['saveDeductions','addPayment','reversePayment','completeRecipientSettlement'].includes(action)) {
     if(!req.body.recipientId||Object.hasOwn(req.body,'creator'))fail('이름 기반 정산 쓰기가 종료되었습니다. 수취인 ID를 사용해주세요.',410);
   }
   if(['finalizeSale','voidSale'].includes(action)&&req.body?.protocolVersion!==2)fail('구형 주문 쓰기가 종료되었습니다. 미전송 주문 원본을 보존하고 복구 절차를 이용해주세요.',410);

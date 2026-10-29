@@ -2,7 +2,7 @@ import {initStockDelegation} from './stockDelegation.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { initBoothFoundation, retireArtistProfiles, ownerIdOf, authorizeBooth, migratedBooth, migrateLegacyBooth, legacySnapshot, foundationReport } from './boothFoundation.js';
 import { eventState } from './eventSettlement.js';
-import { eventSettlementPreview } from '../../src/utils/eventSettlement.js';
+import { eventSettlementPreview,settlementFinishedAt,recipientSettled } from '../../src/utils/eventSettlement.js';
 import { settlementMoneyEntries } from '../../src/utils/settlementEntries.js';
 
 const fail=(message,status=409)=>{throw Object.assign(new Error(message),{status});};
@@ -234,10 +234,10 @@ export async function artistHistory(sql,userId) {
       const paid=payments.reduce((sum,p)=>sum+p.amount,0);
       return {recipientId:recipient.id,ownerId:recipient.owner_id,artistName:recipient.display_name,gross:row.gross,
         fees:row.fees,net:row.net,shares:(row.shares || []).map(s=>({label:s.label,amount:s.amount})),
-        paid,pending:Math.max(0,row.net-paid),payments};
+        completed:Boolean(closure?.closed_at)&&recipientSettled(row,record?.payments||[]),paid,pending:Math.max(0,row.net-paid),payments};
     });
     result.push({projectId:event.id,eventName:event.name,boothId:event.booth_id,boothName:event.booth_name,
-      closedAt:closure?.closed_at || null,rows,sales});
+      closedAt:closure?.closed_at || null,finishedAt:settlementFinishedAt(closure),rows,sales});
   }
   return {...home,events:result};
 }

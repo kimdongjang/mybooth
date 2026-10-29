@@ -18,7 +18,7 @@ export default function ProjectsPage({ creating, booths=[], projects, selectedPr
     {id:'active',title:'진행 중인 행사',statuses:['active']},
     {id:'upcoming',title:'예정된 행사',statuses:['upcoming']},
     {id:'unscheduled',title:'일정 미설정',statuses:['unscheduled']},
-    {id:'past',title:'종료 · 정산 마감 · 보관',statuses:['ended','closed','archived']},
+    {id:'past',title:'종료 · 정산 · 보관',statuses:['ended','closed','archived']},
   ].map(group=>({...group,projects:sortedProjects.filter(project=>
     group.statuses.includes(eventSchedule(project).status)
   )})).filter(group=>['upcoming','past'].includes(group.id)||group.projects.length);

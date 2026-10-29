@@ -6,9 +6,10 @@ import { migrateLegacyBooth, migratedBooth, foundationReport, legacySnapshot, ad
 import { initArtistLinking, artistHome, createArtistProfile, createFirstBooth, createBoothArtist, boothArtists, issueArtistInvitation, previewArtistInvitation, acceptArtistInvitation, revokeArtistInvitation, artistHistory } from './lib/artistLinking.js';
 import {saveArtistStockPlan,removeArtistStock,setEventProductCreator,saveEventArtistProduct,registerEventArtistProduct,initArtistStock,artistStockView,artistStockMovements,createArtistStock,setArtistAllocation,adjustArtistStock,saveArtistProduct,importArtistStock,saveEventStockSchedule,joinArtistBooth,recordArtistStockLoss,leaveArtistBooth} from './lib/artistStock.js';
 import {initContractRetirement,retirementReport,changeLegacyContracts} from './lib/contractRetirement.js';
-import {removeEventArtist,createEventCreator,searchEventArtists,addEventArtist,searchEventAccounts,linkEventArtistAccount,initEventAccess,workspaceEvents,eventAccessView,saveEventAccess,authorizeEvent,boothManagementView,saveBoothManagement} from './lib/eventAccess.js';
+import {issueEventInvite,previewEventInvite,acceptEventInvite,unlinkEventArtistAccount,removeEventArtist,createEventCreator,searchEventArtists,addEventArtist,searchEventAccounts,linkEventArtistAccount,initEventAccess,workspaceEvents,eventAccessView,saveEventAccess,authorizeEvent,boothManagementView,saveBoothManagement} from './lib/eventAccess.js';
 
 const artistActions={createArtistProfile,createFirstBooth,createBoothArtist,issueArtistInvitation,previewArtistInvitation,acceptArtistInvitation,revokeArtistInvitation};
+const eventInviteActions={issueEventInvite,previewEventInvite,acceptEventInvite};
 const stockActions={saveArtistStockPlan,removeArtistStock,setEventProductCreator,saveEventArtistProduct,registerEventArtistProduct,createArtistStock,setArtistAllocation,adjustArtistStock,saveArtistProduct,importArtistStock,saveEventStockSchedule,joinArtistBooth,recordArtistStockLoss,leaveArtistBooth};
 
 export function createHandler(pool) {
@@ -23,8 +24,10 @@ export function createHandler(pool) {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
       if(!(await sql`SELECT id FROM pos_admins WHERE id=${actor.id} AND deleted_at IS NULL`).rows.length) throw Object.assign(new Error('인증이 필요합니다.'),{status:401});
       if(req.method==='GET'&&req.query?.workspace==='stockPreference'||req.method==='POST'&&['saveStockPreference','confirmStockParticipation'].includes(req.body?.action)){await initArtistStock(sql);const result=req.method==='GET'?await stockPreferenceView(sql,actor.id):await stockPreferenceCommand(sql,actor.id,req.body.action,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
-      if(req.method==='GET'&&['home','access','stockParticipants','booth','searchAccounts','searchArtists'].includes(req.query?.workspace)||req.method==='POST'&&['removeEventArtist','saveEventAccess','saveBoothManagement','linkEventArtistAccount','addEventArtist','createEventCreator'].includes(req.body?.action)) {
+      if(req.method==='GET'&&['home','access','stockParticipants','booth','searchAccounts','searchArtists'].includes(req.query?.workspace)||req.method==='POST'&&['unlinkEventArtistAccount','removeEventArtist','saveEventAccess','saveBoothManagement','linkEventArtistAccount','addEventArtist','createEventCreator',...Object.keys(eventInviteActions)].includes(req.body?.action)) {
         await initArtistStock(sql);await initEventAccess(sql);
+        if(Object.hasOwn(eventInviteActions,req.body?.action)){const result=await eventInviteActions[req.body.action](sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
+        if(req.body?.action==='unlinkEventArtistAccount'){const result=await unlinkEventArtistAccount(sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
         if(req.body?.action==='removeEventArtist'){const result=await removeEventArtist(sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
         if(req.body?.action==='createEventCreator'){const result=await createEventCreator(sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
         if(req.query?.workspace==='searchArtists'||req.body?.action==='addEventArtist'){const result=req.method==='GET'?await searchEventArtists(sql,actor.id,req.query):await addEventArtist(sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}

@@ -9,10 +9,11 @@ const sessionKeys = ['pos_admin_token', 'pos_admin_id', 'pos_selected_project_id
 const persistedKey = 'pos_native_session_v1';
 
 // Keep the existing sessionStorage consumers working, but restore app sessions after process death.
+const sessionKey = key => import.meta.env.MODE === 'localdb' ? `pos_local_dev:${key}` : key;
 export const sessionStore = {
-  getItem: key => sessionStorage.getItem(key),
-  setItem(key, value) { sessionStorage.setItem(key, value); persist(); },
-  removeItem(key) { sessionStorage.removeItem(key); persist(); },
+  getItem: key => sessionStorage.getItem(sessionKey(key)),
+  setItem(key, value) { sessionStorage.setItem(sessionKey(key), value); persist(); },
+  removeItem(key) { sessionStorage.removeItem(sessionKey(key)); persist(); },
 };
 function persist() {
   if (isNative) localStorage.setItem(persistedKey, JSON.stringify(Object.fromEntries(

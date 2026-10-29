@@ -2,6 +2,25 @@
 
 검증은 변경 동작과 직접 영향을 받는 보존 계약을 확인하는 최소 범위만 수행한다. 아래 선택 기준이 과거 실행 기록의 테스트 수·명령보다 우선한다. 테스트 통과는 실제 PostgreSQL 경쟁·브라우저·실기기·배포 완료를 뜻하지 않는다.
 
+## 행사 관리 추가 비밀번호 범위 (2026-10-29)
+
+- `tests/workspace-ui.test.js`의 `event information saves directly|event management asks` 2개 통과. 정보 수정의 직접 저장/같은 요청 재시도와 비밀번호 없는 백업·판매 재개, 비밀번호가 필요한 삭제·판매 종료를 확인했다.
+- `tests/event-settlement-ui.test.js`의 마감/비용 관련 5개 통과. 마감 전 비밀번호 입력·빈 값 차단·취소·미동기화 거래 차단, 마감 후 지급에 비밀번호 미전송, 기존 비용 입력/저장 보존을 확인했다. 추가 대화상자로 기존 비용 테스트의 대상이 모호해진 부분은 접근성 제목으로 선택하도록 수정한 뒤 해당 실패 항목만 재검증했다.
+- `tests/booth-foundation.test.js`의 `event information saves without|event management password|event deletion returns` 3개 통과. 비밀번호 없는 정보 수정·백업·이름 변경·구성 복제·판매 재개, 권한 제한과 삭제/판매 종료의 비밀번호 검증, 기존 삭제 재고/이력 보존을 확인했다. 새 정책 테스트에 기존 재고 위임 스키마 준비를 추가한 뒤 해당 실패 항목만 재검증했다.
+- `tests/settlements.test.js`의 `event closing requires|close detects|event costs` 3개 통과. 비밀번호 누락/오류 거절·영수증의 비밀번호 미저장·동일 요청 재시도, 비밀번호 없는 비용 저장/마감 해제와 기존 마감 스냅샷·경쟁 버전·롤백 보존을 확인했다.
+- `npm run build` 통과(기존 500kB 청크 경고). 변경 경로 diff 공백 검사 통과. 전체 테스트·브라우저/실기기·운영 DB·배포는 미실행이다.
+
+## 행사 제작자 연결 해제·계정 정보·표 스크롤 (2026-10-29)
+
+- `tests/booth-foundation.test.js`에서 `event manager searches and links|unlinked event roles|operator account unlink`를 선택하여 3개 통과. 운영자 한정 avatar 조회와 이메일 비노출, 기존 연결/역할 승계, 두 행사에 걸친 연결 해제·소유 권한 회수·다른 제작자 권한 유지·재연결·개인 제작자 해제 금지, 재고·상품·판매·정산/수취인 보존, 감사 실패 시 전체 롤백·동일 영수증 재시도·오래된 계정/버전 거절을 확인했다.
+- `tests/workspace-ui.test.js`에서 `event linked accounts|event account unlink|unlinked role changes|event roles save`를 선택하여 5개 통과. 이미지 옆 계정 링크/정보 팝업, 전체 행사 영향 확인, 응답 유실 후 같은 요청 ID 재사용, 미동기화 주문 사전 차단과 기존 권한 저장을 확인했다. 초기 API 회귀에서 개인 제작자의 can_unlink가 null인 것을 확인하여 false를 반환하도록 보완한 뒤 통과했다.
+- `npm run build` 통과. 기존 500kB 초과 청크 경고가 남는다. 변경 경로 diff 공백 검사 통과. 표 표현 변경은 CSS/마크업과 우선순위를 확인했으며 디자인 전용 자동화·스크린샷 검증은 생략했다.
+- 실제 브라우저/Android의 스크롤 조작·팝업 포커스·서로 다른 기기 큐, 실제 PostgreSQL 다중 연결 경쟁·운영 DB·배포는 미실행이다. 사용자가 요청한 전체 행사 연결 해제 범위이며 제작자 삭제/상품의 제작자 초기화와 구분한다.
+
+## 위드부스 한글 표시 이름 (2026-10-29)
+
+앱/Android 런처 이름, 웹 제목·공유 메타데이터·접근성 이름·안내 문구, 계정 백업 다운로드 파일명과 문서의 브랜드 표기를 한글로 변경했다. 기존 로고 이미지와 서버 주소·npm 패키지명·백업 형식 식별자는 유지하며 SW 캐시 버전만 v136으로 갱신했다. 표시 변경으로 관련 내용·남은 영문 사용처·diff만 확인하고 테스트·빌드·브라우저/실기기 검증은 지침에 따라 생략했다. Android 런처 이름 반영은 새 APK/AAB 설치가 필요하다.
+
 ## Android 시작 시 최신 번들 적용 (2026-10-29)
 
 - `node --experimental-vm-modules --test tests/mobile-runtime.test.js tests/mobile-config.test.js`: 관련 8개 통과. 시작 시 즉시 적용·StrictMode 중복 검사 병합·pending 재사용·현재/실패/비호환 버전 제외, 오프라인/다운로드/적용 실패 시 세션 보존, 8초 초과 다운로드의 다음 실행 예약, 연결 복구 시 판매 화면 비중단과 기존 API/행사 범위·세션 복원을 확인했다.
@@ -1453,12 +1472,33 @@ PR #78 기반의 격리 작업 트리에서 이번 화면·장소/일정 변경�
 - `node --experimental-vm-modules --test --test-name-pattern="sales navigation|revenue and dashboard remain|event switcher|event list retains|dashboard summarizes|dashboard preserves|event destinations|last event restores|App default entry|App event switching|inventory deep links|uncached event reads coalesce|event entry renders the actor|event creation offers empty" tests/workspace-ui.test.js tests/event-navigation.test.js tests/inventory-route.test.js tests/background-sync.test.js`: 선택한 14개 통과. 권한별 메뉴/진입, 선택 취소·수락, 개인 집계와 기간 필터, 계정·환경·부스별 복원, 기본 진입·인증 전 딥링크·뒤로/앞으로·쿼리, 이전 캐시 응답 차단, 생성/구성 가져오기·기존 복원 경로를 확인했다.
 - PR 작업 트리에서 `npm run build` 1회 통과. 기존 500kB 초과 청크 경고가 남는다. diff 공백 검사 통과. 전체 테스트·브라우저 자동화·스크린샷·실기기·운영 DB 검증은 실행하지 않았다. VM/UI 모형과 기존 캐시 회귀 범위이며 실제 로그인 세션·터치 조작 확인을 대신하지 않는다.
 
+
+## 로컬 DB 실행 복구 검증 (2026-10-28)
+
+- `node --test tests/local-db.test.js` 통과. 별도 임시 DB에서 실제 인증 저장·로그인, 트랜잭션 롤백, 풀 요청 직렬화, 닫기/재열기 후 영속 보존을 확인했다. Windows 절대 임시 경로에서 PGlite 초기화가 실패하여 저장소의 상대 임시 경로를 사용하고 테스트 후 제거한다.
+- `npm run dev:local`의 Vite 기동과 `npm run build` 통과(기존 500kB 청크 경고). HTTP 호출은 실행 환경의 소켓 접근 제한으로 확인하지 못했다. 브라우저/실기기·이미지 업로드 전체 흐름·기존 로컬 DB 자료 변경은 수행하지 않았다.
+
 ## 제작자 프로필 테이블 은퇴 검증 (2026-10-28)
 
 - `tests/booth-foundation.test.js` 43건 통과(레거시 스키마 이관 테스트 추가: 연결 정보 복사, 초대·감사 owner_id 매핑, 은퇴 테이블 보존, 재실행 무변경, 연결 CHECK). `tests/workspace-ui.test.js`의 내 재고·제작자·행사 상품 14건 통과. `npm run build` 통과.
 - 로컬 PGlite: 백업 후 적용, 프로필 3건(연결 1) 이관.
 - 운영 DB backup 브랜치(Neon): `scripts/retireArtistProfiles.mjs` 리허설 통과 후 ROLLBACK. 제작자 11·프로필 11(연결 1)·초대 0·감사 1, 나머지 42개 `pos_*` 테이블 지문 불변.
 - 미실행: 검증 브랜치 COMMIT 후 앱 동작, 로그인 브라우저 확인, 전체 `npm test`.
+
+
+## 2026-10-29 정산 마감 화면 구성·기능 개선
+
+- `tests/event-settlement-ui.test.js`에서 `close UI|migrated event payout|cost entry|cost editing|cost draft|payout response loss` 이름 필터로 직접 관련 8개 통과. 비용 추가·수정·취소/저장, 퍼센트 단위 보존, 비밀번호 마감·미동기화 주문 차단, 수취인 ID 지급, 응답 유실 시 동일 명령 재전송과 다른 작업 잠금을 확인했다.
+- `npm run build` 통과. 기존 500kB 청크 경고와 Tailwind 플러그인 소요 시간 경고가 있다. 이후 변경은 영역 테두리·헤더 여백 등 CSS와 문서/테스트 이름만이며 추가 빌드는 생략했다.
+- 제공된 `http://localhost:4173/#/project/settlement`는 브라우저에서 `ERR_CONNECTION_REFUSED`로 열리지 않았다. 모바일·데스크톱 실제 렌더링/터치 검증은 미실행이다. 운영 데이터 변경, 서버/API 회귀, 전체 테스트는 수행하지 않았다.
+
+
+## 2026-10-29 후속: 정산 시작·제작자 완료·종료
+
+- 정산 UI/서버/본인 이력에서 직접 관련 이름 필터로 15개 통과: 비용 즉시 저장·수정·삭제, 시작 전 상태와 비밀번호/큐 보호, 제작자 완료와 종료/해제, 원장 동일 요청 재전송/버전/다른 계정 차단, 0원 완료/취소, 본인 이력의 completed/finishedAt 및 타 제작자 정보 비노출.
+- 이후 개인 지난 행사 분류와 완료 취소 표시를 보완하여 영향받는 개인 상태 회귀 1개를 재확인하고 추가 비용 응답 유실/0원 UI/지난 행사 분류/0원 완료 취소 등 선택 6개 통과. 추가된 완료 명령의 구형 이름 기반 쓰기 차단은 `contract retirement requires scope` 1개로 확인했다.
+- 최종 `npm run build` 통과. 앞선 빌드 이후 프런트 변경이 있어 최종 빌드를 실행했으며 기존 청크 500kB 및 Tailwind 처리 시간 경고만 남았다. diff 공백 검사 통과.
+- PGlite/VM UI 모형 검증이며 운영 DB·실제 송금·배포·전체 테스트는 수행하지 않았다. 이전에 제공된 localhost:4173은 연결 거부였으며 이번 실제 브라우저/모바일 렌더링 확인도 미실행이다. 기존 저장 스키마에 새 열을 추가하지 않았고 history/payments JSON 필드만 확장한다.
 
 ## 2026-10-29 지급 팝업·완료 버튼 분리 검증
 

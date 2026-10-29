@@ -4,6 +4,9 @@ node_modules/
 # local recovery archives
 .local-archive/
 
+# local development data
+/.local-data/
+
 # build output
 dist/
 build/

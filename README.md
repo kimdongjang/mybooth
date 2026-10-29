@@ -24,6 +24,6 @@ npm run build
 npm run preview
 ```
 
-개발 서버는 5173 포트를 사용하며 `vite.config.js`가 `/api/auth`, `/api/pos`를 로컬에서 연결한다. 현재 코드에 `.env.local`을 API용 `process.env`로 주입하는 처리가 없으므로 파일 복사만으로 연결을 보장하지 않는다. `preview`는 정적 빌드 확인용이며 개발 서버 API 미들웨어가 실행되지 않는다.
+개발 서버는 http://127.0.0.1:4173 에서 실행하며 `.env.local`의 서버 환경변수를 로컬 API에 연결한다. 외부 DB와 분리된 로컬 PGlite DB는 `npm run dev:local`로 실행한다. 기존 `.local-data/postgres` 자료를 보존한다. 자세한 설정은 [로컬 개발](docs/local-development.md)을 참고한다. `preview`는 정적 빌드 확인용이며 API를 실행하지 않는다.
 
 Vercel 배포는 코드상 `npm run build`/`dist`와 루트 `api/` 구조를 사용한다. 실제 Vercel 프로젝트 설정·DB 연결·운영 상태는 별도로 확인해야 한다.

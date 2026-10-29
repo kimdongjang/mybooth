@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Input } from './PosUI';
 import { won } from '../utils/productDisplay';
 
-const auditNames={profile_created:'프로필 생성',invitation_issued:'초대 발급',invitation_revoked:'초대 철회',profile_linked:'계정 연결'};
+const auditNames={profile_created:'프로필 생성',invitation_issued:'초대 발급',invitation_revoked:'초대 철회',profile_linked:'계정 연결',profile_linked_by_operator:'계정 연결',profile_unlinked_by_operator:'계정 연결 해제'};
 
 export default function ArtistAccount({request,onCompatibility,mode='all'}) {
   const [home,setHome]=useState(null);

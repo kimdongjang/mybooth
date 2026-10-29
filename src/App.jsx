@@ -1,5 +1,7 @@
 import { Analytics } from '@vercel/analytics/react';
 import PaymentToast from './components/PaymentToast';
+import ToastHost from './components/ToastHost';
+import { showToast, toastApiSuccess, toastApiFailure } from './utils/toast';
 import LoadingState from './components/LoadingState';
 import ApiReadIndicator from './components/ApiReadIndicator';
 import {apiReadTracker} from './utils/apiReadTracker';
@@ -22,6 +24,7 @@ import SalesPage from './pages/SalesPage';
 import ProductsPage from './pages/ProductsPage';
 import SettlementPage from './pages/SettlementPage';
 import ProjectsPage from './pages/ProjectsPage';
+import EventInvitePage from './pages/EventInvitePage';
 import ProjectManagementPage from './pages/ProjectManagementPage';
 import ProjectRestorePage from './pages/ProjectRestorePage';
 import { AppHeader, PageIntro, PageTabs } from './components/PageLayout';
@@ -51,8 +54,13 @@ async function requestJson(url, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || '요청 처리에 실패했습니다.'), { status: res.status });
+  if (!res.ok) {
+    const failure = Object.assign(new Error(data.error || '요청 처리에 실패했습니다.'), { status: res.status });
+    toastApiFailure(failure, options);
+    throw failure;
+  }
   apiContracts.observe(token,url,data);
+  toastApiSuccess(options);
   return data;
   });
 }
@@ -80,7 +88,7 @@ export default function App() {
   const routeParams = new URLSearchParams(routeHash.split('?')[1] || '');
   const linkedProjectId = ['pos','project','projectSettlement','log', 'settings'].includes(routePage) ? routeParams.get('projectId') : null;
   const routeProductId = routePage === 'settings' ? productIdForHash(routeHash) || routeParams.get('productId') || '' : '';
-  const screen = selectedProject || linkedProjectId || ['restore', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(routePage) ? routePage : 'projects';
+  const screen = selectedProject || linkedProjectId || ['restore', 'projectNew', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock', 'invite'].includes(routePage) ? routePage : 'projects';
   const [orderExpanded, setOrderExpanded] = useState(false);
 
 
@@ -99,12 +107,12 @@ export default function App() {
       loginReturnPath.current = null;
       setScreen(destination || eventDestination(selectedProject), true); return;
     }
-    if(selectedProject?.permissions&&!['inventory','account','dashboard','revenue','projects','projectNew','artistStock'].includes(routePage)) {
+    if(selectedProject?.permissions&&!['inventory','account','dashboard','revenue','projects','projectNew','artistStock','invite'].includes(routePage)) {
       const p=selectedProject.permissions;
       if(routePage==='pos'&&!p.canSell&&!p.canViewPos||routePage==='log'&&!p.canSettle&&!p.canReadOwnHistory&&!p.ownerIds?.length||projectPages.includes(routePage)&&!p.canManage||['settings','bundleNew','productNew'].includes(routePage)&&!p.canConfigure&&!p.ownerIds?.length){setScreen(eventDestination(selectedProject),true);return;}
     }
     if(routePage==='artistStock'){setScreen('inventory',true);return;}
-    if (!selectedProject && !linkedProjectId && !['projects', 'projectNew', 'restore', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(routePage)) setScreen('projects', true);
+    if (!selectedProject && !linkedProjectId && !['projects', 'projectNew', 'restore', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock', 'invite'].includes(routePage)) setScreen('projects', true);
     else if (!pageForHash(routeHash)) setScreen(eventDestination(selectedProject), true);
     document.title = `${pageTitles[screen]} · 위드부스`;
     document.querySelector('.page-heading h1')?.focus();
@@ -144,6 +152,7 @@ export default function App() {
     const channel = new BroadcastChannel('pos-project-lifecycle');
     channel.onmessage = ({ data }) => {
       if(data.action==='eventDeleted'&&data.projectId){setProjects(current=>current.filter(p=>p.id!==data.projectId));setWorkspace(current=>({...current,events:current.events.filter(p=>p.id!==data.projectId)}));if(selectedProject?.id===data.projectId){activeScope.current=`${token||''}:`;setSelectedProject(null);setReadyScope(null);setProducts([]);setBundles([]);setSales([]);setCart([]);rememberProject(null);setScreen('projects');}void stateRepository.remove(data.projectId);return;}
+      if(data.action==='creatorAccountChanged'){void loadProjects({background:true});void eventReads.invalidate().then(()=>eventReads.refresh({activeOnly:true})).catch(()=>{});if(selectedProject?.id)void loadState({background:true});return;}
       if(data.action==='sharedStockChanged'&&data.projectIds?.includes(selectedProject?.id)){void loadState({background:true});return;}
       if(data.adminId===adminId && data.action==='settlementChanged'){setSelectedProject(current=>current?.id===data.projectId?{...current,settlementClosedAt:data.closedAt}:current);if(selectedProject?.id===data.projectId)setCart([]);void stateRepository.setSettlementClosedAt(data.projectId,data.closedAt);return;}
       if (data.adminId !== adminId || !data.projectId || !['archiveProject', 'unarchiveProject'].includes(data.action)) return;
@@ -323,7 +332,7 @@ export default function App() {
       saveProjectList(adminId,home.events);
       await selectProject(created, {created:true});
     } catch (err) {
-      alert(err.message);
+      showToast(err.message, 'error');
       setError(err.message);
       return false;
     } finally {
@@ -783,25 +792,27 @@ export default function App() {
   const analyticsPath = pagePaths[routePage] || '/dashboard';
   const analytics = import.meta.env.PROD && !isNative
     ? <Analytics route={analyticsPath} path={analyticsPath} /> : null;
-  if (!token) return <>{analytics}{routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />}</>;
+  if (!token) return <>{analytics}<ToastHost/>{routePage === 'signup' ? <SignupPage onAuthenticate={login} navigate={setScreen} /> : <LoginPage onAuthenticate={login} navigate={setScreen} />}</>;
   return <div className="app-shell flex h-full flex-col bg-paper text-ink">
     {analytics}
     <ApiReadIndicator/>
     <PaymentToast notice={paymentToast} onDismiss={setPaymentToast}/>
+    <ToastHost/>
     <AppHeader profileImage={profileImage} page={screen} navigate={setScreen} project={selectedProject} projects={projects} onSelectProject={selectProject} saving={saving} sync={sync} selectionDisabled={saving || loading || projectLoading} />
     {['dashboard','account','revenue'].includes(screen)&&<nav className="event-subnav inventory-management-nav menu-tabs" aria-label={screen==='dashboard'?'대시보드 하위 메뉴':'마이페이지 하위 메뉴'}>{(screen==='dashboard'?[['dashboard','대시보드']]:[['account','마이페이지'],['revenue','수익현황']]).map(([key,label])=><button key={key} type="button" aria-current={screen===key?'page':undefined} onClick={()=>setScreen(key)}>{label}</button>)}</nav>}
     {error && <div className="bg-danger px-4 py-2 text-sm text-white">{error}</div>}
-    {(selectedProject?.archivedAt || selectedProject?.settlementClosedAt) && !['inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">{selectedProject?.settlementClosedAt?'정산 마감 · 읽기 전용입니다.':'보관된 행사 · 읽기 전용입니다.'} <button type="button" className="event-text-link" onClick={() => setScreen(selectedProject?.settlementClosedAt?'log':'projectArchive')}>{selectedProject?.settlementClosedAt?'정산 마감 관리 →':'비밀번호로 보관 해제 →'}</button></div>}
+    {(selectedProject?.archivedAt || selectedProject?.settlementClosedAt) && !['inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(screen) && <div role="status" className="border-b border-line bg-amber-50 px-4 py-3 text-sm">{selectedProject?.settlementClosedAt?'정산 금액 확정 · 판매·취소·비용 수정이 잠겨 있습니다.':'보관된 행사 · 읽기 전용입니다.'} <button type="button" className="event-text-link" onClick={() => setScreen(selectedProject?.settlementClosedAt?'log':'projectArchive')}>{selectedProject?.settlementClosedAt?'정산 내역 →':'비밀번호로 보관 해제 →'}</button></div>}
     {loading || projectLoading || (linkedProjectId && selectedProject?.id !== linkedProjectId) || (selectedProject && readyScope !== scope && !error) ? <main className="page-content"><LoadingState /></main> : <>
 
     {screen === 'dashboard' && <PersonalOverview key={adminId} request={requestJson} dashboard events={projects} readWaitingOrders={readDashboardWaiting} />}
     {screen === 'revenue' && <PersonalOverview key={adminId} request={requestJson} />}
     {screen === 'inventory' && <PersonalInventory key={adminId} request={sharedStockRequest} routeHash={routeHash} navigate={setScreen} />}
-    {screen === 'artistStock' && <ArtistStockPage key={adminId} request={sharedStockRequest} initialProjectId={selectedProject?.id} />}
+    {screen === 'invite' && <EventInvitePage key={routeParams.get('code') || ''} request={requestJson} code={routeParams.get('code') || ''} onClose={() => setScreen('projects')} onAccepted={async () => { await loadProjects({ background: true }); setScreen('projects'); }} />}
+    {screen === 'artistStock' &&<ArtistStockPage key={adminId} request={sharedStockRequest} initialProjectId={selectedProject?.id} />}
     {screen === 'account' && <AccountPage adminId={adminId} request={requestJson} logout={logout} onProfileImage={setProfileImage} beforeDelete={async () => { if (loading || projectLoading || saving || !navigator.onLine) throw new Error('온라인에서 행사 목록을 모두 불러온 뒤 다시 시도해주세요.'); const fresh = await requestJson('/api/pos'); if ((await Promise.all(fresh.projects.map(project => orderRepository.countWaiting(project.id)))).some(Boolean)) throw new Error('모든 행사의 미동기화 주문을 먼저 동기화해주세요.'); }} />}
     {['projects', 'projectNew','projectDuplicate'].includes(screen) && <ProjectsPage creating={screen !== 'projects'} booths={workspace.booths} projects={projects} selectedProject={selectedProject} newProjectName={newProjectName} setNewProjectName={setNewProjectName} onCreateProject={createProject} onManageProject={manageProject} onSelectProject={selectProject} navigate={setScreen} />}
 
-    {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} request={eventReads.request} beforeAccessChange={async action=>{if(action==='removeEventArtist'&&await orderRepository.countWaiting(selectedProject.id))throw Object.assign(new Error('미동기화 주문을 먼저 처리해주세요.'),{status:409});}} onAccessChange={async action=>{await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true,background:action==='saveEventAccess'});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'sharedStockChanged',projectIds:[selectedProject.id]});channel.close();}}} onSettlementChange={async () => {const data=await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'settlementChanged',adminId,projectId:selectedProject.id,closedAt:data.settlementClosedAt});channel.close();}}} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
+    {projectPages.includes(screen) && <ProjectManagementPage key={`${selectedProject.id}:${screen}`} page={screen} project={selectedProject} request={eventReads.request} beforeAccessChange={async action=>{if(['removeEventArtist','unlinkEventArtistAccount'].includes(action)){const ids=action==='unlinkEventArtistAccount'?[...new Set([selectedProject.id,...projects.map(p=>p.id)])]:[selectedProject.id];if((await Promise.all(ids.map(id=>orderRepository.countWaiting(id)))).some(Boolean))throw Object.assign(new Error('미동기화 주문을 먼저 처리해주세요.'),{status:409});}}} onAccessChange={async (action,result)=>{if(action==='unlinkEventArtistAccount')await loadProjects({background:true});await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true,background:action==='saveEventAccess'});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage(action==='unlinkEventArtistAccount'?{action:'creatorAccountChanged'}:{action:'sharedStockChanged',projectIds:result?.projectIds||[selectedProject.id]});channel.close();}}} onSettlementChange={async () => {const data=await inventoryApi('getEventState',{projectId:selectedProject.id,apply:true});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('pos-project-lifecycle');channel.postMessage({action:'settlementChanged',adminId,projectId:selectedProject.id,closedAt:data.settlementClosedAt});channel.close();}}} summary={{ products: products.length, bundles: bundles.length, sales: sales.length, total: stats.total }} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
 
 
     {screen === 'restore' && <ProjectRestorePage key={selectedProject?.id || 'standalone'} booths={workspace.booths} navigate={setScreen} onManageProject={manageProject} onSelectProject={selectProject} />}
