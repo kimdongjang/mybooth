@@ -1,6 +1,6 @@
 {
   "appId": "com.mybooth.pos",
-  "appName": "WithBooth",
+  "appName": "위드부스",
   "webDir": "dist",
   "server": { "hostname": "localhost", "androidScheme": "https" },
   "plugins": {
