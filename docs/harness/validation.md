@@ -2,6 +2,14 @@
 
 검증은 변경 동작과 직접 영향을 받는 보존 계약을 확인하는 최소 범위만 수행한다. 아래 선택 기준이 과거 실행 기록의 테스트 수·명령보다 우선한다. 테스트 통과는 실제 PostgreSQL 경쟁·브라우저·실기기·배포 완료를 뜻하지 않는다.
 
+## Android 시작 시 최신 번들 적용 (2026-10-29)
+
+- `node --experimental-vm-modules --test tests/mobile-runtime.test.js tests/mobile-config.test.js`: 관련 8개 통과. 시작 시 즉시 적용·StrictMode 중복 검사 병합·pending 재사용·현재/실패/비호환 버전 제외, 오프라인/다운로드/적용 실패 시 세션 보존, 8초 초과 다운로드의 다음 실행 예약, 연결 복구 시 판매 화면 비중단과 기존 API/행사 범위·세션 복원을 확인했다.
+- 추가 `--test-name-pattern="startup timeout" tests/mobile-runtime.test.js` 1개 통과. 네이티브 `set` 시작 후에는 타이머가 만료되어도 판매 화면에 진입하지 않음을 확인했다. 실제 set은 JS 문맥을 교체하므로 테스트에서는 플러그인을 모형으로 대체한다.
+- `npm run build` 통과. 배포 설정이 가리키는 `npm run build:release`도 별도로 실행하여 웹/Android 빌드와 `dist/mobile-updates` 생성을 확인했다. 생성 ZIP SHA-256/manifest 호환성/index 참조 자산/SW 제외와 Vercel 빌드 명령·캐시 헤더 설정의 로컬 검사 통과. 기존 500kB 청크 경고가 남는다.
+- 실기기·실제 배포/CDN 응답·APK 빌드/설치·실제 번들 복구는 미실행이다. API/DB/IndexedDB 큐 변경과 운영 DB 접근·배포는 수행하지 않았다. 기존 설치 앱의 최초 전환은 [Android 문서](../android.md)를 따른다.
+
+- PR 분리 검증: 최신 `origin/main`(d6b4d99) 파일에 이번 7개 경로의 변경만 적용한 임시 폴더에서 관련 9개 테스트, `npm run build`, `npm run build:release` 통과. 기존 로컬 개발 세션 분리·DB/화면 변경은 제외했다.
 ## 위드부스 한글 표시 이름 (2026-10-29)
 
 앱/Android 런처 이름, 웹 제목·공유 메타데이터·접근성 이름·안내 문구, 계정 백업 다운로드 파일명과 문서의 브랜드 표기를 한글로 변경했다. 기존 로고 이미지와 서버 주소·npm 패키지명·백업 형식 식별자는 유지하며 SW 캐시 버전만 v136으로 갱신했다. 표시 변경으로 관련 내용·남은 영문 사용처·diff만 확인하고 테스트·빌드·브라우저/실기기 검증은 지침에 따라 생략했다. Android 런처 이름 반영은 새 APK/AAB 설치가 필요하다.

@@ -1,3 +1,7 @@
+## 2026-10-29 Android 시작 시 웹 번들 갱신
+
+`src/main.jsx`의 React 시작 게이트는 Android의 `mobileReady()`를 기다린 뒤 판매 화면을 마운트한다. `src/platform/mobile.js`는 DB/Web Locks 준비 후 React 게이트에서 번들 준비를 알리고, 시작 시 최대 8초 내 다운로드한 최신 호환 번들 또는 기존 pending/success 번들을 즉시 적용한다. 시간 초과 후 다운로드·실행 중 연결 복구는 다음 실행용으로만 예약한다. 실패 번들 재적용·중복 시작 검사를 막으며 앱 origin·세션·IndexedDB 주문 큐는 유지한다. `vercel.json`의 static-build는 `build:release`로 웹과 OTA ZIP/manifest를 함께 생성한다. 자세한 배포·기존 설치 앱 전환은 [Android 문서](../android.md)를 따른다.
+
 ## 2026-10-27 행사 조회와 집중 행사 화면 보완
 
 2026-10-27 보조 조회 보완: POS 기본 데이터 외에 행사 판매 설정의 workspace/참여 제작자/작가 재고, 행사 본인 판매내역, 참여자/정산 GET도 eventReadCache로 IndexedDB를 먼저 읽는다. 캐시 없는 최초 조회만 서버를 기다리고 열린 화면의 조회는 기존 30초 사이클에서 백그라운드 갱신한다. 화면을 떠나면 해당 조회의 정기 갱신을 중단하며 편집 초안을 자동으로 덮어쓰지 않는다. 명령은 서버 검증 후 캐시를 무효화하고 오프라인 관리 저장은 추가하지 않는다. 상세 계약은 [공통 데이터 계층](local-first-data.md#행사-내부-보조-조회-캐시-2026-10-27)을 따른다.

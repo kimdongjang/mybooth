@@ -1,13 +1,20 @@
 import { disableDevelopmentServiceWorker } from './platform/developmentServiceWorker';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import './styles.css';
 import { initializeMobile, isNative, mobileReady } from './platform/mobile';
 
 function MobileReady() {
-  useEffect(() => { void mobileReady().catch(() => {}); }, []);
-  return null;
+  const [ready, setReady] = useState(!isNative);
+  useEffect(() => {
+    let active = true;
+    void mobileReady().then(reloading => {
+      if (active && !reloading) setReady(true);
+    }).catch(() => { if (active) setReady(true); });
+    return () => { active = false; };
+  }, []);
+  return ready ? <App /> : null;
 }
 
 try {
@@ -16,7 +23,6 @@ try {
     await initializeMobile();
     createRoot(document.getElementById('root')).render(
       <React.StrictMode>
-        <App />
         <MobileReady />
       </React.StrictMode>,
     );
