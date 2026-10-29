@@ -11,7 +11,7 @@ export function eventSchedule(project,today=koreanDay(new Date())) {
  const untilEnd=dated?dayNumber(end)-dayNumber(today):0;
  const countdown=status==='upcoming'?`D-${untilStart}`:status==='active'?(untilStart===0?'D-DAY':untilEnd===0?'오늘 종료':`종료 D-${untilEnd}`):status==='ended'?`종료 D+${-untilEnd}`:'';
  const period=dated?`${shortDate(start)}${start===end?'':`~${start.slice(0,4)===end.slice(0,4)?shortDate(end).slice(3):shortDate(end)}`}`:'';
- const label={archived:'보관',closed:'정산 마감',unscheduled:'일정 미설정',upcoming:'진행 예정',ended:'종료',active:'진행 중'}[status];
+ const label={archived:'보관',closed:'정산 금액 확정',unscheduled:'일정 미설정',upcoming:'진행 예정',ended:'종료',active:'진행 중'}[status];
  return {status,label,countdown,period};
 }
 

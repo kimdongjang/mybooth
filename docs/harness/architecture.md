@@ -1,3 +1,23 @@
+## 2026-10-29 행사 관리의 추가 비밀번호 확인
+
+행사 관리에서는 정산 마감(closeEventSettlement), 행사 삭제(deleteProject), 판매 종료(archiveProject)에만 추가 비밀번호를 요구한다. 행사 이름·장소·기간 수정(updateProjectInfo/renameProject), 백업(backupProject), 구성 복제(duplicateProject), 판매 재개(unarchiveProject), 정산 비용 저장·마감 해제는 기존 로그인/운영 권한 검사로 처리한다. 계정 삭제·비밀번호 변경·계정 복원·별도 행사 복원/이관 등 행사 관리 밖의 확인 정책은 유지한다. 아래 과거 비밀번호 필수 기록보다 이 정책이 우선한다.
+
+`ProjectManagementPage`는 행사 정보를 바로 저장하고 응답 유실 시 같은 요청 ID/내용을 재사용한다. 정산 마감은 `EventSettlementPanel`의 비밀번호 대화상자에서 전체 기기의 판매 중단·동기화를 확인하고 실행한다. 미동기화 거래 차단·마감 스냅샷/버전/영수증·삭제 시 재고 반환 계약은 유지한다. 서버도 추가 확인을 강제하고, 위임 운영자의 경우 원본 보관 계정이 아니라 실제 로그인 계정의 비밀번호를 검사한다. 정산 API는 검증 직후 password를 명령에서 제거하므로 재시도 영수증 지문·정산 기록·응답에 저장하지 않는다. 프런트 재시도 명령 ref에도 비밀번호를 포함하지 않고 입력 상태는 완료/취소 시 비운다.
+
+## 2026-10-29 행사 제작자 계정 정보·연결 해제와 표 스크롤
+
+행사 관리의 `EventAccessPanel`은 연결 계정의 기존 avatar를 이름 옆에 표시하고 계정 ID·제작자·행사 권한·등록 상품 수를 대화상자로 제공한다. `workspace=access`의 운영자 조회에 avatar와 can_unlink만 추가하며 이메일·인증 정보는 제공하지 않는다.
+
+`unlinkEventArtistAccount`는 해당 행사의 운영자가 원래 부스에서 등록한 제작자 계정 연결을 전체 행사에 걸쳐 해제한다. 다른 계정이 만든 개인 제작자(origin_booth_id=null)나 다른 부스 출처 제작자의 연결은 해제할 수 없다. 대상 계정·참여 version·요청 ID를 검사하고 한 트랜잭션에서 연결/소유 멤버십/부스 대리 상태/관련 행사 권한/감사·영수증을 갱신한다. 제작자 ID·행사 참여·상품 귀속·재고·판매·정산 수취인·확정 스냅샷은 보존한다. 같은 계정의 다른 연결 제작자로 유효한 행사 권한과 독립 부스 멤버십은 유지한다. 해제 후 기존 행사 역할은 제작자에 보관해 재연결 시 승계하며, 동일 요청 재전송은 같은 영수증을 반환한다. 응답에는 관리 부스의 행사 ID만 포함한다.
+
+현재 기기의 접근 가능한 행사에 미동기화 주문이 있으면 연결 해제를 차단하며, 다른 기기의 주문 상태는 알 수 없으므로 확인창에서 먼저 동기화하도록 한다. 성공 후 현재 행사·목록을 갱신하고 같은 브라우저의 다른 탭에는 계정 연결 변경을 전달해 권한과 조회 캐시를 다시 확인한다. 서버/IndexedDB의 주문 자체를 삭제하거나 수정하지 않는다.
+
+공통 표 컨테이너에는 가로 스크롤바 색·높이를 지정한다. 행사 관리 참여 표의 전체/최소 너비를 줄이고 정산마감 그리드·fieldset에 min-width:0을 적용하여 표 내부에서 가로 스크롤하도록 한다. 정산서에 마감 상태별 최소 너비와 키보드 스크롤 영역을 적용하고 세트 목록은 공통 다열 표의 최소 너비 규칙보다 우선하여 화면 너비에 맞춘다.
+
+## 2026-10-29 Android 시작 시 웹 번들 갱신
+
+`src/main.jsx`의 React 시작 게이트는 Android의 `mobileReady()`를 기다린 뒤 판매 화면을 마운트한다. `src/platform/mobile.js`는 DB/Web Locks 준비 후 React 게이트에서 번들 준비를 알리고, 시작 시 최대 8초 내 다운로드한 최신 호환 번들 또는 기존 pending/success 번들을 즉시 적용한다. 시간 초과 후 다운로드·실행 중 연결 복구는 다음 실행용으로만 예약한다. 실패 번들 재적용·중복 시작 검사를 막으며 앱 origin·세션·IndexedDB 주문 큐는 유지한다. `vercel.json`의 static-build는 `build:release`로 웹과 OTA ZIP/manifest를 함께 생성한다. 자세한 배포·기존 설치 앱 전환은 [Android 문서](../android.md)를 따른다.
+
 ## 2026-10-27 행사 조회와 집중 행사 화면 보완
 
 2026-10-27 보조 조회 보완: POS 기본 데이터 외에 행사 판매 설정의 workspace/참여 제작자/작가 재고, 행사 본인 판매내역, 참여자/정산 GET도 eventReadCache로 IndexedDB를 먼저 읽는다. 캐시 없는 최초 조회만 서버를 기다리고 열린 화면의 조회는 기존 30초 사이클에서 백그라운드 갱신한다. 화면을 떠나면 해당 조회의 정기 갱신을 중단하며 편집 초안을 자동으로 덮어쓰지 않는다. 명령은 서버 검증 후 캐시를 무효화하고 오프라인 관리 저장은 추가하지 않는다. 상세 계약은 [공통 데이터 계층](local-first-data.md#행사-내부-보조-조회-캐시-2026-10-27)을 따른다.
@@ -89,9 +109,9 @@ POST deleteAccount는 로그인 계정 ID와 현재 패스워드를 재확인하
 
 계정 전체 데이터 이전의 권장 범위와 기존 행사 백업의 차이는 [데이터 이전 검토](../data-portability.md)를 따른다. 전체 이전 구현은 이번 범위에 포함하지 않았다. 상품 등록 버그 조사도 사용자가 별도 확인하기로 하여 제외했다.
 
-## WithBooth 브랜드와 최종 로고 (2026-10-21)
+## 위드부스 브랜드와 최종 로고 (2026-10-21)
 
-표시 이름을 WithBooth(위드부스)로 통일한다. 공통/인증 헤더는 /brand/withbooth-final-logo.png의 파란 원 안 흰 W·파란 ithBooth를 표시한다. /favicon.svg와 Android 런처/스플래시는 파란 배경 흰 Wb다. 웹 메타데이터·Android API origin은 https://withbooth.vercel.app으로 변경하고 기존 공유 설명은 보존한다. SW v120으로 새 로고를 선캐시한다.
+표시 이름을 위드부스로 통일한다. 공통/인증 헤더는 /brand/withbooth-final-logo.png의 파란 원 안 흰 W·파란 ithBooth를 표시한다. /favicon.svg와 Android 런처/스플래시는 파란 배경 흰 Wb다. 웹 메타데이터·Android API origin은 https://withbooth.vercel.app으로 변경하고 기존 공유 설명은 보존한다. SW v120으로 새 로고를 선캐시한다.
 
 Android 앱 ID com.mybooth.pos, IndexedDB 이름, 인증 저장 키, 백업 format my-booth-project는 데이터 호환성을 위해 보존한다. DB/Blob 이전이나 서버 판매/동기화 계약 변경은 없다. 별도 pos.html도 표시 이름만 변경한다.
 
@@ -991,7 +1011,7 @@ duplicateProject는 상품/가격/세트와 제작자 참여 구성을 가져오
 
 ## 공개 홈 검색 노출
 
-대표 검색 주소는 https://withbooth.vercel.app/ 이다. index.html에 굿즈 부스·행사 판매/재고 관리 제목과 설명, canonical, index/follow, Open Graph/Twitter 로고 이미지 및 WebSite JSON-LD(WithBooth/위드부스)를 제공한다. 초기 root에는 기존 AuthPage의 공개 소개를 정적으로 제공하며 React 마운트 때 정상 화면으로 교체한다. 소개 문구 변경 시 양쪽의 공개 기능 설명을 함께 맞춘다. 로그인 후 계정/행사 데이터는 초기 HTML에 포함하지 않는다.
+대표 검색 주소는 https://withbooth.vercel.app/ 이다. index.html에 굿즈 부스·행사 판매/재고 관리 제목과 설명, canonical, index/follow, Open Graph/Twitter 로고 이미지 및 WebSite JSON-LD(위드부스)를 제공한다. 초기 root에는 기존 AuthPage의 공개 소개를 정적으로 제공하며 React 마운트 때 정상 화면으로 교체한다. 소개 문구 변경 시 양쪽의 공개 기능 설명을 함께 맞춘다. 로그인 후 계정/행사 데이터는 초기 HTML에 포함하지 않는다.
 
 public/robots.txt는 홈 및 렌더링 자산 크롤링을 허용하고 /api/, /mobile-updates/, 별도 구형 /pos.html 크롤링을 제외한다. robots 규칙은 접근제어나 검색 결과 삭제 보장이 아니며 기존 서버 인증이 데이터 접근을 통제한다. public/sitemap.xml에는 공개 canonical 홈 한 개만 기재한다. hash 기반 내부 화면은 독립 공개 검색 페이지로 등록하지 않는다. Vercel filesystem 라우트가 SPA 폴백보다 먼저 정적 파일을 제공한다. 도메인 변경 시 canonical·구조화 데이터·공유 메타·robots의 Sitemap 주소·사이트맵 loc를 함께 변경한다.
 
@@ -1017,3 +1037,53 @@ public/robots.txt는 홈 및 렌더링 자산 크롤링을 허용하고 /api/, /
 ## 로컬 DB 실행 복구 (2026-10-28)
 
 누락된 `dev:local` 명령과 `scripts/local`을 복구했다. Node 모듈 훅으로 네이티브 API의 `@vercel/postgres`를 영속 PGlite 어댑터로 연결하며, 풀 연결을 직렬화해 요청 간 트랜잭션 혼합을 막는다. Vite는 localdb 모드에서 환경 파일을 읽지 않고 서버 자격 증명을 제거한 프로세스를 사용한다. 기존 DB·인증 키·이미지는 보존하고 관리자 자동 생성 대신 회원가입을 사용한다. 로컬 로그인 키와 IndexedDB 이름을 일반 모드와 분리한다. [실행 방법](../local-development.md)을 따른다.
+
+## 제작자 프로필 테이블 은퇴 (2026-10-28)
+
+`pos_artist_profiles`를 제거 대상으로 전환했다. 계정 연결 정보는 `pos_stock_owners.linked_user_id`·`link_status`(unlinked/linked, 일관성 CHECK)로 옮기고, `pos_artist_invitations`·`pos_artist_link_audit`는 `owner_id`(→ `pos_stock_owners`)를 기준으로 쓴다. 기존 `profile_id`는 `legacy_profile_id`로, 기존 테이블은 `pos_artist_profiles_retired`로 이름만 바꿔 롤백·이전 ID 해석용으로 보존한다(삭제는 후속).
+
+- `retireArtistProfiles`(boothFoundation)가 `initBoothFoundation`·`initArtistLinking`·`pos.js` 초기화에서 실행된다. 이미 적용된 DB는 카탈로그 조회 2회 후 반환하고, 적용은 advisory 트랜잭션 잠금 안에서 한 번만 수행한다. 원본 재고·거래·정산 행은 수정하지 않는다.
+- API 응답의 `id`/`profile_id`/`profileId`는 제작자(owner) ID와 같은 값이다. 요청의 `profileId`는 `ownerIdOf`로 owner ID 또는 은퇴 테이블의 이전 프로필 ID를 해석한다.
+- 내 제작자는 로그인 계정에서 결정적 ID(`personal-owner:<sha256(userId)>`)로 만들며, `workspace=home` 조회에서 없으면 닉네임(없으면 아이디)으로 자동 생성한다. 마이페이지의 프로필 만들기 폼과 내 재고 등록 화면의 제작자 입력은 제거했다.
+- 행사 상품 등록에서 운영자가 제작자를 고르지 않으면 부스별 고정 "미지정" 제작자(`unassigned-owner:*`)로 저장한다. `pos_inventory_owners.owner_id`가 NOT NULL이므로 NULL 대신 이 행을 사용한다.
+- 로컬·운영 DB 모두 새 코드의 첫 API 요청 초기화에서 자동 적용된다. 운영 DB는 백업 후 복사본(Neon 브랜치 등)에서 `node scripts/retireArtistProfiles.mjs --env-file <파일>`(`RETIRE_PROFILES_DATABASE_URL`, 기본 리허설·ROLLBACK)로 검증한다. 검사 항목은 제작자 행 수·기본 열 불변, 연결 정보 복사, 초대·감사의 owner_id 매핑, 나머지 pos_* 테이블 지문 불변이다. `--apply --confirm-target`만 COMMIT 한다. IndexedDB 주문 큐에는 프로필 데이터가 없어 변경이 없다.
+
+
+## 2026-10-29 정산 마감 화면 비용 편집·지급 재확인
+
+`EventSettlementPanel`은 비용 항목의 추가·수정 대화상자에서 공통 `validateEventCosts`로 입력을 검증한다. 퍼센트 입력은 기존 basis-point 정수로 변환하며 수정은 원래 행을 대체한다. 적용한 비용은 예상 정산서에 반영하고 비용 저장 전까지 마감을 차단한다. 변경 취소는 마지막 조회의 저장된 비용으로 돌아가며 서버 요청을 하지 않는다. 대화상자 초안도 화면 이동 경고에 포함한다.
+
+비용 영역과 정산서 영역을 분리하고 각 표에 내부 가로 스크롤을 유지한다. 모바일 버튼은 영역 너비에 맞춰 줄바꿈하며 공통 폰트 크기를 유지한다. 지급 완료 단축 버튼의 응답 유실·서버 오류는 같은 requestId/금액/날짜/version으로 재확인하며, 그동안 지급 관리·추가 지급·마감 해제와 자동 조회를 잠근다. 명확한 4xx 거절은 재시도 명령을 해제한다. 재시도 보존은 현재 마운트된 화면 내 범위이며 서버 API/스키마·판매 큐·확정 스냅샷 계약은 변경하지 않는다.
+
+
+## 2026-10-29 후속: 명시적 정산 시작·종료와 제작자별 완료
+
+위 정산 마감 화면 비용 편집 기록보다 이 후속 계약을 우선한다. 정산 시작 전에는 ‘정산 시작 전’이며 행사 일정만으로 정산 중이라고 표시하지 않는다. `closeEventSettlement`는 UI에서 ‘정산 시작’으로 노출하며 기존 비밀번호 확인·미동기화 주문 차단·금액 스냅샷 확정·판매/취소/비용 잠금을 유지한다. `closed_at`은 호환을 위해 유지하는 금액 확정 시점이다. `reopenEventSettlement`는 지급/완료 기록이 모두 취소된 경우 ‘정산 시작 취소’로 사용할 수 있다.
+
+비용 추가·수정·삭제는 즉시 `saveEventCosts`를 호출한다. 별도 비용 저장/변경 취소 버튼은 없고 대화상자의 취소는 미제출 입력만 닫는다. 서버 수락 전 기존 목록을 유지하고 응답 유실 시 원래 요청 ID/내용을 재사용하며 후속 작업을 잠근다. 분담·정수 원/basis-point·소유권/행사 범위·온라인 전용 계약은 유지한다.
+
+`completeRecipientSettlement`는 확정 정산서의 남은 양수 금액을 지급 원장에 기록하여 제작자별 정산 완료로 표시한다. 0원·음수 정산은 금전 지급 없이 amount=0/settlementComplete=true 원장 항목으로 명시적으로 완료한다. 실제 송금 기능은 아니다. 기존 양수 전액 지급은 완료로 호환 판독한다. `reversePayment`는 지급액과 함께 완료 기록(0원 포함)도 취소할 수 있다. 모든 제작자가 완료되어야 `finishEventSettlement`가 history에 finish를 기록하고 전체 정산을 종료한다. 종료 중 지급 추가/완료/취소 및 시작 취소는 서버에서 거절한다. `resumeEventSettlement`는 history에 resume를 추가하여 종료만 해제하고 금액 확정/판매 잠금/지급 기록을 보존한다. 마감 해제에 해당하는 시작 취소와 종료 해제는 구분한다.
+
+기존 history/payments JSON 구조를 확장하며 새 테이블/열이나 과거 데이터 덮어쓰기는 없다. 같은 트랜잭션의 요청 영수증, 행사/계정 잠금, 버전 검사를 사용한다. 구형 쓰기 종료 정책에서는 새 완료 명령도 boothId/recipientId를 필수로 검사한다.
+
+작가 본인 이력 API는 기존 연결/참여 수취인 필터를 유지한 채 행사 finishedAt과 본인 행 completed만 추가한다. 개인 대시보드의 내 정산 현황과 수익현황은 ‘행사 정산’(시작 전/진행 중/종료)과 ‘내 정산’(시작 전/대기/일부 지급/완료)을 분리한다. 타 제작자·계좌 메모·전체 정산 이력은 추가 공개하지 않는다. 기존 자동 조회 주기에 갱신하며 실시간 푸시는 추가하지 않는다.
+
+## 2026-10-29 지급 기록과 정산 완료 분리
+
+행사 정산의 ‘지급하기’는 모달에서 지급 금액·날짜만 입력하고 기존 addPayment로 저장한다. 부분 지급을 허용하며 미지급액이 0이 된 후에만 제작자 ‘정산 완료’를 활성화한다. completeRecipientSettlement도 서버에서 잔액이 있으면 409로 거절하며, 추가 지급 없이 0원 완료 표지만 기록한다. 양수 정산도 전액 지급과 취소되지 않은 완료 표지가 함께 있어야 완료다. 0원/음수 정산의 명시적 완료, 기존 완료 표지, 지급 원장·취소 이력은 보존한다. 기존 전액 지급에 완료 표지가 없다면 별도 완료 처리가 필요하다.
+
+팝업의 불명확한 응답은 동일 요청 ID·금액·날짜·version으로 재확인하고 입력 변경·닫기를 막는다. 기존 온라인 전용·행사별 미동기화 주문 차단·수취인 매핑·권한/영수증 계약을 유지하며 IndexedDB 주문 큐는 변경하지 않는다.
+
+### 지급 팝업 표시 후속
+
+지급 모달은 document.body에 portal로 표시하는 고정 오버레이로 변경했다. 네이티브 dialog.showModal 호출 없이 editing 상태로 표시하고 입력 포커스·Tab 순환·Escape 닫기·닫은 뒤 포커스 복귀를 처리한다. 지급 중/응답 미확인 시 닫기 차단은 유지한다. 지급/정산 완료 열은 각각 104px, 버튼은 88px로 맞췄다.
+
+지급하기 팝업 진입은 잔액 0/정산 종료에도 허용한다. 잔액이 없거나 정산 종료 상태에서는 기록 버튼만 비활성화하며, 제출 핸들러도 종료 상태 쓰기를 차단한다. 처리 중·미확인 명령의 중복 진입 차단은 유지한다.
+
+## 행사 제작자 초대 링크
+
+`issueEventInvite`(행사 manage 권한)는 `pos_event_invites`에 해시만 저장한 7일 유효 토큰을 발급하며 행사당 활성 링크는 하나이고 재발급하면 이전 링크는 철회된다. 링크는 `#/invite?code=토큰`이며 로그아웃 상태에서는 기존 `loginReturnPath`로 로그인/회원가입 뒤 초대 화면에 복귀한다. `previewEventInvite`는 만료·철회·발급자 권한 종료를 거절하고, `acceptEventInvite`는 공동 재고 관리 동의 후 수락 계정의 제작자 프로필(없으면 닉네임으로 생성)을 부스 참여와 행사 참여로 등록한다. 역할(seller/assistant)은 부여하지 않으며 재수락은 멱등이다. 상품·재고는 복사하지 않는다.
+
+## 전역 토스트
+
+`src/utils/toast.js`의 `showToast`와 `src/components/ToastHost.jsx`가 전역 토스트를 담당한다. `App.jsx`의 `requestJson`이 백그라운드가 아닌 쓰기 요청(POST 등)이 실패하면 서버 메시지를 오류 토스트로(401 제외), 성공하면 `successMessages`에 등록된 명령(action)에 한해 성공 토스트로 알린다. 읽기(GET)·백그라운드 동기화·미등록 명령은 토스트를 띄우지 않으며 결제 완료는 기존 `PaymentToast`를 유지한다. 같은 메시지는 동시에 한 번만 표시한다. 새 사용자 명령을 추가하면 `successMessages`에 문구를 등록한다.

@@ -2,7 +2,7 @@ import { pagePaths } from '../hooks/usePageRoute';
 
 export const projectSections = [
   { page: 'project', title: '행사 정보' },
-  { page: 'projectSettlement', title: '정산 마감' },
+  { page: 'projectSettlement', title: '정산 관리' },
   { page: 'projectBackup', title: '데이터·관리' },
 ];
 

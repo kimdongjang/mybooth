@@ -1,3 +1,4 @@
+import {settlementPhaseLabel,recipientSettlementLabel} from '../utils/eventSettlement';
 import {useState} from 'react';
 import {won} from '../utils/productDisplay';
 import {koreanDay} from '../utils/revenueSummary';
@@ -9,7 +10,7 @@ const eventLink=(event,page)=>`#/${page}?projectId=${encodeURIComponent(event.id
 const amount=value=>`${won(value)}원`;
 const sum=(rows,key)=>rows.reduce((total,row)=>total+Number(row[key]||0),0);
 const statusLabel={active:'진행 중',upcoming:'진행 예정',ended:'종료',unscheduled:'일정 미정'};
-const settlementLabel={open:'미마감',closed:'마감',paid:'지급 완료'};
+const settlementLabel={open:'정산 시작 전',closed:'정산 진행 중',paid:'정산 완료',finished:'정산 종료'};
 const period=schedule=>schedule.starts_on?`${schedule.starts_on.replaceAll('-','.')}${schedule.ends_on&&schedule.ends_on!==schedule.starts_on?`~${schedule.ends_on.slice(5).replace('-','.')}`:''}`:'일정 미정';
 
 function alertContent(alert,warehouse) {
@@ -17,7 +18,7 @@ function alertContent(alert,warehouse) {
  switch(alert.type) {
   case 'waiting':return {href:eventLink(event,'sales'),text:`${event.name} · 이 기기 미동기화 거래 ${won(event.waiting)}건`,urgent:true};
   case 'recovery':return {href:'#/inventory',text:`${event.name} · 잔여 재고 ${won(event.stock.remaining)}개 회수 필요`};
-  case 'close':return {href:settlementLink(event.id),text:`${event.name} · 정산 마감 필요`};
+  case 'close':return {href:settlementLink(event.id),text:`${event.name} · 정산 시작 필요`};
   case 'allocation':return {href:'#/inventory',text:`미배정 재고 ${won(warehouse)}개 · ${event.name}에 배정 가능`};
   case 'pending':return {href:settlementLink(event.id),text:`${event.name} · ${scope}정산 대기 ${amount(event.pending)}`};
   default:return {href:event.p.canConfigure||event.p.ownerIds?.length?eventLink(event,'products'):'#/inventory',text:`${event.name} · 품절 임박 상품 ${won(event.lowStock)}종`};
@@ -108,6 +109,7 @@ export default function PersonalDashboard({data,error,events=[]}) {
      {noRevenue?<p className="home-muted">아직 집계된 수익이 없어요</p>:<><dl className="home-primary-metric"><dt>확정 정산 대기 · 항상 전체 기간</dt><dd>{amount(pending)}</dd></dl><dl className="home-finance-details"><div><dt>확정 정산금 · 전체 기간</dt><dd>{amount(confirmedNet)}</dd></div><div><dt>지급 완료 · 전체 기간</dt><dd>{amount(paid)}</dd></div><div><dt>내 판매액 · {period==='all'?'전체 기간':period==='year'?'올해':'선택 기간'}</dt><dd>{amount(gross)}</dd></div></dl></>}
     </section>
    </div>
+   {settlements.length>0&&<section className="dashboard-card home-own-settlements" aria-labelledby="home-own-settlements-title"><div className="home-section-heading"><h2 id="home-own-settlements-title">내 정산 현황</h2><a href="#/account/revenue">수익현황 →</a></div><div className="management-table-wrap" tabIndex={0} role="region" aria-label="내 정산 현황"><table className="management-table"><thead><tr><th>행사 · 제작자</th><th>정산금</th><th>행사 정산</th><th>내 정산</th></tr></thead><tbody>{settlements.map(row=><tr key={`${row.event.projectId}:${row.recipientId}`}><td><a href={settlementLink(row.event.projectId)}>{row.event.eventName} · {row.artistName}</a></td><td>{amount(row.net)}</td><td>{settlementPhaseLabel(row.event)}</td><td>{recipientSettlementLabel(row.event,row)}</td></tr>)}</tbody></table></div></section>}
    <PastEvents past={past} highlight={highlight}/>
   </>}
  </div></main>;

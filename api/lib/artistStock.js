@@ -35,7 +35,7 @@ async function itemFor(sql,ownerId,id) {
 }
 
 async function ownerAccess(sql,userId,ownerId,boothId) {
-  const owner=(await sql`SELECT o.*,p.linked_user_id FROM pos_stock_owners o JOIN pos_artist_profiles p ON p.owner_id=o.id WHERE o.id=${ownerId}`).rows[0];
+  const owner=(await sql`SELECT o.* FROM pos_stock_owners o WHERE o.id=${ownerId}`).rows[0];
   if(!owner)fail('제작자를 찾을 수 없습니다.',404);
   const own=(await sql`SELECT owner_id FROM pos_owner_members WHERE user_id=${userId} AND owner_id=${ownerId}`).rows.length>0;
   if(!own&&!boothId)fail('제작자 재고 관리 권한이 없습니다.',403);
@@ -163,7 +163,7 @@ export async function artistStockView(sql,userId,{ownerId,boothId,projectId}) {
   if(projectId)inventory=inventory.map(item=>({...item,allocations:item.allocations.filter(a=>a.projectId===projectId)}));
   const quantityEditable=await stockDelegationAllowed(sql,userId,ownerId,boothId);
   let quantityReadOnlyReason=null;
-  if(!quantityEditable){const preference=(await sql`SELECT u.allow_operator_stock FROM pos_artist_profiles p LEFT JOIN pos_admins u ON u.id=p.linked_user_id WHERE p.owner_id=${ownerId}`).rows[0];quantityReadOnlyReason=preference?.allow_operator_stock===false?'제작자가 재고 수정을 허용하지 않았어요 (조회만 가능)':'재고 수정 권한이 없어 조회만 가능합니다.';}
+  if(!quantityEditable){const preference=(await sql`SELECT u.allow_operator_stock FROM pos_stock_owners o LEFT JOIN pos_admins u ON u.id=o.linked_user_id WHERE o.id=${ownerId}`).rows[0];quantityReadOnlyReason=preference?.allow_operator_stock===false?'제작자가 재고 수정을 허용하지 않았어요 (조회만 가능)':'재고 수정 권한이 없어 조회만 가능합니다.';}
   inventory=inventory.map(item=>({...item,quantityEditable,quantityReadOnlyReason}));
   return {ownerId,quantityEditable,participations,inventory,history:projectId?[]:history,
     events:visibleEvents.filter(e=>!projectId||e.id===projectId).map(e=>({...e,canReturn:Boolean(quantityEditable&&!e.closed_at&&(e.operator||e.starts_on&&!e.event_day)),detailEditable:Boolean(!e.archived_at&&!e.closed_at&&(e.operator||e.starts_on&&!e.event_day)),artistEditable:Boolean(quantityEditable&&e.starts_on&&!e.event_day&&!e.archived_at&&!e.closed_at),operator:Boolean(e.operator&&quantityEditable&&!e.archived_at&&!e.closed_at)}))};
@@ -403,35 +403,46 @@ export async function leaveArtistBooth(sql,userId,payload) {
 }
 
 
+async function ensureUnassignedOwner(sql,boothId,projectId) {
+ const key=hash([boothId,'event-unassigned']);
+ const unassignedId=`unassigned-owner:${key}`;
+ await sql`INSERT INTO pos_stock_owners(id,kind,display_name,origin_booth_id,legacy_key) VALUES(${unassignedId},'unverified','미지정',${boothId},${unassignedId}) ON CONFLICT DO NOTHING`;
+ await sql`INSERT INTO pos_booth_artists(booth_id,owner_id,status) VALUES(${boothId},${unassignedId},'proxy') ON CONFLICT DO NOTHING`;
+ await sql`INSERT INTO pos_event_artists(project_id,owner_id) VALUES(${projectId},${unassignedId}) ON CONFLICT DO NOTHING`;
+ return (await sql`SELECT * FROM pos_stock_owners WHERE id=${unassignedId}`).rows[0];
+}
+
 // The API wraps profile, participation, stock and receipts in one transaction.
 export async function registerEventArtistProduct(sql,userId,payload) {
  const {projectId,boothId,requestId,artistName}=payload;
  if(!uuid(requestId))fail('요청 ID를 확인해주세요.',400);
  const access=await authorizeEvent(sql,userId,projectId,'read',boothId);
- if(!access.permissions.canConfigure&&(artistName!==undefined||!access.permissions.ownerIds.includes(payload.ownerId)))fail('이 행사의 상품 등록 권한이 없습니다.',403);
+ const unassigned=artistName===undefined&&!payload.ownerId;
+ if(!access.permissions.canConfigure&&(unassigned||artistName!==undefined||!access.permissions.ownerIds.includes(payload.ownerId)))fail('이 행사의 상품 등록 권한이 없습니다.',403);
  const fingerprint=hash({userId,action:'registerEventArtistProduct',payload});
  const prior=(await sql`SELECT * FROM pos_event_access_commands WHERE id=${requestId}`).rows[0];
  if(prior){if(prior.actor_id!==userId||prior.project_id!==projectId||prior.fingerprint!==fingerprint)fail('같은 요청 ID의 내용이 다릅니다.');return prior.result;}
  let ownerId=payload.ownerId;
- if(artistName!==undefined) {
+ if(unassigned) {
+  ownerId=(await ensureUnassignedOwner(sql,boothId,projectId)).id;
+ } else if(artistName!==undefined) {
   if(ownerId)fail('제작자 선택과 직접 입력 중 하나를 사용해주세요.',400);
   await authorizeEvent(sql,userId,projectId,'manage',boothId);
-  const {profileId}=await createBoothArtist(sql,userId,{boothId,name:artistName});
-  ownerId=(await sql`SELECT owner_id FROM pos_artist_profiles WHERE id=${profileId}`).rows[0].owner_id;
+  ownerId=(await createBoothArtist(sql,userId,{boothId,name:artistName})).ownerId;
  } else if(ownerId===`admin:${userId}`) {
   await authorizeEvent(sql,userId,projectId,'manage',boothId);
   const account=(await sql`SELECT nickname FROM pos_admins WHERE id=${userId}`).rows[0];
   const home=await createArtistProfile(sql,userId,{name:account.nickname||'관리자'});
-  ownerId=home.profiles.find(p=>p.id.startsWith('personal-artist:')).owner_id;
+  ownerId=home.profiles.find(p=>p.id.startsWith('personal-owner:')).owner_id;
  }
  const participant=(await sql`SELECT status FROM pos_event_artists WHERE project_id=${projectId} AND owner_id=${ownerId}`).rows[0];
  if(participant?.status!=='active') {
   await authorizeEvent(sql,userId,projectId,'manage',boothId);
   if(participant)fail('참여 종료된 제작자는 행사 관리에서 다시 추가해주세요.');
-  const profile=(await sql`SELECT p.id FROM pos_artist_profiles p JOIN pos_booth_artists a ON a.owner_id=p.owner_id
-   WHERE p.owner_id=${ownerId} AND a.booth_id=${boothId} AND a.status IN ('active','proxy')`).rows[0];
-  const admin=(await sql`SELECT p.id FROM pos_artist_profiles p JOIN pos_booth_members m ON m.user_id=p.linked_user_id
-   WHERE p.owner_id=${ownerId} AND m.booth_id=${boothId} AND m.status='active' AND m.role IN ('owner','manager')`).rows[0];
+  const profile=(await sql`SELECT o.id FROM pos_stock_owners o JOIN pos_booth_artists a ON a.owner_id=o.id
+   WHERE o.id=${ownerId} AND a.booth_id=${boothId} AND a.status IN ('active','proxy')`).rows[0];
+  const admin=(await sql`SELECT o.id FROM pos_stock_owners o JOIN pos_booth_members m ON m.user_id=o.linked_user_id
+   WHERE o.id=${ownerId} AND m.booth_id=${boothId} AND m.status='active' AND m.role IN ('owner','manager')`).rows[0];
   if(!profile&&!admin)fail('행사에 등록된 제작자 또는 관리자를 선택해주세요.',403);
   await sql`INSERT INTO pos_booth_artists(booth_id,owner_id,status) VALUES(${boothId},${ownerId},'active') ON CONFLICT DO NOTHING`;
   await sql`INSERT INTO pos_event_artists(project_id,owner_id) VALUES(${projectId},${ownerId})`;
@@ -479,17 +490,11 @@ export async function setEventProductCreator(sql,userId,payload) {
  if(!allocation)fail('행사 배정 상품을 찾을 수 없습니다.',404);
  let creator;
  if(creatorOwnerId==null){
-  const key=hash([boothId,'event-unassigned']);
-  const unassignedId=`unassigned-owner:${key}`,profileId=`unassigned-profile:${key}`;
-  await sql`INSERT INTO pos_stock_owners(id,kind,display_name,origin_booth_id,legacy_key) VALUES(${unassignedId},'unverified','미지정',${boothId},${unassignedId}) ON CONFLICT DO NOTHING`;
-  await sql`INSERT INTO pos_artist_profiles(id,owner_id) VALUES(${profileId},${unassignedId}) ON CONFLICT DO NOTHING`;
-  await sql`INSERT INTO pos_booth_artists(booth_id,owner_id,status) VALUES(${boothId},${unassignedId},'proxy') ON CONFLICT DO NOTHING`;
-  await sql`INSERT INTO pos_event_artists(project_id,owner_id) VALUES(${projectId},${unassignedId}) ON CONFLICT DO NOTHING`;
-  creator=(await sql`SELECT * FROM pos_stock_owners WHERE id=${unassignedId}`).rows[0];
+  creator=await ensureUnassignedOwner(sql,boothId,projectId);
  }else{
-  creator=(await sql`SELECT o.* FROM pos_stock_owners o JOIN pos_artist_profiles p ON p.owner_id=o.id
+  creator=(await sql`SELECT o.* FROM pos_stock_owners o
    JOIN pos_event_artists e ON e.owner_id=o.id AND e.project_id=${projectId} AND e.status='active'
-   JOIN pos_booth_artists a ON a.owner_id=o.id AND a.booth_id=${boothId} AND a.status IN ('active','proxy') WHERE o.id=${creatorOwnerId} FOR UPDATE OF o,p,e,a`).rows[0];
+   JOIN pos_booth_artists a ON a.owner_id=o.id AND a.booth_id=${boothId} AND a.status IN ('active','proxy') WHERE o.id=${creatorOwnerId} FOR UPDATE OF o,e,a`).rows[0];
   if(!creator||creator.display_name==='미지정')fail('행사에 참여한 제작자를 선택해주세요.',403);
  }
  const before=(await sql`SELECT owner_id,recipient_id FROM pos_event_product_identities WHERE project_id=${projectId} AND product_id=${allocation.productId} FOR UPDATE`).rows[0];
@@ -513,7 +518,7 @@ export async function removeArtistStock(sql,userId,payload){
  if(item.product.removedAt)fail('이미 제거된 상품입니다.');
  if(item.version!==version)fail('상품이 변경되었습니다. 새로고침해주세요.');
  const active=(await sql`SELECT p.id FROM pos_inventory_links l JOIN pos_products p ON p.project_id=l.project_id AND p.id=l.product_id JOIN pos_projects e ON e.id=l.project_id WHERE l.admin_id=${item.admin_id} AND l.inventory_id=${item.id} AND e.archived_at IS NULL AND COALESCE(p.is_active,TRUE)=TRUE`).rows;
- if(active.length)fail('활성 행사에 등록된 상품이 있습니다. 행사 판매 설정에서 먼저 제거해주세요.');
+ if(active.length)fail('활성 행사에 등록된 상품이 있습니다. 상품 관리에서 먼저 제거해주세요.');
  await sql`UPDATE pos_inventory SET product=${JSON.stringify({...item.product,removedAt:new Date().toISOString()})}::jsonb,version=version+1 WHERE admin_id=${item.admin_id} AND id=${item.id}`;
  return receipt(sql,userId,'removeArtistStock',payload,prior.fingerprint,{removed:true,id,change:{reason:'remove'}});
 }

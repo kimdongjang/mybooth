@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react';
 import { Input } from './PosUI';
 import { won } from '../utils/productDisplay';
 
-const auditNames={profile_created:'프로필 생성',invitation_issued:'초대 발급',invitation_revoked:'초대 철회',profile_linked:'계정 연결'};
+const auditNames={profile_created:'프로필 생성',invitation_issued:'초대 발급',invitation_revoked:'초대 철회',profile_linked:'계정 연결',profile_linked_by_operator:'계정 연결',profile_unlinked_by_operator:'계정 연결 해제'};
 
 export default function ArtistAccount({request,onCompatibility,mode='all'}) {
   const [home,setHome]=useState(null);
   const [participants,setParticipants]=useState(null);
   const [boothId,setBoothId]=useState('');
-  const [artistName,setArtistName]=useState('');
   const [boothName,setBoothName]=useState('');
   const [proxyName,setProxyName]=useState('');
   const [code,setCode]=useState('');
@@ -42,10 +41,6 @@ export default function ArtistAccount({request,onCompatibility,mode='all'}) {
       {error && <p role="alert" className="inventory-error">{error}</p>}
       {home && <>
         {home.profiles.length>0 && <ul>{home.profiles.map(p=><li key={p.id}>{p.display_name}</li>)}</ul>}
-        {mode!=='booth'&&!home.profiles.some(p=>!p.origin_booth_id) && <form className="account-form" onSubmit={e=>{e.preventDefault();run(async()=>{await post('createArtistProfile',{name:artistName});setArtistName('');await reload();});}}>
-          <label>제작자명<Input required maxLength={80} value={artistName} onChange={setArtistName} disabled={busy}/></label>
-          <button className="management-add" disabled={busy}>내 제작자 프로필 만들기</button>
-        </form>}
         {mode!=='profile'&&!home.booths.some(b=>b.role==='owner') && <form className="account-form" onSubmit={e=>{e.preventDefault();run(async()=>{await post('createFirstBooth',{name:boothName});setBoothName('');await reload();});}}>
           <label>부스명<Input required maxLength={80} value={boothName} onChange={setBoothName} disabled={busy}/></label>
           <button className="management-add" disabled={busy}>부스 만들기</button>

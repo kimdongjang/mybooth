@@ -6,9 +6,10 @@ import { migrateLegacyBooth, migratedBooth, foundationReport, legacySnapshot, ad
 import { initArtistLinking, artistHome, createArtistProfile, createFirstBooth, createBoothArtist, boothArtists, issueArtistInvitation, previewArtistInvitation, acceptArtistInvitation, revokeArtistInvitation, artistHistory } from './lib/artistLinking.js';
 import {saveArtistStockPlan,removeArtistStock,setEventProductCreator,saveEventArtistProduct,registerEventArtistProduct,initArtistStock,artistStockView,artistStockMovements,createArtistStock,setArtistAllocation,adjustArtistStock,saveArtistProduct,importArtistStock,saveEventStockSchedule,joinArtistBooth,recordArtistStockLoss,leaveArtistBooth} from './lib/artistStock.js';
 import {initContractRetirement,retirementReport,changeLegacyContracts} from './lib/contractRetirement.js';
-import {removeEventArtist,createEventCreator,searchEventArtists,addEventArtist,searchEventAccounts,linkEventArtistAccount,initEventAccess,workspaceEvents,eventAccessView,saveEventAccess,authorizeEvent,boothManagementView,saveBoothManagement} from './lib/eventAccess.js';
+import {issueEventInvite,previewEventInvite,acceptEventInvite,unlinkEventArtistAccount,removeEventArtist,createEventCreator,searchEventArtists,addEventArtist,searchEventAccounts,linkEventArtistAccount,initEventAccess,workspaceEvents,eventAccessView,saveEventAccess,authorizeEvent,boothManagementView,saveBoothManagement} from './lib/eventAccess.js';
 
 const artistActions={createArtistProfile,createFirstBooth,createBoothArtist,issueArtistInvitation,previewArtistInvitation,acceptArtistInvitation,revokeArtistInvitation};
+const eventInviteActions={issueEventInvite,previewEventInvite,acceptEventInvite};
 const stockActions={saveArtistStockPlan,removeArtistStock,setEventProductCreator,saveEventArtistProduct,registerEventArtistProduct,createArtistStock,setArtistAllocation,adjustArtistStock,saveArtistProduct,importArtistStock,saveEventStockSchedule,joinArtistBooth,recordArtistStockLoss,leaveArtistBooth};
 
 export function createHandler(pool) {
@@ -23,8 +24,10 @@ export function createHandler(pool) {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
       if(!(await sql`SELECT id FROM pos_admins WHERE id=${actor.id} AND deleted_at IS NULL`).rows.length) throw Object.assign(new Error('인증이 필요합니다.'),{status:401});
       if(req.method==='GET'&&req.query?.workspace==='stockPreference'||req.method==='POST'&&['saveStockPreference','confirmStockParticipation'].includes(req.body?.action)){await initArtistStock(sql);const result=req.method==='GET'?await stockPreferenceView(sql,actor.id):await stockPreferenceCommand(sql,actor.id,req.body.action,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
-      if(req.method==='GET'&&['home','access','stockParticipants','booth','searchAccounts','searchArtists'].includes(req.query?.workspace)||req.method==='POST'&&['removeEventArtist','saveEventAccess','saveBoothManagement','linkEventArtistAccount','addEventArtist','createEventCreator'].includes(req.body?.action)) {
+      if(req.method==='GET'&&['home','access','stockParticipants','booth','searchAccounts','searchArtists'].includes(req.query?.workspace)||req.method==='POST'&&['unlinkEventArtistAccount','removeEventArtist','saveEventAccess','saveBoothManagement','linkEventArtistAccount','addEventArtist','createEventCreator',...Object.keys(eventInviteActions)].includes(req.body?.action)) {
         await initArtistStock(sql);await initEventAccess(sql);
+        if(Object.hasOwn(eventInviteActions,req.body?.action)){const result=await eventInviteActions[req.body.action](sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
+        if(req.body?.action==='unlinkEventArtistAccount'){const result=await unlinkEventArtistAccount(sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
         if(req.body?.action==='removeEventArtist'){const result=await removeEventArtist(sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
         if(req.body?.action==='createEventCreator'){const result=await createEventCreator(sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
         if(req.query?.workspace==='searchArtists'||req.body?.action==='addEventArtist'){const result=req.method==='GET'?await searchEventArtists(sql,actor.id,req.query):await addEventArtist(sql,actor.id,req.body.payload||{});await client.query('COMMIT');return res.status(200).json(result);}
@@ -35,22 +38,26 @@ export function createHandler(pool) {
         }
         if(req.query?.workspace==='stockParticipants') {
           await authorizeEvent(sql,actor.id,req.query.projectId,'configure',req.query.boothId);
-          const profiles=(await sql`SELECT p.id AS profile_id,p.owner_id,p.linked_user_id,CASE WHEN o.display_name='미지정' AND u.id IS NOT NULL THEN COALESCE(NULLIF(u.nickname,''),u.id) ELSE o.display_name END AS display_name FROM pos_event_artists e JOIN pos_artist_profiles p ON p.owner_id=e.owner_id
-            JOIN pos_stock_owners o ON o.id=e.owner_id LEFT JOIN pos_admins u ON u.id=p.linked_user_id AND u.deleted_at IS NULL WHERE e.project_id=${req.query.projectId} AND e.status='active' ORDER BY p.id`).rows;
-          const administrators=(await sql`SELECT p.owner_id,COALESCE(NULLIF(o.display_name,'미지정'),NULLIF(u.nickname,''),u.id,'관리자') AS display_name,u.id AS user_id
+          const profiles=(await sql`SELECT o.id AS profile_id,o.id AS owner_id,o.linked_user_id,CASE WHEN o.display_name='미지정' AND u.id IS NOT NULL THEN COALESCE(NULLIF(u.nickname,''),u.id) ELSE o.display_name END AS display_name FROM pos_event_artists e
+            JOIN pos_stock_owners o ON o.id=e.owner_id LEFT JOIN pos_admins u ON u.id=o.linked_user_id AND u.deleted_at IS NULL WHERE e.project_id=${req.query.projectId} AND e.status='active' ORDER BY o.id`).rows;
+          const administrators=(await sql`SELECT o.id AS owner_id,COALESCE(NULLIF(o.display_name,'미지정'),NULLIF(u.nickname,''),u.id,'관리자') AS display_name,u.id AS user_id
             FROM pos_booth_members m JOIN pos_admins u ON u.id=m.user_id AND u.deleted_at IS NULL
-            LEFT JOIN pos_artist_profiles p ON p.linked_user_id=u.id AND p.status='linked'
-            LEFT JOIN pos_stock_owners o ON o.id=p.owner_id
-            WHERE m.booth_id=${req.query.boothId} AND m.status='active' AND m.role IN ('owner','manager') ORDER BY u.id,p.id`).rows;
+            LEFT JOIN pos_stock_owners o ON o.linked_user_id=u.id AND o.link_status='linked'
+            WHERE m.booth_id=${req.query.boothId} AND m.status='active' AND m.role IN ('owner','manager') ORDER BY u.id,o.id`).rows;
           const event=await authorizeEvent(sql,actor.id,req.query.projectId,'configure',req.query.boothId);
           const choices=profiles.map(p=>({...p,catalog:true}));
-          const originals=(await sql`SELECT DISTINCT p.id AS profile_id,p.owner_id,p.linked_user_id,o.display_name FROM pos_inventory_links l JOIN pos_inventory_owners i ON i.admin_id=l.admin_id AND i.inventory_id=l.inventory_id JOIN pos_artist_profiles p ON p.owner_id=i.owner_id JOIN pos_stock_owners o ON o.id=p.owner_id WHERE l.project_id=${req.query.projectId}`).rows;
+          const originals=(await sql`SELECT DISTINCT o.id AS profile_id,o.id AS owner_id,o.linked_user_id,o.display_name FROM pos_inventory_links l JOIN pos_inventory_owners i ON i.admin_id=l.admin_id AND i.inventory_id=l.inventory_id JOIN pos_stock_owners o ON o.id=i.owner_id WHERE l.project_id=${req.query.projectId}`).rows;
           for(const original of originals)if(!choices.some(p=>p.owner_id===original.owner_id))choices.push({...original,catalog:true,stockOnly:true});
           if(event.permissions.canManage)for(const admin of administrators) {
             const ownerId=admin.owner_id||(admin.user_id===actor.id?`admin:${actor.id}`:null);
             if(ownerId&&!choices.some(p=>p.owner_id===ownerId))choices.push({owner_id:ownerId,display_name:admin.display_name,catalog:false});
           }
           await client.query('COMMIT');return res.status(200).json({profiles:choices});
+        }
+        if(req.method==='GET'&&req.query.workspace==='home'){
+          // 회원가입 정보(닉네임)로 내 제작자 프로필을 자동 생성한다. 프로필이 하나라도 있으면 건드리지 않는다.
+          const mine=(await sql`SELECT 1 FROM pos_stock_owners WHERE linked_user_id=${actor.id} AND link_status='linked' LIMIT 1`).rows[0];
+          if(!mine){const account=(await sql`SELECT nickname FROM pos_admins WHERE id=${actor.id}`).rows[0];await createArtistProfile(sql,actor.id,{name:(account?.nickname||'').trim().slice(0,80)||actor.id.slice(0,80)});}
         }
         const result=req.method==='POST'?await saveEventAccess(sql,actor.id,req.body.payload||{}):req.query.workspace==='access'
           ?await eventAccessView(sql,actor.id,req.query):{...await artistHome(sql,actor.id),events:await workspaceEvents(sql,actor.id)};

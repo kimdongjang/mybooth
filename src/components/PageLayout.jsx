@@ -67,11 +67,11 @@ export function AppHeader({ profileImage, page, navigate, project, projects = []
   const onPersonalPage = personalPages.includes(page);
   const moreActive = ['dashboard', 'account', 'revenue'].includes(page);
   const permissions = project?.permissions || {};
-  const eventMenu = showEventNav ? [['pos', '판매'], ['log', '판매현황'], ['settings', '행사 판매 설정'], ['project', '행사 관리']].filter(([key]) => key === 'pos' ? permissions.canSell || permissions.canViewPos : key === 'project' ? permissions.canManage : key === 'log' ? permissions.canSettle || permissions.canReadOwnHistory || permissions.ownerIds?.length : permissions.canConfigure || permissions.ownerIds?.length) : [];
+  const eventMenu = showEventNav ? [['pos', '판매'], ['settings', '상품 관리'], ['log', '판매 현황'], ['project', '행사 관리']].filter(([key]) => key === 'pos' ? permissions.canSell || permissions.canViewPos : key === 'project' ? permissions.canManage : key === 'log' ? permissions.canSettle || permissions.canReadOwnHistory || permissions.ownerIds?.length : permissions.canConfigure || permissions.ownerIds?.length) : [];
   const eventMenuCurrent = key => !onPersonalPage && (page === key || key === 'project' && page.startsWith('project') || key === 'settings' && ['productNew','bundleNew'].includes(page));
   const accountMenu = [['projects','행사 목록'],['inventory','내 재고관리'],['dashboard','대시보드'],['account','마이페이지']];
   return <><header ref={root} className="app-header sales-app-header border-b border-line bg-white text-ink">
-    <div className="header-brand"><a href={`#${pagePaths[destination]}`} className="display-font brand-title font-bold" onClick={follow(destination)} aria-label="WithBooth 판매"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="WithBooth" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
+    <div className="header-brand"><a href={`#${pagePaths[destination]}`} className="display-font brand-title font-bold" onClick={follow(destination)} aria-label="위드부스 판매"><img className="brand-logo" src="/brand/withbooth-final-logo.png" alt="위드부스" width="1930" height="815" /></a>{saving && <span className="sr-only" role="status">저장 중...</span>}</div>
     <div className="event-switcher">
       <button ref={eventToggle} type="button" className="event-switcher-trigger" aria-expanded={open === 'events'} aria-controls="header-event-list" onClick={() => setOpen(open === 'events' ? null : 'events')}><Icon name="project"/><span className="event-context-name" title={project?.name}>{project?.name || '행사 선택'}</span><span aria-hidden="true">▾</span></button>
       {open === 'events' && <section id="header-event-list" className="header-popover event-switcher-panel" aria-label="행사 변경">
@@ -100,5 +100,5 @@ export function AppHeader({ profileImage, page, navigate, project, projects = []
         {open === 'more' && <div id="header-more-menu" className="header-popover" aria-label="내 계정 메뉴">{accountMenu.map(([key,label]) => <a key={key} href={`#${pagePaths[key]}`} aria-current={page === key || (key === 'projects' && ['projectNew','projectDuplicate'].includes(page)) || (key === 'inventory' && page === 'artistStock') || (key === 'account' && page === 'revenue') ? 'page' : undefined} onClick={follow(key)}><Icon name={key}/>{label}</a>)}</div>}
       </div>
     </nav>}
-  </header></>;
+  </header>{(open === 'menu' || open === 'more') && <div className="header-menu-backdrop" aria-hidden="true"/>}</>;
 }

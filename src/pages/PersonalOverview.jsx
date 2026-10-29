@@ -1,3 +1,4 @@
+import {settlementPhaseLabel,recipientSettlementLabel} from '../utils/eventSettlement';
 import {useEffect,useState} from 'react';
 import {won} from '../utils/productDisplay';
 import {koreanDay} from '../utils/revenueSummary';
@@ -21,12 +22,12 @@ export default function PersonalOverview({request,projectId,dashboard=false,even
  const gross=selected.flatMap(e=>e.sales).filter(s=>!s.voided&&(!start||koreanDay(s.time)>=start)&&(!end||koreanDay(s.time)<=end)).flatMap(s=>s.items).reduce((s,i)=>s+i.amount,0);
  const sum=key=>rows.reduce((s,r)=>s+Number(r[key]||0),0);
  return <main className="page-content">
-  {projectId?<header className="inventory-page-header"><nav className="inventory-breadcrumb" aria-label="현재 위치"><ol><li><h1 aria-current="page">판매현황</h1></li></ol></nav></header>:<h1 className="sr-only">{dashboard?'대시보드':'수익현황'}</h1>}
+  {projectId?<header className="inventory-page-header"><nav className="inventory-breadcrumb" aria-label="현재 위치"><ol><li><h1 aria-current="page">판매 현황</h1></li></ol></nav></header>:<h1 className="sr-only">{dashboard?'대시보드':'수익현황'}</h1>}
   <div className="page-body revenue-page">
   {error&&<p role="alert" className="inventory-error">{error}</p>}{!data&&!error&&<LoadingState/>}
   {data&&<><div className="revenue-period"><label>판매 시작일<input type="date" value={start} onChange={e=>setStart(e.target.value)}/></label><label>판매 종료일<input type="date" min={start} value={end} onChange={e=>setEnd(e.target.value)}/></label></div>
    <dl className="account-dashboard-kpis">{[['내 판매액',gross],['확정 정산금',rows.filter(r=>r.event.closedAt).reduce((s,r)=>s+r.net,0)],['지급 완료',sum('paid')],['정산 대기 · 전체 기간',sum('pending')]].map(([label,value])=><div className="dashboard-metric" key={label}><dt>{label}</dt><dd>{won(value)}원</dd></div>)}</dl>
-   <div className="management-table-wrap"><table className="management-table"><thead><tr><th>부스 · 행사</th><th>제작자</th><th>판매액</th><th>비용</th><th>정산금</th><th>지급</th><th>상태</th></tr></thead><tbody>{rows.map(r=><tr key={`${r.event.projectId}:${r.recipientId}`}><td><a href={`#/settlement?projectId=${encodeURIComponent(r.event.projectId)}`}>{r.event.boothName} · {r.event.eventName}</a></td><td>{r.artistName}</td><td>{won(r.gross)}</td><td>{won(r.fees)}</td><td>{won(r.net)}</td><td>{won(r.paid)}</td><td>{r.event.closedAt?'확정':'예상'}</td></tr>)}</tbody></table></div>
+   <div className="management-table-wrap"><table className="management-table"><thead><tr><th>부스 · 행사</th><th>제작자</th><th>판매액</th><th>비용</th><th>정산금</th><th>지급</th><th>행사 정산</th><th>내 정산</th></tr></thead><tbody>{rows.map(r=><tr key={`${r.event.projectId}:${r.recipientId}`}><td><a href={`#/settlement?projectId=${encodeURIComponent(r.event.projectId)}`}>{r.event.boothName} · {r.event.eventName}</a></td><td>{r.artistName}</td><td>{won(r.gross)}</td><td>{won(r.fees)}</td><td>{won(r.net)}</td><td>{won(r.paid)}</td><td>{settlementPhaseLabel(r.event)}</td><td>{recipientSettlementLabel(r.event,r)}</td></tr>)}</tbody></table></div>
 
 
   </>}

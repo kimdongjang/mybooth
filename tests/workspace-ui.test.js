@@ -1,3 +1,4 @@
+import {settlementPhaseLabel,recipientSettlementLabel} from '../src/utils/eventSettlement.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -15,7 +16,7 @@ const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
 async function harness(file,mocks={}) {
  let cursor=0,effectIndex=0;const states=[],effects=[],deps=[];
  const react={useId:()=> 'inventory-plan-form',useRef:value=>{const i=cursor++;return states[i]||=( {current:value});},useState:value=>{const i=cursor++;if(!(i in states))states[i]=typeof value==='function'?value():value;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},useEffect:(effect,dependencies)=>{const i=effectIndex++;if(!deps[i]||dependencies.some((v,j)=>!Object.is(v,deps[i][j]))){deps[i]=dependencies;effects.push(effect);}}};
- const base={'../utils/eventNavigation':{eventDestination,eventActionLabel},'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project/manage'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts,dashboardPastEvents,dashboardRole,settlementDisplay},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
+ const base={'../utils/eventSettlement':{settlementPhaseLabel,recipientSettlementLabel},'../utils/eventNavigation':{eventDestination,eventActionLabel},'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project/manage'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts,dashboardPastEvents,dashboardRole,settlementDisplay},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
  const listeners=new Map();
  const context=vm.createContext({document:{addEventListener:(key,fn)=>listeners.set(key,fn),removeEventListener:key=>listeners.delete(key)},crypto:globalThis.crypto,URLSearchParams,URL,sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},alert:message=>{throw new Error(message);}});
  const source=await readFile(new URL('../src/'+file,import.meta.url),'utf8');
@@ -37,6 +38,37 @@ test('personal inventory defaults to owned profile and uses artist APIs rather t
  assert.ok(calls.some(url=>url.includes('ownerId=mine')));assert.ok(calls.some(url=>url.includes('ownerId=linked')));assert.ok(!calls.some(url=>url.includes('artists=participants')));assert.equal(tree.some(node=>node.type==='select'),false);assert.ok(!calls.some(url=>url.includes('ownerId=proxy')));
  assert.ok(!calls.some(url=>url.includes('/api/pos')));
 });
+test('personal inventory without a profile keeps the catalog and registration form visible without sending stock commands',async()=>{
+ const calls=[],opened=[];
+ const request=async(url,options)=>{calls.push({url,options});return {profiles:[],booths:[]};};
+ const h=await harness('pages/PersonalInventory.jsx');const props={request,routeHash:'#/inventory',navigate:path=>opened.push(path)};
+ let tree=h.render(props);assert.ok(tree.some(n=>n.type==='PersonalInventoryCatalog'));
+ await h.flush();tree=h.render(props);await h.flush();tree=h.render(props);
+ const catalog=tree.find(n=>n.type==='PersonalInventoryCatalog');assert.equal(catalog.props.items.length,0);assert.equal(catalog.props.events.length,0);
+ tree.find(n=>n.type==='button'&&n.props.children==='+ 새 상품 등록').props.onClick();assert.deepEqual(opened,['/inventory/new']);
+ tree=h.render({...props,routeHash:'#/inventory/new'});
+ assert.ok(tree.some(n=>n.type==='InventoryProductFields'&&n.props.disabled));
+ assert.equal(tree.some(n=>n.props.role==='alert'),false);
+ await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
+ assert.equal(calls.some(call=>call.options?.method==='POST'||call.url.includes('artists=stock')),false);
+ const list=await harness('components/PersonalInventoryCatalog.jsx',{'../utils/inventorySearch':{filterInventory}});
+ const empty=list.render(catalog.props);assert.ok(empty.some(n=>n.props.role==='search'));assert.ok(empty.some(n=>n.type==='table'));assert.ok(empty.some(n=>n.type==='thead'));
+});
+
+test('personal inventory registers the first product through the existing owned stock command',async()=>{
+ const calls=[],opened=[];const request=async(url,options)=>{
+  if(options?.method==='POST'){calls.push(JSON.parse(options.body));return {};}
+  if(url.includes('workspace=home'))return {profiles:[{owner_id:'mine',display_name:'나'}],booths:[]};
+  return {inventory:[],events:[]};
+ };
+ const h=await harness('pages/PersonalInventory.jsx'),props={request,routeHash:'#/inventory/new',navigate:path=>opened.push(path)};
+ h.render(props);await h.flush();h.render(props);await h.flush();let tree=h.render(props);
+ const fields=tree.find(n=>n.type==='InventoryProductFields');assert.equal(fields.props.disabled,false);
+ fields.props.onChange('name','첫 상품');tree=h.render(props);
+ await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
+ assert.equal(calls.length,1);assert.equal(calls[0].action,'createArtistStock');assert.equal(calls[0].payload.ownerId,'mine');assert.equal(calls[0].payload.name,'첫 상품');assert.equal(calls[0].payload.price,0);assert.equal(calls[0].payload.quantity,0);assert.deepEqual(opened,['inventory']);
+});
+
 test('physical SQL translation preserves values and snapshot keys; a delegate with no default booth sends its explicit event scope',()=>{
  const value={name:'pos_inventory',admin_id:'keep-me'};
  const query=storageQuery("SELECT admin_id,snapshot->>'admin_id' FROM pos_inventory WHERE product=$1::jsonb",[JSON.stringify(value)]);
@@ -260,6 +292,13 @@ test('event inventory expands only operator/owned context and binds its save to 
 });
 
 
+test('event product list hides products removed from the event while keeping active ones',async()=>{
+ const h=await harness('components/EventSalesCatalog.jsx');
+ const items=[{id:'kept',name:'남은 상품',allocations:[{projectId:'e',productId:'a'}]},{id:'gone',name:'제거한 상품',allocations:[{projectId:'e',productId:'r'}]},{id:'missing',name:'응답에 없는 상품',allocations:[{projectId:'e',productId:'x'}]}];
+ const names=tree=>tree.filter(n=>n.props?.className==='management-name-link').map(n=>n.props['aria-label']);
+ assert.deepEqual(names(h.render({items,event:{id:'e'},products:[{id:'a',isActive:true},{id:'r',isActive:false}]})),['남은 상품 상세보기']);
+ assert.deepEqual(names(h.render({items,event:{id:'e'},products:[{id:'a',isActive:true}]})),['남은 상품 상세보기']);
+});
 test('event product list displays event creator on desktop and mobile without changing inventory ownership',async()=>{
  const h=await harness('components/EventSalesCatalog.jsx');
  const item={id:'stock',name:'상품',creatorName:'원본 제작자',allocations:[{projectId:'e',productId:'p'}]};
@@ -330,17 +369,33 @@ test('restore previews sales and settlement and retries the same request without
 });
 
 
-test('event information edits name and dates in one form and requests password only in the save dialog',async()=>{
+test('event information saves directly without password and retries the same information command',async()=>{
  const calls=[];let fail=true;
  const h=await harness('pages/ProjectManagementPage.jsx',{'../components/EventSettlementPanel':{default:'EventSettlementPanel'},'../components/EventAccessPanel':{default:'EventAccessPanel'},'../components/ProjectNavigation':{default:'ProjectNavigation'}});
  const props={page:'project',project:{id:'e',boothId:'b',name:'행사'},request:async()=>({schedule:{starts_on:'2026-11-01',ends_on:'2026-11-02'}}),onManageProject:async(p,action,payload)=>{calls.push({p,action,payload});if(fail){fail=false;throw new Error('응답 유실');}}};
  h.render(props);await h.flush();let tree=h.render(props);let form=tree.find(n=>n.type==='form'&&n.props.className.includes('event-info-form'));
- assert.equal(nodes(form).some(n=>n.props?.type==='password'),false);
+ assert.equal(tree.some(n=>n.props?.type==='password'||n.type==='dialog'),false);
  nodes(form).find(n=>n.type==='Input').props.onChange('행사 새 이름');nodes(form).find(n=>n.props?.type==='date').props.onChange({target:{value:'2026-11-03'}});
- tree=h.render(props);form=tree.find(n=>n.type==='form'&&n.props.className.includes('event-info-form'));await form.props.onSubmit({preventDefault(){}});assert.equal(calls.length,0);
- tree=h.render(props);let dialog=tree.find(n=>n.type==='dialog');nodes(dialog).find(n=>n.type==='Input'&&n.props.type==='password').props.onChange('password');tree=h.render(props);dialog=tree.find(n=>n.type==='dialog');
- await nodes(dialog).find(n=>n.type==='form').props.onSubmit({preventDefault(){}});tree=h.render(props);dialog=tree.find(n=>n.type==='dialog');assert.ok(nodes(dialog).find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인'));
- await nodes(dialog).find(n=>n.type==='form').props.onSubmit({preventDefault(){}});assert.equal(calls[0].action,'updateProjectInfo');assert.equal(calls[0].payload.name,'행사 새 이름');assert.equal(calls[0].payload.startsOn,'2026-11-03');assert.equal(calls[0].payload.requestId,calls[1].payload.requestId);
+ tree=h.render(props);form=tree.find(n=>n.type==='form'&&n.props.className.includes('event-info-form'));await form.props.onSubmit({preventDefault(){}});assert.equal(calls.length,1);
+ tree=h.render(props);assert.ok(tree.find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인'));
+ await tree.find(n=>n.type==='form'&&n.props.className.includes('event-info-form')).props.onSubmit({preventDefault(){}});
+ assert.equal(calls[0].action,'updateProjectInfo');assert.equal(calls[0].payload.name,'행사 새 이름');assert.equal(calls[0].payload.startsOn,'2026-11-03');assert.equal(calls[0].payload.requestId,calls[1].payload.requestId);assert.equal(Object.hasOwn(calls[0].payload,'password'),false);
+});
+
+test('event management asks for a password only for deletion and ending sales',async()=>{
+ for(const kind of ['backup','archive','delete','reopen']){
+  const calls=[];const h=await harness('pages/ProjectManagementPage.jsx',{'../components/EventSettlementPanel':{default:'EventSettlementPanel'},'../components/EventAccessPanel':{default:'EventAccessPanel'},'../components/ProjectNavigation':{default:'ProjectNavigation'}});
+  const props={page:'projectBackup',project:{id:'e',name:'행사',...(kind==='reopen'?{archivedAt:'2026-10-29'}:{})},navigate(){},onManageProject:async(p,action,payload)=>calls.push({action,payload})};
+  let tree=h.render(props);
+  if(kind==='archive'||kind==='reopen'){tree.find(n=>n.type==='button'&&n.props.children===(kind==='archive'?'판매 종료':'판매 다시 열기')).props.onClick();}
+  if(kind==='delete')tree.find(n=>n.type==='button'&&n.props.children==='삭제하기').props.onClick();
+  tree=h.render(props);const protectedAction=['archive','delete'].includes(kind);
+  assert.equal(tree.some(n=>n.type==='Input'&&n.props.type==='password'),protectedAction);
+  if(kind==='delete'){tree.find(n=>n.type==='Input'&&n.props.type!=='password').props.onChange('행사');tree=h.render(props);}
+  if(protectedAction){await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});assert.equal(calls.length,0);tree.find(n=>n.type==='Input'&&n.props.type==='password').props.onChange('test-password');tree=h.render(props);}
+  await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
+  assert.equal(calls[0].action,{backup:'backupProject',archive:'archiveProject',delete:'deleteProject',reopen:'unarchiveProject'}[kind]);assert.equal(Object.hasOwn(calls[0].payload,'password'),protectedAction);
+ }
 });
 
 test('event creators use role controls and delete instead of participation toggles, and hide removed and unassigned profiles',async()=>{
@@ -401,6 +456,41 @@ test('event list puts the nearest upcoming event first without changing the sour
  assert.equal(rows[0].id,'past');
 });
 
+
+test('event linked accounts show avatars and open scoped account details without issuing mutations',async()=>{
+ const profile={id:'creator',owner_id:'creator',display_name:'제작자',nickname:'참여 계정',linked_user_id:'account',avatar:'data:image/png;base64,YQ==',product_count:3,status:'active'};
+ const writes=[];const request=async(url,options)=>{if(options?.method==='POST')writes.push(JSON.parse(options.body));return {profiles:[profile],staff:[{user_id:'account',role:'assistant',status:'active'}]};};
+ const h=await harness('components/EventAccessPanel.jsx'),props={request,project:{id:'event',boothId:'booth'}};
+ h.render(props);await h.flush();let tree=h.render(props);
+ const link=tree.find(n=>n.type==='button'&&n.props['aria-label']==='참여 계정 계정 정보');assert.ok(link);
+ assert.ok(nodes(link).some(n=>n.type==='img'&&n.props.src===profile.avatar));
+ link.props.onClick();tree=h.render(props);await h.flush();tree=h.render(props);
+ const detail=tree.find(n=>n.type==='dialog'&&n.props['aria-labelledby']==='event-account-details-title');
+ const contents=JSON.stringify(detail);assert.ok(contents.includes('account'));assert.ok(contents.includes('부관리자'));assert.ok(contents.includes('제작자'));assert.equal(contents.includes('email'),false);
+ assert.ok(nodes(detail).some(n=>n.type==='dd'&&n.props.children[0]===3));
+ nodes(detail).find(n=>n.type==='button'&&n.props.children==='닫기').props.onClick();tree=h.render(props);
+ assert.equal(tree.some(n=>n.type==='dl'),false);assert.equal(writes.length,0);
+});
+
+test('event account unlink confirms the global change and preserves its command for an uncertain retry',async()=>{
+ let profiles=[{id:'creator',owner_id:'creator',display_name:'제작자',linked_user_id:'account',status:'active',can_unlink:true,version:4}];
+ const calls=[],confirmed=[],guarded=[];let failed=false;
+ const request=async(url,options)=>{if(options?.method!=='POST')return {profiles,staff:[]};const command=JSON.parse(options.body);calls.push(command);if(!failed){failed=true;throw new Error('응답 유실');}profiles=[{...profiles[0],linked_user_id:null,can_unlink:false,version:5}];return {unlinked:true,projectIds:['event','other']};};
+ const h=await harness('components/EventAccessPanel.jsx',{'../utils/confirmAction':{confirmAction:async message=>{confirmed.push(message);return true;}}});const props={request,project:{id:'event',boothId:'booth'},beforeChange:async action=>guarded.push(action)};
+ h.render(props);await h.flush();let tree=h.render(props);
+ await tree.find(n=>n.type==='button'&&n.props.children==='연결 해제').props.onClick();tree=h.render(props);
+ assert.equal(calls[0].action,'unlinkEventArtistAccount');assert.equal(calls[0].payload.ownerId,'creator');assert.equal(calls[0].payload.targetUserId,'account');assert.equal(calls[0].payload.version,4);assert.equal(calls[0].payload.projectId,'event');assert.equal(calls[0].payload.boothId,'booth');assert.ok(confirmed[0].includes('모든 행사'));
+ await tree.find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인').props.onClick();tree=h.render(props);
+ assert.equal(calls[0].payload.requestId,calls[1].payload.requestId);assert.equal(guarded.length,2);assert.equal(tree.some(n=>n.type==='button'&&n.props.children==='연결 해제'),false);assert.ok(tree.some(n=>n.type==='button'&&n.props.children==='+연결'));
+});
+
+test('event account unlink respects a pending-order guard before sending the command',async()=>{
+ const profile={id:'creator',owner_id:'creator',display_name:'제작자',linked_user_id:'account',status:'active',can_unlink:true,version:1};let writes=0;
+ const request=async(url,options)=>{if(options?.method==='POST')writes++;return {profiles:[profile],staff:[]};};
+ const h=await harness('components/EventAccessPanel.jsx'),props={request,project:{id:'event',boothId:'booth'},beforeChange:async()=>{throw Object.assign(new Error('미동기화 주문을 먼저 처리해주세요.'),{status:409});}};
+ h.render(props);await h.flush();let tree=h.render(props);await tree.find(n=>n.type==='button'&&n.props.children==='연결 해제').props.onClick();tree=h.render(props);
+ assert.equal(writes,0);assert.ok(tree.some(n=>n.props.role==='alert'&&n.props.children.includes('미동기화')));
+});
 
 test('unlinked role changes save immediately and account linking searches accounts without role controls',async()=>{
  const calls=[];let linked=false,role=null,version=0;
@@ -475,9 +565,9 @@ test('event settings catalog shows local sales and stock while its cached invent
 test('sales navigation stays visible and event tools follow server capabilities',async()=>{
  for(const [permissions,expected] of [
   [{canViewPos:true},['판매']],
-  [{ownerIds:['own']},['판매현황','행사 판매 설정']],
-  [{canSell:true,canConfigure:true,ownerIds:['own']},['판매','판매현황','행사 판매 설정']],
-  [{canSell:true,canConfigure:true,canManage:true,canSettle:true},['판매','판매현황','행사 판매 설정','행사 관리']]
+  [{ownerIds:['own']},['상품 관리','판매 현황']],
+  [{canSell:true,canConfigure:true,ownerIds:['own']},['판매','상품 관리','판매 현황']],
+  [{canSell:true,canConfigure:true,canManage:true,canSettle:true},['판매','상품 관리','판매 현황','행사 관리']]
  ]) {
   const h=await harness('components/PageLayout.jsx');
   const tree=h.render({page:'settings',navigate(){},project:{id:'e',name:'행사',permissions}},'AppHeader');
@@ -567,4 +657,27 @@ test('dashboard preserves warnings for every event and overview passes no focus 
  const overview=await harness('pages/PersonalOverview.jsx');
  const dashboard=overview.render({dashboard:true,request:async()=>({events:[]})}).find(n=>n.type==='PersonalDashboard');
  assert.equal(dashboard.props.pinnedProjectId,undefined);assert.equal(dashboard.props.onPinProject,undefined);
+});
+
+
+test('personal settlement status separates event phase from own completion on dashboard and revenue',async()=>{
+ const history=[{projectId:'e',eventName:'행사',closedAt:'2026-10-29',finishedAt:null,rows:[{recipientId:'r',artistName:'작가',gross:100,fees:0,net:100,paid:100,pending:0,completed:true}],sales:[]}];
+ const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'}});
+ const tree=h.render({data:{events:history,inventory:[]},events:[]});
+ assert.ok(tree.some(n=>n.props.children==='내 정산 현황'));
+ assert.ok(tree.some(n=>n.type==='td'&&n.props.children==='정산 진행 중'));
+ assert.ok(tree.some(n=>n.type==='td'&&n.props.children==='정산 완료'));
+ const overview=await harness('pages/PersonalOverview.jsx');
+ overview.render({request:async()=>({events:history})});await overview.flush();
+ const rows=overview.render({request:async()=>({events:history})});
+ assert.ok(rows.some(n=>n.type==='td'&&n.props.children==='정산 완료'));
+});
+
+
+test('zero amount completion can be cancelled from the settlement editor',async()=>{
+ const h=await harness('components/SettlementEditor.jsx');const commands=[];
+ const row={projectId:'e',creator:'작가',projectName:'행사',version:1,confirmed:true,net:0,paid:0,pending:0,deductions:[],payments:[{id:'zero',amount:0,paidAt:'2026-10-29',settlementComplete:true}]};
+ const tree=h.render({row,save:async command=>commands.push(command),close(){}});
+ await tree.find(n=>n.type==='button'&&n.props.children==='정산 완료 취소').props.onClick();
+ assert.equal(commands[0].action,'reversePayment');assert.equal(commands[0].paymentId,'zero');
 });

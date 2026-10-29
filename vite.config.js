@@ -1,26 +1,35 @@
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { httpsOrigin } from './src/platform/mobileConfig.js';
 
-function createVercelApiDevPlugin() {
+// The config may be evaluated by Vite's module runner, which is closed once the server starts.
+// Build the import at runtime so API handlers always load through Node's native loader.
+const nativeImport = new Function('url', 'return import(url)');
+const nativeModule = (path) => nativeImport(pathToFileURL(resolve(path)).href);
+
+function createVercelApiDevPlugin(local = false) {
   return {
     name: 'local-vercel-api',
     configureServer(server) {
+      if (local) server.middlewares.use('/local-images', async (req, res, next) => (await nativeModule('scripts/local/serveImages.mjs')).default(req, res, next));
       server.middlewares.use('/api/auth', async (req, res) => {
-        await runApiHandler(req, res, () => import('./api/auth.js'));
+        await runApiHandler(req, res, () => nativeModule('api/auth.js'));
       });
       server.middlewares.use('/api/product-images', async (req, res) => {
-        await runApiHandler(req, res, () => import('./api/product-images.js'));
+        if (local) return (await nativeModule('scripts/local/images.mjs')).default(req, res);
+        await runApiHandler(req, res, () => nativeModule('api/product-images.js'));
       });
       server.middlewares.use('/api/settlements', async (req, res) => {
-        await runApiHandler(req, res, () => import('./api/settlements.js'));
+        await runApiHandler(req, res, () => nativeModule('api/settlements.js'));
       });
       server.middlewares.use('/api/booths', async (req, res) => {
-        await runApiHandler(req, res, () => import('./api/booths.js'));
+        await runApiHandler(req, res, () => nativeModule('api/booths.js'));
       });
       server.middlewares.use('/api/pos', async (req, res) => {
-        await runApiHandler(req, res, () => import('./api/pos.js'));
+        await runApiHandler(req, res, () => nativeModule('api/pos.js'));
       });
     },
   };
@@ -73,7 +82,7 @@ function createResponseAdapter(res) {
 }
 
 export default defineConfig(({ mode, command }) => {
-  if (command === 'serve') {
+  if (command === 'serve' && mode !== 'localdb') {
     const env = loadEnv(mode, process.cwd(), '');
     // Pass only server credentials to Node; Vite's client env prefix stays unchanged.
     for (const key of ['ADMIN_ID', 'ADMIN_USERNAME', 'ADMIN_PASSWORD', 'AUTH_SECRET', 'POSTGRES_URL', 'POSTGRES_PRISMA_URL', 'POSTGRES_URL_NON_POOLING', 'DATABASE_URL', 'BLOB_READ_WRITE_TOKEN']) {
@@ -81,10 +90,11 @@ export default defineConfig(({ mode, command }) => {
     }
   }
   return ({
+  envDir: mode === 'localdb' ? '.local-data/isolated-env' : undefined,
   resolve: { dedupe: ['react', 'react-dom'] },
   optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime'] },
   build: { target: 'es2022' },
-  plugins: [createVercelApiDevPlugin(), react(), tailwindcss(), {
+  plugins: [createVercelApiDevPlugin(mode === 'localdb'), react(), tailwindcss(), {
     name: 'validate-mobile-origin',
     configResolved(config) {
       if (mode === 'android') {

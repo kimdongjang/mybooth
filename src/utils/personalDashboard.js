@@ -79,9 +79,11 @@ export function settlementDisplay(event) {
 
 export function dashboardPastEvents(events) {
  const rows=events.filter(event=>event.status==='ended'&&(event.canReport||event.operator||event.p.ownerIds?.length)).map(event=>{
-  const settlement=!event.closed?'open':event.pending>0?'closed':'paid';
+  const ownRows=event.history?.rows||[];
+  const complete=ownRows.length&&event.netScope==='own'?ownRows.every(row=>row.completed??(row.net>0&&row.paid>=row.net)):event.pending===0;
+  const settlement=!event.closed?'open':event.history?.finishedAt?'finished':complete?'paid':'closed';
   const remaining=Number(event.stock?.remaining||0),stock=!event.stock?'na':remaining>0?'recover':'done';
-  const followUp=(!event.closed&&Boolean(event.p.canSettle))||stock==='recover'||(event.closed&&event.pending>0);
+  const followUp=(!event.closed&&Boolean(event.p.canSettle))||stock==='recover'||(event.closed&&settlement==='closed');
   return {event,settlement,stock,remaining,followUp,role:dashboardRole(event),gross:event.metrics?.gross??null,net:event.net};
  }).sort((a,b)=>Number(b.followUp)-Number(a.followUp)||timestamp(b.event.endedAt)-timestamp(a.event.endedAt)||a.event.name.localeCompare(b.event.name,'ko'));
  return {rows,count:rows.length,gross:sum(rows.map(row=>({gross:row.gross})),'gross'),followUps:rows.filter(row=>row.followUp).length};

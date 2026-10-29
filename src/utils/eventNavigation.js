@@ -9,7 +9,7 @@ export function eventDestination(project) {
 
 export function eventActionLabel(project) {
   const destination = eventDestination(project);
-  if (destination === 'log') return project.permissions?.canSettle ? '판매현황 열기' : '내 정산 열기';
+  if (destination === 'log') return project.permissions?.canSettle ? '판매 현황 열기' : '내 정산 열기';
   if (destination !== 'pos') return '행사 목록';
   if (project.archivedAt || project.settlementClosedAt) return '행사 내역 열기';
   return project.permissions?.canSell ? '판매 화면 열기' : '상품 목록 열기';

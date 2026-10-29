@@ -51,7 +51,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
     if (readOnly || saving || preparing || creatorBusy || submitting.current) return;
     const price = Number(draft.price);
     const stockQty = Number(draft.stockQty);
-    if (artists && !(allowDirectArtist && !draft.ownerId && draft.artistName?.trim()) && !artists.some(artist => artist.ownerId === draft.ownerId)) return alert('행사에 등록된 제작자를 선택해주세요.');
+    if (artists && !allowDirectArtist && !artists.some(artist => artist.ownerId === draft.ownerId)) return alert('행사에 등록된 제작자를 선택해주세요.');
     if (!draft.name.trim() || !draft.goodsType.trim() || draft.price === '' || draft.stockQty === '' || !Number.isSafeInteger(price) || price < 0 || price > 2147483647 || !Number.isSafeInteger(stockQty) || stockQty < 0 || stockQty > 2147483647) return alert('상품 이름, 굿즈 종류와 0 이상의 정수 판매가·재고를 입력해주세요.');
     const product = {
       ...draft, name: draft.name.trim(), productCode: draft.id, goodsType: draft.goodsType.trim(), vtuberName: draft.vtuberName.trim(), creatorName: artists ? (artists.find(artist => artist.ownerId === draft.ownerId)?.label || draft.creatorName || draft.artistName?.trim() || '') : draft.creatorName.trim(), genre: draft.genre.trim(),
@@ -109,7 +109,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
             <div className="management-details">
             {artists&&<CreatorField onBusyChange={setCreatorBusy} creators={artists} value={draft} onChange={value=>setDraft(current=>({...current,...value,creatorName:value.label||value.artistName||''}))} request={creatorRequest} project={creatorProject} allowDirect={allowDirectArtist} disabled={registered||uncertain} onRefresh={onRefreshCreators}/>}
             <InventoryProductFields hideCreator={Boolean(artists)} draft={draft} products={products} onChange={change} disabled={registered || uncertain || readOnly || saving || busy || preparing} />
-            <fieldset disabled={registered || uncertain}><legend>가격 · 재고</legend><div className="management-fields management-fields-three">
+            <fieldset disabled={registered || uncertain}><legend>가격 · 재고</legend><div className="management-fields">
               <label className="management-field"><span>판매가 (원)</span><Input required type="number" min="0" max="2147483647" step="1" value={draft.price} onChange={value => change('price', value)} /></label>
               <label className="management-field"><span>최초 입고 수량</span><Input required type="number" min="0" max="2147483647" step="1" value={draft.stockQty} onChange={value => change('stockQty', value)} /></label>
             </div></fieldset>

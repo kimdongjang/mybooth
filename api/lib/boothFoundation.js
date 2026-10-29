@@ -23,11 +23,9 @@ export async function initBoothFoundation(sql) {
   await sql`CREATE TABLE IF NOT EXISTS pos_stock_owners (
     id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('artist','organization','unverified')),
     display_name TEXT NOT NULL, origin_booth_id TEXT NOT NULL REFERENCES pos_booths(id),
-    legacy_key TEXT NOT NULL, UNIQUE(origin_booth_id,legacy_key))`;
-  await sql`CREATE TABLE IF NOT EXISTS pos_artist_profiles (
-    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL UNIQUE REFERENCES pos_stock_owners(id),
-    linked_user_id TEXT REFERENCES pos_admins(id), status TEXT NOT NULL DEFAULT 'unlinked' CHECK(status IN ('unlinked','linked')),
-    CHECK((status='unlinked' AND linked_user_id IS NULL) OR (status='linked' AND linked_user_id IS NOT NULL)))`;
+    legacy_key TEXT NOT NULL, UNIQUE(origin_booth_id,legacy_key),
+    linked_user_id TEXT REFERENCES pos_admins(id), link_status TEXT NOT NULL DEFAULT 'unlinked' CHECK(link_status IN ('unlinked','linked')),
+    CONSTRAINT pos_stock_owners_link_check CHECK((link_status='unlinked' AND linked_user_id IS NULL) OR (link_status='linked' AND linked_user_id IS NOT NULL)))`;
   await sql`CREATE TABLE IF NOT EXISTS pos_owner_members (
     owner_id TEXT NOT NULL REFERENCES pos_stock_owners(id), user_id TEXT NOT NULL REFERENCES pos_admins(id),
     PRIMARY KEY(owner_id,user_id))`;
@@ -64,6 +62,60 @@ export async function initBoothFoundation(sql) {
     actor_id TEXT NOT NULL REFERENCES pos_admins(id), booth_id TEXT REFERENCES pos_booths(id),
     fingerprint TEXT NOT NULL, result JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY(owner_id,request_id))`;
+  await retireArtistProfiles(sql);
+}
+
+// 제작자의 계정 연결은 pos_stock_owners 한 행에 둔다. 기존 pos_artist_profiles의
+// 연결 정보를 옮긴 뒤 테이블은 롤백용으로 이름만 바꿔 보존한다.
+export async function retireArtistProfiles(sql) {
+  const has=async()=>{
+    const row=(await sql`SELECT to_regclass('pos_stock_owners') AS owners,to_regclass('pos_artist_profiles') AS profiles,
+      EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='pos_stock_owners' AND column_name='link_status') AS folded`).rows[0];
+    return row;
+  };
+  let state=await has();
+  if(!state.owners||state.folded&&!state.profiles)return;
+  await sql`SELECT pg_advisory_xact_lock(hashtext('pos_retire_artist_profiles'))`;
+  state=await has();
+  if(state.folded&&!state.profiles)return;
+  await sql`ALTER TABLE pos_stock_owners ADD COLUMN IF NOT EXISTS linked_user_id TEXT REFERENCES pos_admins(id)`;
+  await sql`ALTER TABLE pos_stock_owners ADD COLUMN IF NOT EXISTS link_status TEXT NOT NULL DEFAULT 'unlinked'`;
+  if(state.profiles){
+    await sql`UPDATE pos_stock_owners o SET linked_user_id=p.linked_user_id,link_status=p.status FROM pos_artist_profiles p WHERE p.owner_id=o.id`;
+    // 기존 profile_id는 legacy_profile_id로 보존하고 owner_id를 새 기준으로 쓴다.
+    if(await legacyProfileColumn(sql,'pos_artist_invitations')){
+      await sql`ALTER TABLE pos_artist_invitations ADD COLUMN IF NOT EXISTS owner_id TEXT REFERENCES pos_stock_owners(id)`;
+      await sql`UPDATE pos_artist_invitations t SET owner_id=p.owner_id FROM pos_artist_profiles p WHERE p.id=t.profile_id AND t.owner_id IS NULL`;
+      await sql`ALTER TABLE pos_artist_invitations ALTER COLUMN owner_id SET NOT NULL`;
+      await sql`ALTER TABLE pos_artist_invitations ALTER COLUMN profile_id DROP NOT NULL`;
+      await sql`ALTER TABLE pos_artist_invitations RENAME COLUMN profile_id TO legacy_profile_id`;
+    }
+    if(await legacyProfileColumn(sql,'pos_artist_link_audit')){
+      await sql`ALTER TABLE pos_artist_link_audit ADD COLUMN IF NOT EXISTS owner_id TEXT REFERENCES pos_stock_owners(id)`;
+      await sql`UPDATE pos_artist_link_audit t SET owner_id=p.owner_id FROM pos_artist_profiles p WHERE p.id=t.profile_id AND t.owner_id IS NULL`;
+      await sql`ALTER TABLE pos_artist_link_audit ALTER COLUMN owner_id SET NOT NULL`;
+      await sql`ALTER TABLE pos_artist_link_audit ALTER COLUMN profile_id DROP NOT NULL`;
+      await sql`ALTER TABLE pos_artist_link_audit RENAME COLUMN profile_id TO legacy_profile_id`;
+    }
+    await sql`ALTER TABLE pos_artist_profiles RENAME TO pos_artist_profiles_retired`;
+  }
+  const check=(await sql`SELECT 1 FROM pg_constraint WHERE conname='pos_stock_owners_link_check'`).rows.length;
+  if(!check)await sql`ALTER TABLE pos_stock_owners ADD CONSTRAINT pos_stock_owners_link_check CHECK((link_status='unlinked' AND linked_user_id IS NULL) OR (link_status='linked' AND linked_user_id IS NOT NULL))`;
+  const statusCheck=(await sql`SELECT 1 FROM pg_constraint WHERE conname='pos_stock_owners_link_status_check'`).rows.length;
+  if(!statusCheck)await sql`ALTER TABLE pos_stock_owners ADD CONSTRAINT pos_stock_owners_link_status_check CHECK(link_status IN ('unlinked','linked'))`;
+}
+
+async function legacyProfileColumn(sql,table) {
+  if(!await available(sql,table))return false;
+  return (await sql`SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=${table} AND column_name='profile_id'`).rows.length>0;
+}
+
+// 이전 화면이 보낸 프로필 ID도 제작자 ID로 해석한다.
+export async function ownerIdOf(sql,id) {
+  if(typeof id!=='string'||!id)return null;
+  if((await sql`SELECT id FROM pos_stock_owners WHERE id=${id}`).rows.length)return id;
+  if(!await available(sql,'pos_artist_profiles_retired'))return null;
+  return (await sql`SELECT owner_id FROM pos_artist_profiles_retired WHERE id=${id}`).rows[0]?.owner_id||null;
 }
 
 async function available(sql, table) {
@@ -181,7 +233,6 @@ export async function reconcileBoothFoundation(sql, adminId, snapshot) {
     // A name is a candidate only, never proof of ownership or a linked identity.
     await sql`INSERT INTO pos_stock_owners(id,kind,display_name,origin_booth_id,legacy_key)
       VALUES(${ownerId},'unverified',${key},${booth.id},${key}) ON CONFLICT DO NOTHING`;
-    await sql`INSERT INTO pos_artist_profiles(id,owner_id) VALUES(${id('artist',ownerId)},${ownerId}) ON CONFLICT DO NOTHING`;
     await sql`INSERT INTO pos_booth_artists(booth_id,owner_id,status) VALUES(${booth.id},${ownerId},'proxy') ON CONFLICT DO NOTHING`;
     return ownerId;
   };
@@ -245,8 +296,8 @@ export async function productIdentity(sql,projectId,productId,boothId) {
 
 export async function decorateEventProducts(sql,adminId,projectId,products) {
   if(!await migratedBooth(sql,adminId)) return products;
-  const mappings=(await sql`SELECT i.product_id,i.owner_id,i.recipient_id,r.legacy_creator,o.display_name,p.linked_user_id,u.nickname
-    FROM pos_event_product_identities i JOIN pos_recipients r ON r.id=i.recipient_id JOIN pos_stock_owners o ON o.id=i.owner_id LEFT JOIN pos_artist_profiles p ON p.owner_id=i.owner_id LEFT JOIN pos_admins u ON u.id=p.linked_user_id AND u.deleted_at IS NULL
+  const mappings=(await sql`SELECT i.product_id,i.owner_id,i.recipient_id,r.legacy_creator,o.display_name,o.linked_user_id,u.nickname
+    FROM pos_event_product_identities i JOIN pos_recipients r ON r.id=i.recipient_id JOIN pos_stock_owners o ON o.id=i.owner_id LEFT JOIN pos_admins u ON u.id=o.linked_user_id AND u.deleted_at IS NULL
     WHERE i.project_id=${projectId}`).rows;
   return products.map(product=>{const row=mappings.find(m=>m.product_id===product.id);return row?{...product,
     ownerId:row.owner_id,recipientId:row.recipient_id,settlementCreator:row.legacy_creator,eventCreator:row.display_name==='미지정'&&!row.linked_user_id?null:{ownerId:row.owner_id,name:row.display_name==='미지정'?(row.nickname||row.linked_user_id):row.display_name,linked:Boolean(row.linked_user_id)}}:product;});
@@ -350,8 +401,8 @@ export async function resolveRecipient(sql, projectId, recipientId) {
 }
 
 export async function authorizeOriginalProduct(sql,userId,adminId,inventoryId,boothId) {
-  const row=(await sql`SELECT o.owner_id,s.origin_booth_id,p.status FROM pos_inventory_owners o
-    JOIN pos_stock_owners s ON s.id=o.owner_id JOIN pos_artist_profiles p ON p.owner_id=s.id
+  const row=(await sql`SELECT o.owner_id,s.origin_booth_id,s.link_status AS status FROM pos_inventory_owners o
+    JOIN pos_stock_owners s ON s.id=o.owner_id
     WHERE o.admin_id=${adminId} AND o.inventory_id=${inventoryId}`).rows[0];
   if(!row) fail('상품 소유자 연결을 확인해주세요.');
   if((await sql`SELECT owner_id FROM pos_owner_members WHERE owner_id=${row.owner_id} AND user_id=${userId}`).rows.length) return;
@@ -429,7 +480,6 @@ export async function foundationBackup(sql,adminId) {
     return {version:2,boothId:null,tables:{pos_shared_stock_items:shared,
       pos_inventory_owners:(await sql`SELECT * FROM pos_inventory_owners WHERE admin_id=${adminId} ORDER BY inventory_id`).rows,
       pos_owner_members:(await sql`SELECT * FROM pos_owner_members WHERE user_id=${adminId} ORDER BY owner_id`).rows,
-      pos_artist_profiles:(await sql`SELECT * FROM pos_artist_profiles WHERE linked_user_id=${adminId} ORDER BY id`).rows,
       pos_stock_owners:(await sql`SELECT o.* FROM pos_stock_owners o JOIN pos_owner_members m ON m.owner_id=o.id WHERE m.user_id=${adminId} ORDER BY o.id`).rows,
       pos_shared_stock_commands:(await sql`SELECT c.* FROM pos_shared_stock_commands c JOIN pos_owner_members m ON m.owner_id=c.owner_id WHERE m.user_id=${adminId} ORDER BY c.created_at,c.id`).rows}};
   }
@@ -437,7 +487,6 @@ export async function foundationBackup(sql,adminId) {
   tables.pos_booth_members=(await sql`SELECT * FROM pos_booth_members WHERE booth_id=${booth.id} ORDER BY user_id`).rows;
   tables.pos_inventory_owners=(await sql`SELECT * FROM pos_inventory_owners WHERE admin_id=${adminId} ORDER BY inventory_id`).rows;
   tables.pos_stock_owners=(await sql`SELECT * FROM pos_stock_owners WHERE origin_booth_id=${booth.id} OR id IN (SELECT owner_id FROM pos_booth_artists WHERE booth_id=${booth.id}) ORDER BY id`).rows;
-  tables.pos_artist_profiles=(await sql`SELECT p.* FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE o.origin_booth_id=${booth.id} OR o.id IN (SELECT owner_id FROM pos_booth_artists WHERE booth_id=${booth.id}) ORDER BY p.id`).rows;
   tables.pos_owner_members=(await sql`SELECT p.* FROM pos_owner_members p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE o.origin_booth_id=${booth.id} OR o.id IN (SELECT owner_id FROM pos_booth_artists WHERE booth_id=${booth.id}) ORDER BY p.owner_id,p.user_id`).rows;
   tables.pos_booth_artists=(await sql`SELECT * FROM pos_booth_artists WHERE booth_id=${booth.id} ORDER BY owner_id`).rows;
   tables.pos_event_booths=(await sql`SELECT * FROM pos_event_booths WHERE booth_id=${booth.id} ORDER BY project_id`).rows;
@@ -451,7 +500,7 @@ export async function foundationBackup(sql,adminId) {
   tables.pos_owner_commands=(await sql`SELECT * FROM pos_owner_commands WHERE booth_id=${booth.id} ORDER BY owner_id,request_id`).rows;
   if(await available(sql,'pos_artist_invitations')) {
     // Backups keep linking provenance, never a reusable invitation secret/hash.
-    tables.pos_artist_invitations=(await sql`SELECT id,profile_id,booth_id,issued_by,expires_at,created_at,revoked_at,accepted_by,accepted_at FROM pos_artist_invitations WHERE booth_id=${booth.id} ORDER BY id`).rows;
+    tables.pos_artist_invitations=(await sql`SELECT id,owner_id,booth_id,issued_by,expires_at,created_at,revoked_at,accepted_by,accepted_at FROM pos_artist_invitations WHERE booth_id=${booth.id} ORDER BY id`).rows;
     tables.pos_artist_link_audit=(await sql`SELECT * FROM pos_artist_link_audit WHERE booth_id=${booth.id} ORDER BY created_at,id`).rows;
   }
   if(await available(sql,'pos_shared_stock_commands')) {
@@ -568,7 +617,7 @@ export async function enforceBoothContract(sql,booth,req,{settlement=false}={}) 
   if(!policy.legacyWritesClosed||req.method!=='POST')return policy;
   if(req.body?.boothId!==booth.id)fail('구형 부스 쓰기 계약이 종료되었습니다. 부스 ID를 포함한 최신 요청이 필요합니다.',410);
   const action=req.body?.action;
-  if(settlement&&['saveDeductions','addPayment','reversePayment'].includes(action)) {
+  if(settlement&&['saveDeductions','addPayment','reversePayment','completeRecipientSettlement'].includes(action)) {
     if(!req.body.recipientId||Object.hasOwn(req.body,'creator'))fail('이름 기반 정산 쓰기가 종료되었습니다. 수취인 ID를 사용해주세요.',410);
   }
   if(['finalizeSale','voidSale'].includes(action)&&req.body?.protocolVersion!==2)fail('구형 주문 쓰기가 종료되었습니다. 미전송 주문 원본을 보존하고 복구 절차를 이용해주세요.',410);

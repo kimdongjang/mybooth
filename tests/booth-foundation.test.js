@@ -78,7 +78,7 @@ test('new-client event creation establishes its operator booth and appears in wo
 test('artist movement history keeps personal scope, memo and stable IDs without changing event sales',async()=>{
  const f=await fixture();try{
   const {boothId}=await f.migrate();
-  const profile=(await f.sql`SELECT id,owner_id FROM pos_artist_profiles ORDER BY id`).rows[0];
+  const profile=(await f.sql`SELECT id,id AS owner_id FROM pos_stock_owners ORDER BY id`).rows[0];
   const invite=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:profile.id});
   assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:invite.body.invitation.token,acceptSharedStock:true},'b')).status,200);
   const created=await f.invoke('booths','createArtistStock',{ownerId:profile.owner_id,name:'외부 판매 상품',quantity:10,price:0,requestId:crypto.randomUUID()},'b');assert.equal(created.status,200,JSON.stringify(created.body));
@@ -120,6 +120,10 @@ test('contract retirement requires scope, owner, password, a fresh report and qu
     const fee={action:'saveDeductions',projectId:f.event,version:1,deductions:[],requestId:crypto.randomUUID()};
     assert.equal((await f.invoke('settlements','saveDeductions',{},'a',{body:{...fee,boothId,creator:'작가'}})).status,410);
     const saved=await f.invoke('settlements','saveDeductions',{},'a',{body:{...fee,boothId,recipientId}});assert.equal(saved.status,200,JSON.stringify(saved.body));
+    const complete={action:'completeRecipientSettlement',projectId:f.event,version:2,paidAt:'2026-10-29',requestId:crypto.randomUUID()};
+    assert.equal((await f.invoke('settlements',complete.action,{},'a',{body:{...complete,boothId,creator:'작가'}})).status,410);
+    assert.equal((await f.invoke('settlements',complete.action,{},'a',{body:{...complete,recipientId}})).status,410);
+    assert.equal((await f.invoke('settlements',complete.action,{},'a',{body:{...complete,boothId,recipientId}})).status,409); // Correct scope reaches the not-started guard.
     const afterSale=foundation.foundationReport(await foundation.legacySnapshot(f.sql,'a'));
     report=(await read()).body;
     const reopened=await f.invoke('booths','changeLegacyContracts',{boothId,password:'test-password',version:report.policy.version,expectedFingerprint:report.fingerprint,closed:false,requestId:crypto.randomUUID()});assert.equal(reopened.status,200,JSON.stringify(reopened.body));
@@ -286,7 +290,7 @@ test('shared loss, receipt rollback, legacy bypass and exit keep stock and finan
 test('expired, revoked, reissued, ended participation and revoked issuer invitations cannot link',async()=>{
   const f=await fixture();try{
     const {boothId}=await f.migrate();
-    const profileId=(await f.db.query('SELECT id FROM pos_artist_profiles')).rows[0].id;
+    const profileId=(await f.db.query('SELECT id FROM pos_stock_owners')).rows[0].id;
     const issue=async()=>{const result=await f.invoke('booths','issueArtistInvitation',{boothId,profileId});assert.equal(result.status,200,JSON.stringify(result.body));return result.body.invitation;};
     const accept=invite=>f.invoke('booths','acceptArtistInvitation',{token:invite.token,acceptSharedStock:true},'b');
     let invite=await issue();await f.db.query("UPDATE pos_artist_invitations SET expires_at=NOW()-INTERVAL '1 second' WHERE id=$1",[invite.id]);assert.equal((await accept(invite)).status,409);
@@ -296,7 +300,7 @@ test('expired, revoked, reissued, ended participation and revoked issuer invitat
     await f.db.query("UPDATE pos_booth_artists SET status='ended' WHERE booth_id=$1",[boothId]);assert.equal((await accept(replacement)).status,409);
     await f.db.query("UPDATE pos_booth_artists SET status='proxy' WHERE booth_id=$1",[boothId]);
     await f.db.query("UPDATE pos_booth_members SET status='ended' WHERE booth_id=$1",[boothId]);assert.equal((await accept(replacement)).status,409);
-    assert.equal((await f.db.query('SELECT linked_user_id FROM pos_artist_profiles')).rows[0].linked_user_id,null);
+    assert.equal((await f.db.query('SELECT linked_user_id FROM pos_stock_owners')).rows[0].linked_user_id,null);
     assert.equal(Number((await f.db.query('SELECT COUNT(*) AS n FROM pos_owner_members')).rows[0].n),0);
   }finally{await f.db.close();}
 });
@@ -304,13 +308,13 @@ test('expired, revoked, reissued, ended participation and revoked issuer invitat
 test('failed link rolls back profile, membership, participation and token use; the same token can retry',async()=>{
   const f=await fixture();try{
     const {boothId}=await f.migrate();
-    const profile=(await f.db.query('SELECT * FROM pos_artist_profiles')).rows[0];
+    const profile=(await f.db.query('SELECT *,id AS owner_id FROM pos_stock_owners')).rows[0];
     const issued=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:profile.id});
     const token=issued.body.invitation.token;
     const before=foundation.foundationReport(await foundation.legacySnapshot(f.sql,'a'));
     await f.db.exec("CREATE FUNCTION reject_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='profile_linked' THEN RAISE EXCEPTION 'fixture failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER reject_link BEFORE INSERT ON pos_artist_link_audit FOR EACH ROW EXECUTE FUNCTION reject_link()");
     assert.equal((await f.invoke('booths','acceptArtistInvitation',{token,acceptSharedStock:true},'b')).status,500);
-    assert.equal((await f.db.query('SELECT linked_user_id FROM pos_artist_profiles WHERE id=$1',[profile.id])).rows[0].linked_user_id,null);
+    assert.equal((await f.db.query('SELECT linked_user_id FROM pos_stock_owners WHERE id=$1',[profile.id])).rows[0].linked_user_id,null);
     assert.equal((await f.db.query('SELECT accepted_by FROM pos_artist_invitations')).rows[0].accepted_by,null);
     assert.equal((await f.db.query('SELECT status FROM pos_booth_artists WHERE owner_id=$1',[profile.owner_id])).rows[0].status,'proxy');
     assert.equal(Number((await f.db.query('SELECT COUNT(*) AS n FROM pos_owner_members')).rows[0].n),0);
@@ -327,7 +331,7 @@ test('artist history redacts other bundle components, uses frozen settlements an
     await f.db.query("INSERT INTO pos_bundles(project_id,id,name,price,items) VALUES($1,'mix','비공개 세트명',400,$2::jsonb)",[f.event,JSON.stringify([{productId:'p',qty:1},{productId:'secret',qty:1}])]);
     await f.migrate();
     const boothId=(await foundation.migratedBooth(f.sql,'a')).id;
-    const profile=(await f.db.query("SELECT p.* FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE o.display_name='작가'")).rows[0];
+    const profile=(await f.db.query("SELECT o.*,o.id AS owner_id FROM pos_stock_owners o WHERE o.display_name='작가'")).rows[0];
     const issued=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:profile.id});
     assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:issued.body.invitation.token,acceptSharedStock:true},'b')).status,200);
     const lines=[{type:'bundle',id:'mix',qty:2,unitPrice:400,name:'비공개 세트명',subItems:[{productId:'p',name:'내 상품',qty:1,unitPrice:100,creatorName:'작가'},{productId:'secret',name:'비공개 상품',qty:1,unitPrice:300,creatorName:'다른 작가'}]}];
@@ -349,6 +353,11 @@ test('artist history redacts other bundle components, uses frozen settlements an
     const event=result.body.events[0];assert.equal(event.rows.length,1);
     assert.equal(event.rows[0].artistName,'바뀐 작가명');assert.equal(event.rows[0].gross,200);assert.equal(event.rows[0].fees,20);
     assert.equal(event.rows[0].paid,100);assert.equal(event.rows[0].pending,80);
+    assert.equal(event.rows[0].completed,false);assert.equal(event.finishedAt,null);
+    await f.db.query("UPDATE pos_settlements SET payments=$1::jsonb WHERE admin_id='a' AND project_id=$2 AND creator='작가'",[JSON.stringify([{id:'paid',amount:180,paidAt:'2026-10-29'}]),f.event]);
+    await f.db.query("UPDATE pos_event_settlements SET history=$1::jsonb WHERE project_id=$2",[JSON.stringify([{action:'finish',at:'2026-10-29T00:00:00Z'}]),f.event]);
+    const completed=await f.invoke('booths',null,{},'b',{query:{artists:'history'}});assert.equal(completed.body.events[0].rows[0].completed,true);assert.equal(completed.body.events[0].finishedAt,'2026-10-29T00:00:00Z');
+    assert.equal(completed.body.events[0].rows.length,1);
     assert.equal(event.sales[0].items.length,1);assert.equal(event.sales[0].items[0].amount,200);
     assert.equal(event.sales.length,2);assert.equal(event.sales[1].voided,true);
     for(const secret of ['비공개 상품','다른 작가','비공개 세트명','운영 비공개 메모','비공개 계좌','transfer','legacy_admin_id','token_hash']) assert.ok(!JSON.stringify(result.body).includes(secret),secret);
@@ -369,7 +378,7 @@ test('personal artist is independent of a booth, first booth creation retries sa
     assert.ok(backup.tables.pos_stock_owners.some(o=>o.origin_booth_id===null));
     assert.equal((await f.invoke('booths','createFirstBooth',{name:'자료 보존'},'c')).status,409); // no artist yet
     const proxy=await f.invoke('booths','createBoothArtist',{boothId:newBooth.body.booth.id,name:'작가'},'b');assert.equal(proxy.status,200,JSON.stringify(proxy.body));
-    const sourceProfile=(await f.db.query("SELECT p.id FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE o.origin_booth_id=$1",[boothId])).rows[0].id;
+    const sourceProfile=(await f.db.query("SELECT o.id FROM pos_stock_owners o WHERE o.origin_booth_id=$1",[boothId])).rows[0].id;
     for(const [bid,pid,operator] of [[boothId,sourceProfile,'a'],[newBooth.body.booth.id,proxy.body.profileId,'b']]) {
       const issued=await f.invoke('booths','issueArtistInvitation',{boothId:bid,profileId:pid},operator);
       assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:issued.body.invitation.token,acceptSharedStock:true},'c')).status,200);
@@ -393,7 +402,7 @@ test('dry-run does not create migration tables; apply/replay preserve source IDs
     const count=async table=>Number((await f.db.query(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n);
     assert.equal(await count('pos_booths'),1);assert.equal(await count('pos_inventory_openings'),1);
     assert.equal(await count('pos_booth_migrations'),1);assert.equal(await count('pos_recipients'),1);
-    const artist=(await f.db.query('SELECT * FROM pos_artist_profiles')).rows[0];assert.equal(artist.linked_user_id,null);
+    const artist=(await f.db.query('SELECT * FROM pos_stock_owners')).rows[0];assert.equal(artist.linked_user_id,null);
     assert.equal((await f.db.query('SELECT kind FROM pos_stock_owners')).rows[0].kind,'unverified');
     const state=await f.invoke('pos',null,{},'a',{query:{projectId:f.event}});
     assert.equal(state.status,200);assert.equal(state.body.boothId,migrated.boothId);assert.equal(state.body.products[0].stock,10);
@@ -497,7 +506,7 @@ test('shared operators cannot edit linked artist product originals or inspect an
   const f=await fixture();try{
     const {boothId}=await f.migrate();
     const ownerId=(await f.db.query('SELECT owner_id FROM pos_inventory_owners')).rows[0].owner_id;
-    await f.db.query("UPDATE pos_artist_profiles SET status='linked',linked_user_id='b' WHERE owner_id=$1",[ownerId]);
+    await f.db.query("UPDATE pos_stock_owners SET link_status='linked',linked_user_id='b' WHERE id=$1",[ownerId]);
     await f.db.query("INSERT INTO pos_owner_members VALUES($1,'b')",[ownerId]);
     const view=await f.invoke('booths',null,{},'a',{query:{ownerId,boothId}});
     assert.equal(view.status,200);assert.equal(view.body.inventory[0].totalStock,10);
@@ -547,7 +556,7 @@ test('event assistants can sell/configure only their assigned event; ordinary ar
  const f=await fixture();try {
   const {boothId}=await f.migrate();
   let home=await f.invoke('booths',null,{},'a',{query:{workspace:'home'}});assert.equal(home.status,200,JSON.stringify(home.body));
-  const profile=(await f.db.query("SELECT p.id,p.owner_id FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE o.display_name='작가'" )).rows[0];
+  const profile=(await f.db.query("SELECT o.id,o.id AS owner_id FROM pos_stock_owners o WHERE o.display_name='작가'" )).rows[0];
   const invite=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:profile.id});
   assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:invite.body.invitation.token,acceptSharedStock:true},'b')).status,200);
   home=await f.invoke('booths',null,{},'b',{query:{workspace:'home'}});
@@ -625,7 +634,7 @@ test('booth information and common member changes are scoped, replayable and own
   assert.equal((await f.invoke('booths','saveBoothManagement',rename,'b')).status,403);
   assert.equal((await f.invoke('booths','saveBoothManagement',rename)).status,200);
   assert.equal((await f.invoke('booths','saveBoothManagement',rename)).status,200);
-  const profile=(await f.db.query("SELECT p.id FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE o.display_name='작가'" )).rows[0];
+  const profile=(await f.db.query("SELECT o.id FROM pos_stock_owners o WHERE o.display_name='작가'" )).rows[0];
   const invite=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:profile.id});
   await f.invoke('booths','acceptArtistInvitation',{token:invite.body.invitation.token,acceptSharedStock:true},'b');
   const grant={boothId,targetUserId:'b',role:'manager',status:'active',expectedRole:null,expectedStatus:null,requestId:crypto.randomUUID()};
@@ -655,7 +664,7 @@ test('event product direct artist and administrator choices register atomically,
   assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:invitation.body.invitation.token,acceptSharedStock:true},'b')).status,200);
   const linked=await f.invoke('booths',null,{},'b',{query:{artists:'stock',ownerId:item.ownerId}});assert.equal(linked.status,200);assert.equal(linked.body.inventory.find(p=>p.id===item.id).totalStock,4);
   const admin=await f.invoke('booths','registerEventArtistProduct',{...payload,artistName:undefined,ownerId:'admin:a',requestId:crypto.randomUUID()});assert.equal(admin.status,200,JSON.stringify(admin.body));
-  assert.equal((await f.sql`SELECT linked_user_id FROM pos_artist_profiles WHERE owner_id=${admin.body.inventory.ownerId}`).rows[0].linked_user_id,'a');
+  assert.equal((await f.sql`SELECT linked_user_id FROM pos_stock_owners WHERE id=${admin.body.inventory.ownerId}`).rows[0].linked_user_id,'a');
   assert.equal((await f.invoke('booths','registerEventArtistProduct',{...payload,requestId:crypto.randomUUID()},'c')).status,403);
   const bad=await f.invoke('booths','registerEventArtistProduct',{...payload,artistName:'롤백 작가',quantity:-1,requestId:crypto.randomUUID()});assert.equal(bad.status,400);
   assert.equal((await f.sql`SELECT id FROM pos_stock_owners WHERE display_name='롤백 작가'`).rows.length,0);
@@ -694,7 +703,7 @@ test('event detail saves original fields and event-only price atomically and sco
 test('event manager searches and links an unlinked artist, counts products and assigns event-scoped participant/assistant roles',async()=>{
  const f=await fixture();try{
   const {boothId}=await f.migrate();
-  await f.sql`UPDATE pos_admins SET nickname='찾을작가',email='artist@example.test' WHERE id='b'`;
+  await f.sql`UPDATE pos_admins SET nickname='찾을작가',email='artist@example.test',avatar='data:image/png;base64,YQ==' WHERE id='b'`;
   const query={workspace:'access',projectId:f.event,boothId};
   const view=await f.invoke('booths',null,{},'a',{query});assert.equal(view.status,200,JSON.stringify(view.body));
   const profile=view.body.profiles.find(p=>!p.linked_user_id&&p.status==='active');assert.ok(profile);assert.equal(profile.product_count,1);
@@ -707,7 +716,7 @@ test('event manager searches and links an unlinked artist, counts products and a
   const payload={projectId:f.event,boothId,profileId:profile.id,targetUserId:'b',requestId:crypto.randomUUID()};
   await f.db.exec("CREATE FUNCTION reject_operator_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='profile_linked_by_operator' THEN RAISE EXCEPTION 'fixture failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER reject_operator_link BEFORE INSERT ON pos_artist_link_audit FOR EACH ROW EXECUTE FUNCTION reject_operator_link()");
   assert.equal((await f.invoke('booths','linkEventArtistAccount',payload)).status,500);
-  assert.equal((await f.sql`SELECT linked_user_id FROM pos_artist_profiles WHERE id=${profile.id}`).rows[0].linked_user_id,null);
+  assert.equal((await f.sql`SELECT linked_user_id FROM pos_stock_owners WHERE id=${profile.id}`).rows[0].linked_user_id,null);
   await f.db.exec('DROP TRIGGER reject_operator_link ON pos_artist_link_audit');
   const linked=await f.invoke('booths','linkEventArtistAccount',payload);assert.equal(linked.status,200,JSON.stringify(linked.body));
   assert.deepEqual((await f.invoke('booths','linkEventArtistAccount',payload)).body,linked.body);
@@ -715,13 +724,15 @@ test('event manager searches and links an unlinked artist, counts products and a
   assert.equal((await f.invoke('booths','linkEventArtistAccount',{...payload,targetUserId:'c',requestId:crypto.randomUUID()})).status,409);
   const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.inventory,before.inventory);assert.deepEqual(after.sales,before.sales);
   const refreshed=await f.invoke('booths',null,{},'a',{query});assert.equal(refreshed.body.profiles.find(p=>p.id===profile.id).nickname,'찾을작가');
+  assert.equal(refreshed.body.profiles.find(p=>p.id===profile.id).avatar,'data:image/png;base64,YQ==');
+  assert.equal(refreshed.body.profiles.find(p=>p.id===profile.id).email,undefined);
   let access=await f.invoke('booths','saveEventAccess',{projectId:f.event,boothId,targetUserId:'b',role:'seller',status:'active',version:0,requestId:crypto.randomUUID()});assert.equal(access.status,200,JSON.stringify(access.body));
   let permission=await eventAccess.eventPermissions(f.sql,'b',f.event);assert.equal(permission.permissions.canSell,true);assert.equal(permission.permissions.canConfigure,false);assert.equal(permission.permissions.canManage,false);
   access=await f.invoke('booths','saveEventAccess',{projectId:f.event,boothId,targetUserId:'b',role:'assistant',status:'active',version:1,requestId:crypto.randomUUID()});assert.equal(access.status,200);
   permission=await eventAccess.eventPermissions(f.sql,'b',f.event);assert.equal(permission.permissions.canConfigure,true);assert.equal(permission.permissions.canManage,false);
   assert.equal((await f.invoke('booths',null,{},'b',{query:search})).status,403);
   const extra=await f.invoke('booths','registerEventArtistProduct',{projectId:f.event,boothId,artistName:'역할 작가',name:'권한 상품',goodsType:'키링',quantity:0,price:0,requestId:crypto.randomUUID()});assert.equal(extra.status,200);
-  const extraProfile=(await f.sql`SELECT id FROM pos_artist_profiles WHERE owner_id=${extra.body.inventory.ownerId}`).rows[0];
+  const extraProfile=(await f.sql`SELECT id FROM pos_stock_owners WHERE id=${extra.body.inventory.ownerId}`).rows[0];
   const withRole=await f.invoke('booths','linkEventArtistAccount',{projectId:f.event,boothId,profileId:extraProfile.id,targetUserId:'c',role:'assistant',requestId:crypto.randomUUID()});assert.equal(withRole.status,200,JSON.stringify(withRole.body));
   const linkedPermission=await eventAccess.eventPermissions(f.sql,'c',f.event);assert.equal(linkedPermission.permissions.canConfigure,true);assert.equal(linkedPermission.permissions.canManage,false);
 
@@ -756,6 +767,33 @@ test('event artist search/add is atomic, replayable and grants only the selected
 });
 
 
+test('event invite link registers the accepting account as an event creator and rejects stale links',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();
+  const base={projectId:f.event,boothId};
+  assert.equal((await f.invoke('booths','issueEventInvite',base,'c')).status,403);
+  const first=await f.invoke('booths','issueEventInvite',base);assert.equal(first.status,200,JSON.stringify(first.body));
+  const token=first.body.invite.token;
+  await f.sql`INSERT INTO pos_event_details(project_id,venue) VALUES(${f.event},'코엑스') ON CONFLICT(project_id) DO UPDATE SET venue=EXCLUDED.venue`;
+  await f.sql`INSERT INTO pos_event_stock_policy(project_id,starts_on,ends_on) VALUES(${f.event},'2026-12-05','2026-12-06') ON CONFLICT(project_id) DO UPDATE SET starts_on=EXCLUDED.starts_on,ends_on=EXCLUDED.ends_on`;
+  const preview=await f.invoke('booths','previewEventInvite',{token},'b');assert.equal(preview.status,200,JSON.stringify(preview.body));assert.equal(preview.body.invitation.joined,false);
+  assert.equal(preview.body.invitation.operatorName.length>0,true);assert.equal(preview.body.invitation.venue,'코엑스');assert.equal(preview.body.invitation.startsOn,'2026-12-05');assert.equal(preview.body.invitation.endsOn,'2026-12-06');
+  assert.equal((await f.invoke('booths','acceptEventInvite',{token},'b')).status,400);
+  const accepted=await f.invoke('booths','acceptEventInvite',{token,acceptSharedStock:true},'b');assert.equal(accepted.status,200,JSON.stringify(accepted.body));
+  assert.equal(accepted.body.projectId,f.event);
+  const again=await f.invoke('booths','acceptEventInvite',{token,acceptSharedStock:true},'b');assert.equal(again.status,200);
+  assert.equal((await f.sql`SELECT e.owner_id FROM pos_event_artists e JOIN pos_stock_owners o ON o.id=e.owner_id WHERE e.project_id=${f.event} AND e.status='active' AND o.linked_user_id='b'`).rows.length,1);
+  assert.equal((await f.invoke('booths','previewEventInvite',{token},'b')).body.invitation.joined,true);
+  assert.equal((await eventAccess.eventPermissions(f.sql,'b',f.event)).permissions.canRead,true);
+  assert.equal(Boolean((await f.sql`SELECT joined_at FROM pos_event_artists e JOIN pos_stock_owners o ON o.id=e.owner_id WHERE e.project_id=${f.event} AND o.linked_user_id='b'`).rows[0].joined_at),true);
+  assert.equal((await f.sql`SELECT role,status FROM pos_event_staff WHERE project_id=${f.event} AND user_id='b'`).rows[0].role,'seller');
+  const second=await f.invoke('booths','issueEventInvite',base);assert.equal(second.status,200);
+  assert.equal((await f.invoke('booths','previewEventInvite',{token},'c')).status,409);
+  assert.equal((await f.invoke('booths','previewEventInvite',{token:second.body.invite.token},'c')).status,200);
+  assert.equal((await f.invoke('booths','previewEventInvite',{token:'bad'},'c')).status,404);
+ }finally{await f.db.close();}
+});
+
 test('event product creator mapping changes only future attribution, supports unlink and preserves source stock and historical sales',async()=>{
  const f=await fixture();try{
   const {boothId}=await f.migrate();
@@ -787,7 +825,7 @@ test('event product creator mapping changes only future attribution, supports un
 test('stock delegation preference immediately blocks operator quantities but preserves reads, sales, cancellations and 30/25 allocation floors',async()=>{
  const f=await fixture();try{
   const {boothId}=await f.migrate();
-  const p=(await f.sql`SELECT id,owner_id FROM pos_artist_profiles ORDER BY id LIMIT 1`).rows[0];
+  const p=(await f.sql`SELECT id,id AS owner_id FROM pos_stock_owners ORDER BY id LIMIT 1`).rows[0];
   const invite=await f.invoke('booths','issueArtistInvitation',{boothId,profileId:p.id});
   assert.equal((await f.invoke('booths','acceptArtistInvitation',{token:invite.body.invitation.token,acceptSharedStock:true,allowOperatorStock:false},'b')).status,200);
   const readPrefs=await f.invoke('booths',null,{},'b',{query:{workspace:'stockPreference'}});assert.equal(readPrefs.body.allowOperatorStock,false);
@@ -840,7 +878,7 @@ test('search registration requires artist participation confirmation before oper
   assert.equal((await f.invoke('booths','saveStockPreference',off,'b')).status,200);
   assert.equal((await f.invoke('booths','saveStockPreference',{...off,allowOperatorStock:true},'b')).status,409);
   const proxy=await f.invoke('booths','createBoothArtist',{boothId,name:'기존 허용 보존'});
-  await f.invoke('booths','saveEventAccess',{boothId,projectId:f.event,ownerId:(await f.sql`SELECT owner_id FROM pos_artist_profiles WHERE id=${proxy.body.profileId}`).rows[0].owner_id,status:'active',version:0,requestId:crypto.randomUUID()});
+  await f.invoke('booths','saveEventAccess',{boothId,projectId:f.event,ownerId:(await f.sql`SELECT id AS owner_id FROM pos_stock_owners WHERE id=${proxy.body.profileId}`).rows[0].owner_id,status:'active',version:0,requestId:crypto.randomUUID()});
   assert.equal((await f.invoke('booths','linkEventArtistAccount',{boothId,projectId:f.event,profileId:proxy.body.profileId,targetUserId:'b',requestId:crypto.randomUUID()})).status,200);
   assert.equal((await f.invoke('booths',null,{},'b',{query:{workspace:'stockPreference'}})).body.allowOperatorStock,false);
  }finally{await f.db.close();}
@@ -859,7 +897,7 @@ test('artist product removal preserves history, blocks active event products and
   assert.deepEqual((await f.invoke('booths','removeArtistStock',payload,'b')).body,removed.body);
   const stock=await f.invoke('booths',null,{},'b',{query:{artists:'stock',ownerId}});assert.equal(stock.body.inventory.length,0);
   const after=await foundation.legacySnapshot(f.sql,'b');assert.deepEqual(after.sales,before.sales);assert.equal(after.inventory[0].stock,before.inventory[0].stock);
-  const profile=(await f.sql`SELECT p.owner_id FROM pos_artist_profiles p JOIN pos_stock_owners o ON o.id=p.owner_id WHERE o.origin_booth_id IS NOT NULL LIMIT 1`).rows[0];
+  const profile=(await f.sql`SELECT o.id AS owner_id FROM pos_stock_owners o WHERE o.origin_booth_id IS NOT NULL LIMIT 1`).rows[0];
   const existing=await f.invoke('booths',null,{},'a',{query:{artists:'stock',ownerId:profile.owner_id,boothId}});const active=existing.body.inventory.find(i=>i.allocations.length);
   assert.equal((await f.invoke('booths','removeArtistStock',{ownerId:profile.owner_id,boothId,id:active.id,version:active.version,requestId:crypto.randomUUID()})).status,409);
  }finally{await f.db.close();}
@@ -899,7 +937,7 @@ test('linked administrator with a legacy unspecified display is visible in event
   const query={workspace:'stockParticipants',projectId:f.event,boothId};
   const initial=await f.invoke('booths',null,{},'a',{query});const creator=initial.body.profiles.find(p=>p.catalog);
   await f.sql`UPDATE pos_admins SET nickname='어드민' WHERE id='a'`;
-  await f.sql`UPDATE pos_artist_profiles SET status='linked',linked_user_id='a' WHERE owner_id=${creator.owner_id}`;
+  await f.sql`UPDATE pos_stock_owners SET link_status='linked',linked_user_id='a' WHERE id=${creator.owner_id}`;
   await f.sql`INSERT INTO pos_owner_members(owner_id,user_id) VALUES(${creator.owner_id},'a') ON CONFLICT DO NOTHING`;
   await f.sql`UPDATE pos_stock_owners SET display_name='미지정' WHERE id=${creator.owner_id}`;
   const before=await foundation.legacySnapshot(f.sql,'a');
@@ -940,7 +978,7 @@ test('inventory allocation plan atomically returns ended stock, adjusts total an
   assert.equal((await f.invoke('booths','saveArtistStockPlan',rollback)).status,500);assert.equal((await read()).inventory[0].totalStock,40);
   await f.db.exec('DROP TRIGGER fail_stock_plan ON pos_shared_stock_commands');
   const retried=await f.invoke('booths','saveArtistStockPlan',rollback);assert.equal(retried.status,200,JSON.stringify(retried.body));assert.equal(retried.body.inventory.totalStock,35);assert.equal(retried.body.inventory.minimumTotalStock,32);
-  const profile=(await f.sql`SELECT id FROM pos_artist_profiles WHERE owner_id=${ownerId}`).rows[0];
+  const profile=(await f.sql`SELECT id FROM pos_stock_owners WHERE id=${ownerId}`).rows[0];
   assert.equal((await f.invoke('booths','linkEventArtistAccount',{projectId:f.event,boothId,profileId:profile.id,targetUserId:'b',requestId:crypto.randomUUID()})).status,200);
   assert.equal((await f.invoke('booths','saveStockPreference',{allowOperatorStock:false,requestId:crypto.randomUUID()},'b')).status,200);
   assert.equal((await f.invoke('booths','saveArtistStockPlan',{ownerId,boothId,id:item.id,version:retried.body.inventory.version,totalStock:36,allocations:[],requestId:crypto.randomUUID()})).status,403);
@@ -979,7 +1017,7 @@ test('migrated event templates preserve original stock links and restored events
   await f.migrate();const booth=(await foundation.migratedBooth(f.sql,'a')).id;
   // Linked source identity must never be adopted just because the backup has the same name.
   const source=(await f.sql`SELECT i.owner_id,l.inventory_id FROM pos_event_product_identities i JOIN pos_inventory_links l ON l.project_id=i.project_id AND l.product_id=i.product_id WHERE i.project_id=${f.event}`).rows[0];
-  await f.sql`UPDATE pos_artist_profiles SET linked_user_id='a',status='linked' WHERE owner_id=${source.owner_id}`;
+  await f.sql`UPDATE pos_stock_owners SET linked_user_id='a',link_status='linked' WHERE id=${source.owner_id}`;
   const command=(action,payload,projectId,actor='a')=>f.invoke('pos',action,{},actor,{body:{action,protocolVersion:2,boothId:booth,projectId,payload}});
   const sale=await f.invoke('pos','finalizeSale',{},'a',{body:{action:'finalizeSale',protocolVersion:2,actorId:'a',boothId:booth,projectId:f.event,payload:{localOrderId:crypto.randomUUID(),method:'cash',total:0,cart:[{type:'product',id:'p',qty:1,unitPrice:0}]}}});assert.equal(sale.status,200,JSON.stringify(sale.body));
   const before=(await f.sql`SELECT * FROM pos_inventory WHERE admin_id='a' AND id=${source.inventory_id}`).rows[0];
@@ -991,7 +1029,7 @@ test('migrated event templates preserve original stock links and restored events
   const exported=await command('backupProject',{password:'test-password'},f.event);assert.equal(exported.status,200,JSON.stringify(exported.body));
   const restored=await command('restoreProject',{name:'복원',backup:exported.body.backup,password:'test-password',requestId:crypto.randomUUID()});assert.equal(restored.status,201,JSON.stringify(restored.body));
   const id=restored.body.project.id;
-  const proxy=(await f.sql`SELECT p.linked_user_id,i.owner_id,l.inventory_id FROM pos_event_product_identities i JOIN pos_artist_profiles p ON p.owner_id=i.owner_id JOIN pos_inventory_links l ON l.project_id=i.project_id AND l.product_id=i.product_id WHERE i.project_id=${id}`).rows[0];
+  const proxy=(await f.sql`SELECT o.linked_user_id,i.owner_id,l.inventory_id FROM pos_event_product_identities i JOIN pos_stock_owners o ON o.id=i.owner_id JOIN pos_inventory_links l ON l.project_id=i.project_id AND l.product_id=i.product_id WHERE i.project_id=${id}`).rows[0];
   const closure=(await f.sql`SELECT * FROM pos_event_settlements WHERE project_id=${id}`).rows[0];assert.equal(closure.costs[0].value,500);assert.ok(closure.closed_at);
   const recipient=(await f.sql`SELECT r.legacy_creator FROM pos_event_product_identities i JOIN pos_recipients r ON r.id=i.recipient_id WHERE i.project_id=${id}`).rows[0];assert.equal(closure.snapshot.rows[0].creator,recipient.legacy_creator);
   const restoredSale=(await f.sql`SELECT lines FROM pos_sales WHERE project_id=${id}`).rows[0];assert.equal(restoredSale.lines[0].ownerId,proxy.owner_id);assert.equal(restoredSale.lines[0].settlementCreator,recipient.legacy_creator);
@@ -1057,16 +1095,32 @@ test('removing an event creator detaches current mappings without changing origi
  }finally{await f.db.close();}
 });
 
-test('event information saves name and schedule together with password and rejects invalid or unauthorized requests atomically',async()=>{
+test('event information saves without password and rejects invalid or unauthorized requests atomically',async()=>{
  const f=await fixture();try{
   await f.migrate();const boothId=(await foundation.migratedBooth(f.sql,'a')).id;
-  const payload={name:'변경한 행사',startsOn:'2026-11-01',endsOn:'2026-11-02',password:'test-password'};
+  const payload={name:'변경한 행사',startsOn:'2026-11-01',endsOn:'2026-11-02'};
   const save=(data,actor='a')=>f.invoke('pos','updateProjectInfo',{},actor,{body:{action:'updateProjectInfo',boothId,projectId:f.event,payload:data}});
-  assert.equal((await save({...payload,password:'wrong'})).status,403);assert.equal((await save(payload,'b')).status,403);
+  assert.equal((await save(payload,'b')).status,403);
   assert.equal((await save({...payload,endsOn:'2026-10-01'})).status,400);assert.equal((await f.sql`SELECT name FROM pos_projects WHERE id=${f.event}`).rows[0].name,'원본 행사');
   const result=await save(payload);assert.equal(result.status,200,JSON.stringify(result.body));
   const access=await f.invoke('booths',null,{},'a',{query:{workspace:'access',projectId:f.event,boothId}});assert.equal(access.body.schedule.starts_on,'2026-11-01');assert.equal(result.body.projects.find(p=>p.id===f.event).name,payload.name);
   assert.equal((await save({...payload,startsOn:'',endsOn:''})).status,200);assert.equal((await f.sql`SELECT project_id FROM pos_event_stock_policy WHERE project_id=${f.event}`).rows.length,0);
+ }finally{await f.db.close();}
+});
+
+test('event management password checks apply only to archive and delete while ownership remains enforced',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();await stockDelegation.initStockDelegation(f.sql);
+  const command=(action,payload={},actor='a')=>f.invoke('pos',action,{},actor,{body:{action,boothId,projectId:f.event,protocolVersion:2,payload}});
+  assert.equal((await command('backupProject')).status,200);assert.equal((await command('backupProject',{},'b')).status,403);
+  assert.equal((await command('renameProject',{name:'이름 수정'})).status,200);
+  assert.equal((await command('archiveProject')).status,403);assert.equal((await command('archiveProject',{password:'wrong'})).status,403);
+  assert.equal((await command('archiveProject',{password:'test-password'})).status,200);
+  const reopened=await command('unarchiveProject');assert.equal(reopened.status,200,JSON.stringify(reopened.body));
+  assert.equal((await f.sql`SELECT archived_at FROM pos_projects WHERE id=${f.event}`).rows[0].archived_at,null);
+  const copy=await command('duplicateProject',{name:'비밀번호 없는 구성',requestId:crypto.randomUUID()});assert.equal(copy.status,201,JSON.stringify(copy.body));
+  const missing=await command('deleteProject',{confirmName:'이름 수정'});assert.equal(missing.status,403,JSON.stringify(missing.body));const wrong=await command('deleteProject',{confirmName:'이름 수정',password:'wrong'});assert.equal(wrong.status,403,JSON.stringify(wrong.body));
+  assert.equal((await f.sql`SELECT deleted_at FROM pos_projects WHERE id=${f.event}`).rows[0].deleted_at,null);
  }finally{await f.db.close();}
 });
 
@@ -1112,4 +1166,80 @@ test('unlinked event roles save without account linkage, replay safely and trans
   row=(await f.sql`SELECT * FROM pos_event_staff WHERE project_id=${f.event} AND user_id='b'`).rows[0];assert.equal(row.role,'assistant');
   assert.equal((await f.invoke('booths','saveEventAccess',{...command,version:command.version+1,requestId:crypto.randomUUID()})).status,409);
  }finally{await f.db.close();}
+});
+
+test('operator account unlink is global, preserves stock and settlements, replays safely and keeps independent participation',async()=>{
+ const f=await fixture();try{
+  const {boothId}=await f.migrate();const projectId=f.event;
+  const view=await f.invoke('booths',null,{},'a',{query:{workspace:'access',projectId,boothId}});
+  const profile=view.body.profiles.find(p=>p.status==='active'&&!p.linked_user_id);
+  assert.equal((await f.invoke('booths','linkEventArtistAccount',{projectId,boothId,profileId:profile.id,targetUserId:'b',role:'seller',requestId:crypto.randomUUID()})).status,200);
+  const second=(await f.invoke('pos','createProject',{name:'두 번째 행사'})).body.project.id;
+  await f.sql`INSERT INTO pos_event_booths(project_id,booth_id) VALUES(${second},${boothId}) ON CONFLICT DO NOTHING`;
+  const added=await f.invoke('booths','addEventArtist',{projectId:second,boothId,profileId:profile.id,role:'assistant',requestId:crypto.randomUUID()});assert.equal(added.status,200,JSON.stringify(added.body));
+  const other=(await f.invoke('booths','createEventCreator',{projectId,boothId,name:'계속 연결된 제작자',requestId:crypto.randomUUID()})).body;
+  assert.equal((await f.invoke('booths','linkEventArtistAccount',{projectId,boothId,profileId:other.profileId,targetUserId:'b',requestId:crypto.randomUUID()})).status,200);
+  const before=await foundation.legacySnapshot(f.sql,'a');
+  const settlements=(await f.sql`SELECT * FROM pos_settlements ORDER BY project_id,creator`).rows;
+  const recipients=(await f.sql`SELECT * FROM pos_event_recipients ORDER BY project_id,legacy_creator`).rows;
+  const payload={projectId,boothId,ownerId:profile.owner_id,targetUserId:'b',version:profile.version,requestId:crypto.randomUUID()};
+  assert.equal((await f.invoke('booths','unlinkEventArtistAccount',payload,'c')).status,403);
+  assert.equal((await f.invoke('booths','unlinkEventArtistAccount',{...payload,targetUserId:'c'})).status,409);
+  await f.db.exec("CREATE FUNCTION reject_unlink() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='profile_unlinked_by_operator' THEN RAISE EXCEPTION 'fixture failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER reject_unlink BEFORE INSERT ON pos_artist_link_audit FOR EACH ROW EXECUTE FUNCTION reject_unlink()");
+  assert.equal((await f.invoke('booths','unlinkEventArtistAccount',payload)).status,500);
+  assert.equal((await f.sql`SELECT linked_user_id FROM pos_stock_owners WHERE id=${profile.id}`).rows[0].linked_user_id,'b');
+  assert.equal((await f.sql`SELECT status FROM pos_event_staff WHERE project_id=${second} AND user_id='b'`).rows[0].status,'active');
+  await f.db.exec('DROP TRIGGER reject_unlink ON pos_artist_link_audit');
+  const result=await f.invoke('booths','unlinkEventArtistAccount',payload);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.unlinked,true);
+  assert.deepEqual((await f.invoke('booths','unlinkEventArtistAccount',payload)).body,result.body);
+  assert.equal((await f.invoke('booths','unlinkEventArtistAccount',{...payload,requestId:crypto.randomUUID()})).status,409);
+  const owner=(await f.sql`SELECT linked_user_id,link_status FROM pos_stock_owners WHERE id=${profile.id}`).rows[0];assert.equal(owner.linked_user_id,null);assert.equal(owner.link_status,'unlinked');
+  assert.equal((await f.sql`SELECT user_id FROM pos_owner_members WHERE owner_id=${profile.id} AND user_id='b'`).rows.length,0);
+  assert.equal((await f.sql`SELECT user_id FROM pos_owner_members WHERE owner_id=${other.ownerId} AND user_id='b'`).rows.length,1);
+  assert.equal((await f.sql`SELECT status FROM pos_event_staff WHERE project_id=${projectId} AND user_id='b'`).rows[0].status,'active');
+  assert.equal((await f.sql`SELECT status FROM pos_event_staff WHERE project_id=${second} AND user_id='b'`).rows[0].status,'ended');
+  const events=(await f.sql`SELECT status,version,requested_role FROM pos_event_artists WHERE owner_id=${profile.id}`).rows;assert.ok(events.every(e=>e.status==='active'&&e.version>profile.version));assert.ok(events.some(e=>e.requested_role==='assistant'));
+  assert.equal((await eventAccess.eventPermissions(f.sql,'b',second)).permissions.canRead,false);
+  const after=await foundation.legacySnapshot(f.sql,'a');assert.deepEqual(after.inventory,before.inventory);assert.deepEqual(after.sales,before.sales);assert.deepEqual(after.products,before.products);
+  assert.deepEqual((await f.sql`SELECT * FROM pos_settlements ORDER BY project_id,creator`).rows,settlements);
+  assert.deepEqual((await f.sql`SELECT * FROM pos_event_recipients ORDER BY project_id,legacy_creator`).rows,recipients);
+  assert.equal((await f.sql`SELECT id FROM pos_artist_link_audit WHERE owner_id=${profile.id} AND action='profile_unlinked_by_operator'`).rows.length,1);
+  assert.equal((await f.invoke('booths','linkEventArtistAccount',{projectId,boothId,profileId:profile.id,targetUserId:'c',requestId:crypto.randomUUID()})).status,200);
+  assert.equal((await f.invoke('booths','unlinkEventArtistAccount',{...payload,requestId:crypto.randomUUID()})).status,409);
+  // Personal identities registered by another account are outside the operator's unlink scope.
+  const personal=(await f.invoke('booths','createArtistProfile',{name:'본인 제작자'},'b')).body.profiles.find(p=>p.origin_booth_id===null);
+  assert.ok(personal);
+  assert.equal((await f.invoke('booths','addEventArtist',{projectId,boothId,profileId:personal.id,role:'none',requestId:crypto.randomUUID()})).status,200);
+  const access=(await f.invoke('booths',null,{},'a',{query:{workspace:'access',projectId,boothId}})).body;
+  const own=access.profiles.find(p=>p.id===personal.id);assert.equal(own.can_unlink,false);
+  assert.equal((await f.invoke('booths','unlinkEventArtistAccount',{projectId,boothId,ownerId:own.owner_id,targetUserId:'b',version:own.version,requestId:crypto.randomUUID()})).status,403);
+ }finally{await f.db.close();}
+});
+
+test('retiring artist profiles folds account links into creators and keeps invitations and audit rows',async()=>{
+ const db=new PGlite();
+ const sql=(parts,...values)=>db.query(parts.reduce((s,p,i)=>s+(i?`$${i}`:'')+p,''),values);
+ try{
+  await db.exec(`CREATE TABLE pos_admins(id TEXT PRIMARY KEY);INSERT INTO pos_admins VALUES('a'),('b');
+   CREATE TABLE pos_booths(id TEXT PRIMARY KEY);INSERT INTO pos_booths VALUES('booth');
+   CREATE TABLE pos_stock_owners(id TEXT PRIMARY KEY,kind TEXT NOT NULL,display_name TEXT NOT NULL,origin_booth_id TEXT REFERENCES pos_booths(id),legacy_key TEXT NOT NULL);
+   CREATE TABLE pos_artist_profiles(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL UNIQUE REFERENCES pos_stock_owners(id),linked_user_id TEXT REFERENCES pos_admins(id),status TEXT NOT NULL DEFAULT 'unlinked');
+   CREATE TABLE pos_artist_invitations(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,profile_id TEXT NOT NULL REFERENCES pos_artist_profiles(id),booth_id TEXT NOT NULL REFERENCES pos_booths(id));
+   CREATE TABLE pos_artist_link_audit(id TEXT PRIMARY KEY,profile_id TEXT NOT NULL REFERENCES pos_artist_profiles(id),action TEXT NOT NULL);
+   INSERT INTO pos_stock_owners VALUES('personal-owner:x','artist','본인',NULL,'personal-owner:x'),('owner:proxy','unverified','대리 작가','booth','대리 작가');
+   INSERT INTO pos_artist_profiles VALUES('personal-artist:x','personal-owner:x','a','linked'),('artist:proxy','owner:proxy',NULL,'unlinked');
+   INSERT INTO pos_artist_invitations VALUES('invite','hash','artist:proxy','booth');
+   INSERT INTO pos_artist_link_audit VALUES('created','personal-artist:x','profile_created'),('issued','artist:proxy','invitation_issued');`);
+  await foundation.retireArtistProfiles(sql);
+  await foundation.retireArtistProfiles(sql);
+  const owners=(await sql`SELECT id,linked_user_id,link_status FROM pos_stock_owners ORDER BY id`).rows;
+  assert.deepEqual(owners,[{id:'owner:proxy',linked_user_id:null,link_status:'unlinked'},{id:'personal-owner:x',linked_user_id:'a',link_status:'linked'}]);
+  assert.equal((await sql`SELECT to_regclass('pos_artist_profiles') AS name`).rows[0].name,null);
+  assert.equal((await sql`SELECT COUNT(*)::int AS n FROM pos_artist_profiles_retired`).rows[0].n,2);
+  assert.deepEqual((await sql`SELECT owner_id,legacy_profile_id FROM pos_artist_invitations`).rows,[{owner_id:'owner:proxy',legacy_profile_id:'artist:proxy'}]);
+  assert.deepEqual((await sql`SELECT id,owner_id FROM pos_artist_link_audit ORDER BY id`).rows,[{id:'created',owner_id:'personal-owner:x'},{id:'issued',owner_id:'owner:proxy'}]);
+  assert.equal(await foundation.ownerIdOf(sql,'artist:proxy'),'owner:proxy');
+  assert.equal(await foundation.ownerIdOf(sql,'owner:proxy'),'owner:proxy');
+  await assert.rejects(sql`UPDATE pos_stock_owners SET link_status='linked' WHERE id='owner:proxy'`);
+ }finally{await db.close();}
 });
