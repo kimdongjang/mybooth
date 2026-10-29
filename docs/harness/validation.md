@@ -1459,3 +1459,19 @@ PR #78 기반의 격리 작업 트리에서 이번 화면·장소/일정 변경�
 - 로컬 PGlite: 백업 후 적용, 프로필 3건(연결 1) 이관.
 - 운영 DB backup 브랜치(Neon): `scripts/retireArtistProfiles.mjs` 리허설 통과 후 ROLLBACK. 제작자 11·프로필 11(연결 1)·초대 0·감사 1, 나머지 42개 `pos_*` 테이블 지문 불변.
 - 미실행: 검증 브랜치 COMMIT 후 앱 동작, 로그인 브라우저 확인, 전체 `npm test`.
+
+## 2026-10-29 지급 팝업·완료 버튼 분리 검증
+
+- event-settlement-ui의 `payout|payout controls|payment popup|settlement lifecycle|zero net` 선택 6개와 settlements의 `settlement lifecycle` 1개 통과. 금액·날짜 두 입력, 부분 지급/전액 지급 이후 완료 활성화, 수취인 매핑, 동일 명령 재확인, 서버의 미지급 완료 거절·0원 완료·멱등성·종료/해제를 확인했다.
+- 추가 `payment popup cancellation|completion marker` 2개 통과. 팝업 취소·초과 금액의 무쓰기, 음수/0원 완료 표지, 양수 전액 지급과 명시적 완료·지급 취소의 경계를 확인했다.
+- npm run build와 diff 공백 검사 통과. 빌드의 500kB 청크·Tailwind 플러그인 시간 경고가 남는다. 전체 테스트, 실제 브라우저/기기, 운영 DB 및 배포는 수행하지 않았다.
+
+### 지급 팝업 열림 후속 수정
+
+지급 팝업을 편집 중에만 마운트하고 DOM ref가 연결될 때 showModal을 호출하도록 변경했다. 지급/정산 완료 버튼은 별도 열로 분리했다. `payment popup|payout response loss` 4개 선택 검증과 빌드 통과. 마운트 시 열기·취소 후 제거·재열기 호출, 입력/재시도 보존을 확인했다. Chrome 직접 조작은 도구 권한에서 거절되어 사용자가 보고한 현상의 실제 브라우저 재현/해결 여부는 확인하지 못했다. 빌드의 기존 청크 크기 경고는 남는다.
+
+### 지급 팝업 반복 미표시 후속
+
+4173 개발 서버가 최신 컴포넌트를 제공하는 것을 읽기 전용으로 확인했다. 팝업을 네이티브 dialog에서 portal 오버레이로 변경하고 `payment popup|payout response loss` 4개 통과: 클릭 후 모달 표시·취소/재열기·금액/날짜 기록·전액 지급 후 완료 활성화·응답 유실 재확인. 빌드 통과(기존 청크 크기 경고). 브라우저 직접 조작은 앞서 도구 권한에서 차단되어 실제 화면 재현은 미확인이다.
+
+지급하기 비활성화 후속: 잔액/종료 상태에 의한 팝업 진입 차단을 제거했다. `payout button stays|settlement lifecycle starts|payout response loss` 3개 통과. 0원·전액 지급·종료 상태의 버튼 활성화와 기록 차단, 미확인 요청 잠금 보존을 확인했다. 빌드 통과(기존 청크 경고). 실제 브라우저 확인은 미실행이다.

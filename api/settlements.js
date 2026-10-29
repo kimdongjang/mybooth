@@ -1,7 +1,7 @@
-import { initEventSettlements, eventSettlementCommand, eventRecord, eventState } from './lib/eventSettlement.js';
+import { initEventSettlements, eventSettlementCommand, eventRecord, eventState, settlementFinishedAt, recipientSettled } from './lib/eventSettlement.js';
 import {canonicalSql} from './lib/storageContract.js';
 import { sql as pool } from '@vercel/postgres';
-import { assertPostgresConnectionString, requireAuth } from './lib/auth.js';
+import { assertPostgresConnectionString, requireAuth, validateAdminPassword } from './lib/auth.js';
 import { settlementMoneyEntries } from '../src/utils/settlementEntries.js';
 import { migratedBooth, authorizeBooth, reconcileBoothFoundation, recipientMap, resolveRecipient,enforceBoothContract,boothContracts } from './lib/boothFoundation.js';
 
@@ -87,8 +87,10 @@ export function createHandler(pool) {
       }
       if (req.method !== 'POST') fail('Method not allowed', 405);
       if(req.body?.projectId&&(await sql`SELECT id FROM pos_projects WHERE id=${req.body.projectId} AND deleted_at IS NOT NULL`).rows.length)fail('삭제된 행사입니다.',404);
-      if (['saveEventCosts','closeEventSettlement','reopenEventSettlement'].includes(req.body?.action)) {
-        const result=await eventSettlementCommand(sql,admin.id,req.body);await client.query('COMMIT');return res.status(200).json(result);
+      if (['saveEventCosts','closeEventSettlement','reopenEventSettlement','finishEventSettlement','resumeEventSettlement'].includes(req.body?.action)) {
+        const {password,...command}=req.body;
+        if(command.action==='closeEventSettlement'&&!await validateAdminPassword(authenticated.id,password,sql))fail('현재 비밀번호를 확인해주세요.',403);
+        const result=await eventSettlementCommand(sql,admin.id,command);await client.query('COMMIT');return res.status(200).json(result);
       }
       const { action, projectId, version, requestId, deductions, amount, paidAt, memo = '', paymentId } = req.body || {};
       let creator=req.body?.creator;
@@ -99,7 +101,7 @@ export function createHandler(pool) {
         if(creator && creator!==mapped.legacy_creator) fail('수취인과 기존 정산 대상이 일치하지 않습니다.',409);
         creator=mapped.legacy_creator;
       }
-      if (!['saveDeductions', 'addPayment', 'reversePayment'].includes(action) || typeof projectId !== 'string' || typeof creator !== 'string' || !creator.trim() || creator !== creator.trim() || creator.length > 200 || !integer(version) || typeof requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(requestId)) fail('올바른 정산 요청이 아닙니다.');
+      if (!['saveDeductions', 'addPayment', 'reversePayment', 'completeRecipientSettlement'].includes(action) || typeof projectId !== 'string' || typeof creator !== 'string' || !creator.trim() || creator !== creator.trim() || creator.length > 200 || !integer(version) || typeof requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(requestId)) fail('올바른 정산 요청이 아닙니다.');
       if (!(await sql`SELECT id FROM pos_projects WHERE id=${projectId} AND admin_id=${admin.id} FOR UPDATE`).rows.length) fail('행사를 찾을 수 없습니다.', 404);
       const fingerprint = JSON.stringify({ action, projectId, creator, version, deductions, amount, paidAt, memo, paymentId });
       const replay = (await sql`SELECT fingerprint FROM pos_settlement_commands WHERE admin_id=${admin.id} AND id=${requestId}`).rows[0];
@@ -110,8 +112,9 @@ export function createHandler(pool) {
         return res.status(200).json({ settlement: identityRecord(current) });
       }
       const closure=(await sql`SELECT * FROM pos_event_settlements WHERE admin_id=${admin.id} AND project_id=${projectId}`).rows[0];
-      if (action==='saveDeductions' && closure?.closed_at) fail('마감된 정산은 수정할 수 없습니다.',409);
-      if (action==='addPayment' && !closure?.closed_at) fail('행사 정산을 먼저 마감해주세요.',409);
+      if(settlementFinishedAt(closure))fail('정산 종료를 해제한 후 수정해주세요.',409);
+      if (action==='saveDeductions' && closure?.closed_at) fail('정산 시작 후에는 비용을 수정할 수 없습니다.',409);
+      if (['addPayment','completeRecipientSettlement'].includes(action) && !closure?.closed_at) fail('행사 정산을 먼저 시작해주세요.',409);
       if ((current?.version || 0) !== version) fail('정산 내역이 변경되었습니다. 새로고침 후 다시 시도해주세요.', 409);
       const products = (await sql`SELECT p.*,CASE WHEN i.id IS NOT NULL THEN i.product->>'creatorName' ELSE p.creator_name END AS creator_name
         FROM pos_products p LEFT JOIN pos_inventory_links l ON l.project_id=p.project_id AND l.product_id=p.id AND l.admin_id=${admin.id}
@@ -126,7 +129,7 @@ export function createHandler(pool) {
       if (!found && !current && !closure?.snapshot?.rows.some(row=>row.creator===creator)) fail('판매 내역에 없는 제작자입니다.', 404);
       gross = Math.round(gross);
       const frozen=closure?.closed_at ? closure.snapshot.rows.find(row=>row.creator===creator) : null;
-      if(closure?.closed_at && !frozen)fail('마감 내역에 없는 제작자입니다.',404);
+      if(closure?.closed_at && !frozen)fail('확정 정산서에 없는 제작자입니다.',404);
       if(frozen)gross=frozen.gross;
       let nextDeductions = current?.deductions || [];
       const payments = [...(current?.payments || [])];
@@ -141,13 +144,18 @@ export function createHandler(pool) {
         if (fees > gross) fail('차감 합계는 판매액보다 클 수 없습니다.');
         const oldFees = (current?.deductions || []).reduce((sum, item) => sum + item.amount, 0);
         if (gross - fees < paid && fees > oldFees) fail('이미 지급한 금액보다 정산 예정액을 줄일 수 없습니다.');
+      } else if(action==='completeRecipientSettlement') {
+        if(recipientSettled(frozen,payments))fail('이미 정산 완료된 제작자입니다.',409);
+        const remaining=Math.max(0,frozen.net-paid);
+        if(remaining>0)fail('남은 정산금을 먼저 지급 기록해주세요.',409);
+        payments.push({id:requestId,amount:remaining,paidAt:date(paidAt),memo:'정산 완료',settlementComplete:true});
       } else if (action === 'addPayment') {
         if (!integer(amount) || amount === 0 || typeof memo !== 'string' || memo.length > 500) fail('지급 금액과 메모를 확인해주세요.');
         const net = frozen ? frozen.net : gross - nextDeductions.reduce((sum, item) => sum + item.amount, 0);
         if (amount > net - paid) fail('지급 금액은 남은 정산금보다 클 수 없습니다.');
         payments.push({ id: requestId, amount, paidAt: date(paidAt), memo: memo.trim() });
       } else {
-        const original = payments.find(payment => payment.id === paymentId && payment.amount > 0);
+        const original = payments.find(payment => payment.id === paymentId && (payment.amount > 0 || payment.settlementComplete));
         if (!original || payments.some(payment => payment.reversalOf === paymentId)) fail('취소할 수 없는 지급 기록입니다.', 409);
         if (typeof memo !== 'string' || memo.length > 500) fail('메모는 500자 이내로 입력해주세요.');
         payments.push({ id: requestId, amount: -original.amount, paidAt: date(paidAt), memo: memo.trim(), reversalOf: paymentId });
