@@ -12,7 +12,11 @@ npm run android:sync
 npm run android:open
 ```
 
-`.env.android`의 공개 API origin은 `https://withbooth.vercel.app`이다. 테스트 서버로 바꾸려면 `.env.android.local`을 사용한다. DB 비밀번호·AUTH_SECRET을 VITE 변수에 넣지 않는다. 웹 빌드는 `npm run build` 그대로다. Android Studio에서 기기를 선택해 실행하거나 `android/gradlew assembleDebug`로 테스트 APK를 만든다. GitHub Actions의 Android debug build도 APK 아티팩트를 생성한다. 디버그 APK는 Play 출시용이 아니다. 앱 표시 이름은 WithBooth이며 런처 아이콘·스플래시는 파란색 배경의 흰 Wb 심볼이다. 앱 ID com.mybooth.pos는 기존 설치/데이터 호환성을 위해 보존한다. Play 출시는 별도 업로드 키로 서명한 AAB, 개발자 계정·스토어 정보·심사가 필요하다. 키는 커밋하지 않는다.
+`.env.android`의 공개 API origin은 `https://withbooth.vercel.app`이다. 테스트 서버로 바꾸려면 `.env.android.local`을 사용한다. DB 비밀번호·AUTH_SECRET을 VITE 변수에 넣지 않는다. 웹 빌드는 `npm run build` 그대로다. Android Studio에서 기기를 선택해 실행하거나 `android/gradlew assembleDebug`로 테스트 APK를 만든다. GitHub Actions의 Android debug build도 APK 아티팩트를 생성한다. 디버그 APK는 Play 출시용이 아니다. 앱 표시 이름은 위드부스이며 런처 아이콘·스플래시는 파란색 배경의 흰 Wb 심볼이다. 앱 ID com.mybooth.pos는 기존 설치/데이터 호환성을 위해 보존한다. Play 출시는 별도 업로드 키로 서명한 AAB, 개발자 계정·스토어 정보·심사가 필요하다. 키는 커밋하지 않는다.
+
+## 앱 이름 한글 표기 (2026-10-29)
+
+Capacitor `appName`과 Android `app_name`/`title_activity_main`은 `위드부스`로 통일한다. 기존 로고 이미지는 유지하며 웹 화면·페이지 제목·공유 정보·접근성 이름과 문서의 브랜드 표기도 한글을 사용한다. Android 런처 이름은 네이티브 리소스이므로 기존 설치 앱에는 APK/AAB 업데이트가 필요하고 OTA만으로 변경되지 않는다. 서버 도메인·npm 패키지명·앱 ID·백업 형식 식별자·로고 파일 경로는 연결 및 기존 자료 호환성을 위해 유지한다.
 
 ## 웹 배포로 앱 화면 업데이트
 

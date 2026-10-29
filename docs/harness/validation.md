@@ -10,6 +10,9 @@
 - 실기기·실제 배포/CDN 응답·APK 빌드/설치·실제 번들 복구는 미실행이다. API/DB/IndexedDB 큐 변경과 운영 DB 접근·배포는 수행하지 않았다. 기존 설치 앱의 최초 전환은 [Android 문서](../android.md)를 따른다.
 
 - PR 분리 검증: 최신 `origin/main`(d6b4d99) 파일에 이번 7개 경로의 변경만 적용한 임시 폴더에서 관련 9개 테스트, `npm run build`, `npm run build:release` 통과. 기존 로컬 개발 세션 분리·DB/화면 변경은 제외했다.
+## 위드부스 한글 표시 이름 (2026-10-29)
+
+앱/Android 런처 이름, 웹 제목·공유 메타데이터·접근성 이름·안내 문구, 계정 백업 다운로드 파일명과 문서의 브랜드 표기를 한글로 변경했다. 기존 로고 이미지와 서버 주소·npm 패키지명·백업 형식 식별자는 유지하며 SW 캐시 버전만 v136으로 갱신했다. 표시 변경으로 관련 내용·남은 영문 사용처·diff만 확인하고 테스트·빌드·브라우저/실기기 검증은 지침에 따라 생략했다. Android 런처 이름 반영은 새 APK/AAB 설치가 필요하다.
 
 ## 필수 검증 선택 기준 (2026-10-28)
 
@@ -1043,7 +1046,7 @@ npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공�
 
 - GitHub Actions [39401431997](https://github.com/kimdongjang/mybooth/actions/runs/39401431997)에서 JDK21/SDK36으로 assembleDebug 및 APK 아티팩트 업로드 통과. 첫 CI는 setup-android 기본 tools 패키지가 제거되어 실패했고 platform-tools/platforms;android-36/build-tools;36.0.0을 명시해 수정했다. 로컬 SDK 부재와 실기기 미검증은 그대로다.
 
-## WithBooth 브랜드 PR 검증 (2026-10-21)
+## 위드부스 브랜드 PR 검증 (2026-10-21)
 
 - 최신 원격 main(12bd237)을 기반으로 최종 브랜드 변경만 분리했다. 미커밋 등록일 편집/모바일 스타일과 로컬 API 프록시, 중간 로고 시안/폰트는 포함하지 않았다.
 - 최종 사용자 첨부 PNG와 SHA-256 일치, 파비콘 SVG XML, 현재 화면의 표시 이름, SW 선캐시 자산 경로, Android 앱 ID 보존 검사 통과. 최신 main의 공유 설명과 favicon 경로를 유지하며 표시 이름/공유 도메인만 갱신했다. SW v120.
@@ -1058,7 +1061,7 @@ npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공�
 - 동일 프로세스 임시 Vite 원격 모드에서 로컬 화면 GET 200, /api/auth GET 405 JSON, /api/pos 미인증 GET 401 JSON, /api/product-images GET 405 JSON 확인. 정상 API 프록시 연결 통과이며 앞선 DEPLOYMENT_NOT_FOUND 제한을 해소했다.
 - 로그인 후 DB 조회/판매/취소 및 실제 Blob 업로드는 미실행. 연결 테스트는 인증정보 없이 수행하여 운영 데이터를 변경하지 않았다.
 
-## WithBooth 브랜드 통합 검증 (2026-10-21)
+## 위드부스 브랜드 통합 검증 (2026-10-21)
 
 - npm run build 통과. npm run android:sync 통과(웹 Android 빌드 및 네이티브 자산 동기화; APK 컴파일 아님). 500kB 초과 청크 경고 존재.
 - 새 SVG 3개의 XML 파싱과 앱/SW의 이전 로고 참조 제거 확인. Segoe UI 윤곽선 로고와 1440×1000 로컬 로그인 화면을 격리 headless Edge에서 렌더링하여 철자·색상·폼/로고 표시 확인.
@@ -1112,7 +1115,7 @@ npm run build 및 git diff --check 통과. UI-01 관련 소스 검사에서 공�
 
 ## 기존 둥근 로고의 W 원형 배지 검증 (2026-10-21)
 
-- 기존 로컬 mybooth-rounded-logo.png를 이미지 편집 참조로 사용해 WithBooth 로고를 생성했다. 파란 원에는 흰 W만 배치하고 ithBooth는 원 밖에 파란색으로 구성한다. 생성 결과를 시각 확인하고 1930×815/모서리 alpha=0 확인. 특정 폰트 파일 일치를 보장하는 결과가 아닌 원본 스타일 참조다.
+- 기존 로컬 mybooth-rounded-logo.png를 이미지 편집 참조로 사용해 위드부스 로고를 생성했다. 파란 원에는 흰 W만 배치하고 ithBooth는 원 밖에 파란색으로 구성한다. 생성 결과를 시각 확인하고 1930×815/모서리 alpha=0 확인. 특정 폰트 파일 일치를 보장하는 결과가 아닌 원본 스타일 참조다.
 - 웹 공통/인증 헤더 이미지와 고유 비율·SW v102를 적용했다. Wb 파비콘/Android 심볼은 유지한다. 기존 자산과 사용자 변경은 보존했다.
 - npm test 미실행(로고 정적 자산 변경). 모바일/네이티브 실기기·APK 컴파일·배포 후 CACHE-01 및 판매·DB·Blob 검증은 미실행. 원격 배포/PR/푸시 없음.
 - npm run build, npm run android:sync, git diff --check 통과. 기존 청크 크기/플러그인 소요시간 경고 존재. Android sync는 APK 컴파일이 아닌 자산 동기화다.

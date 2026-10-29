@@ -89,7 +89,7 @@ export default function App() {
   useEffect(() => {
     if (!token) {
       if (!['login', 'signup'].includes(routePage)) setScreen('login', true);
-      document.title = `${routePage === 'signup' ? '회원가입' : '로그인'} · WithBooth`;
+      document.title = `${routePage === 'signup' ? '회원가입' : '로그인'} · 위드부스`;
       return;
     }
     if (loading || projectLoading) return;
@@ -106,7 +106,7 @@ export default function App() {
     if(routePage==='artistStock'){setScreen('inventory',true);return;}
     if (!selectedProject && !linkedProjectId && !['projects', 'projectNew', 'restore', 'inventory', 'account', 'dashboard', 'revenue', 'artistStock'].includes(routePage)) setScreen('projects', true);
     else if (!pageForHash(routeHash)) setScreen(eventDestination(selectedProject), true);
-    document.title = `${pageTitles[screen]} · WithBooth`;
+    document.title = `${pageTitles[screen]} · 위드부스`;
     document.querySelector('.page-heading h1')?.focus();
   }, [screen, routePage, routeHash, token, loading, projectLoading, selectedProject?.id, selectedProject?.permissions?.canSell, selectedProject?.permissions?.canViewPos, selectedProject?.permissions?.canSettle, selectedProject?.permissions?.canReadOwnHistory, selectedProject?.permissions?.canManage, selectedProject?.permissions?.canConfigure, selectedProject?.permissions?.ownerIds?.length, setScreen]);
   const [settingsTab, setSettingsTab] = useState('products');
