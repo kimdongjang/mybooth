@@ -56,13 +56,19 @@ export async function initializeMobile() {
 }
 
 let checking = false;
-let ready = false;
-export async function mobileReady() {
-  if (!isNative || ready) return;
-  ready = true;
+let ready;
+export function mobileReady() {
+  if (!isNative) return Promise.resolve(false);
+  // StrictMode may mount the readiness gate twice; both mounts must await the same check.
+  return ready ??= prepareMobile();
+}
+
+async function prepareMobile() {
   await CapacitorUpdater.notifyAppReady();
+  let startup = true;
+  let applying = false;
   const check = async () => {
-    if (checking || !navigator.onLine) return;
+    if (checking || !navigator.onLine) return false;
     checking = true;
     try {
       const origin = httpsOrigin(import.meta.env.VITE_MOBILE_API_ORIGIN);
@@ -75,13 +81,34 @@ export async function mobileReady() {
       if (bundle.version === manifest.version) return;
       const { bundles } = await CapacitorUpdater.list();
       // Do not retry a failed/rolled-back release on every launch.
-      if (bundles.some(item => item.version === manifest.version)) return;
-      const downloaded = await CapacitorUpdater.download({ url: manifest.url, version: manifest.version, checksum: manifest.checksum });
+      const matching = bundles.filter(item => item.version === manifest.version);
+      if (matching.some(item => item.status === 'error')) return false;
+      const downloaded = matching.find(item => ['pending', 'success'].includes(item.status)) ||
+        await CapacitorUpdater.download({ url: manifest.url, version: manifest.version, checksum: manifest.checksum });
+      if (startup) {
+        applying = true;
+        // set() destroys this JS context. Never enter the sales screen during that switch.
+        await CapacitorUpdater.set({ id: downloaded.id });
+        return true;
+      }
       await CapacitorUpdater.setMultiDelay({ delayConditions: [{ kind: 'kill' }] });
       await CapacitorUpdater.next({ id: downloaded.id });
+      return false;
     } catch { /* Offline/update failure keeps the current bundle and every order intact. */ }
     finally { checking = false; }
   };
-  window.addEventListener('online', check);
-  void check();
+  let timer;
+  try {
+    // A slow/offline server must not prevent local sales. A late download is staged only.
+    return await Promise.race([
+      check(),
+      new Promise(resolve => {
+        timer = setTimeout(() => { if (!applying) resolve(false); }, 8000);
+      }),
+    ]);
+  } finally {
+    startup = false;
+    clearTimeout(timer);
+    window.addEventListener('online', check);
+  }
 }
