@@ -7,7 +7,7 @@ export default function CreatorField({creators=[],value={},onChange,request,proj
  const selected=options.find(row=>row.ownerId===value.ownerId);
  useEffect(()=>{generation.current++;setQuery('');setResults([]);setError('');if(mode)dialog.current?.showModal();else dialog.current?.close();},[mode]);
  const send=async(action,payload)=>{
-  pending.current||={action,payload:{boothId:project.boothId,projectId:project.id,...payload,requestId:crypto.randomUUID()}};
+  if(pending.current&&pending.current.action!==action)pending.current=null;pending.current||={action,payload:{boothId:project.boothId,projectId:project.id,...payload,requestId:crypto.randomUUID()}};
   const result=await request('/api/booths',{method:'POST',body:JSON.stringify(pending.current)});pending.current=null;return result;
  };
  const run=async work=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await work();}catch(e){if(e.status>=400&&e.status<500)pending.current=null;setError(e.message);}finally{lock.current=false;setBusy(false);}};
@@ -29,8 +29,8 @@ export default function CreatorField({creators=[],value={},onChange,request,proj
   const response=await request(`/api/booths?workspace=${mode==='accounts'?'searchAccounts':'searchArtists'}&${new URLSearchParams({projectId:project.id,boothId:project.boothId,q:query.trim()})}`);
   if(version===generation.current)setResults(mode==='accounts'?response.accounts:response.artists.map(row=>({ownerId:row.owner_id,profileId:row.id,label:row.nickname||row.display_name,linked:Boolean(row.linked_user_id),registered:row.registered})));
  });
- const blocked=disabled||busy||Boolean(pending.current);
- useEffect(()=>{onBusyChange?.(busy||Boolean(pending.current));},[busy,Boolean(pending.current),onBusyChange]);
+ const blocked=disabled||busy;
+ useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
  useEffect(()=>()=>onBusyChange?.(false),[onBusyChange]);
  const retry=()=>run(async()=>{
    const command=pending.current,result=await send();
@@ -49,13 +49,11 @@ export default function CreatorField({creators=[],value={},onChange,request,proj
   {selected?.linked&&<span className="revenue-status">연동완료</span>}
   {allowDirect&&request&&((selected&&!selected.linked&&selected.profileId)||direct)&&<button type="button" className="management-back" disabled={blocked||direct&&!value.artistName?.trim()} onClick={()=>run(async()=>{await ensureDirect();setMode('accounts');})}>계정 연결</button>}
   {error&&!mode&&<p role="alert" className="inventory-error">{error}</p>}
-  <dialog ref={dialog} className="app-confirm-dialog event-account-dialog" aria-label={mode==='accounts'?'제작자 계정 연결':'제작자 검색'} onCancel={e=>{if(busy||pending.current)e.preventDefault();else setMode('');}}>
-   <div className="management-heading"><h2>{mode==='accounts'?'제작자 계정 연결':'제작자 검색'}</h2><button type="button" className="management-back" disabled={busy||Boolean(pending.current)} onClick={()=>setMode('')}>닫기</button></div>
+  <dialog ref={dialog} className="app-confirm-dialog event-account-dialog" aria-label={mode==='accounts'?'제작자 계정 연결':'제작자 검색'} onCancel={e=>{if(busy)e.preventDefault();else setMode('');}}>
+   <div className="management-heading"><h2>{mode==='accounts'?'제작자 계정 연결':'제작자 검색'}</h2><button type="button" className="management-back" disabled={busy} onClick={()=>setMode('')}>닫기</button></div>
    <div className="event-account-search"><input aria-label="제작자 검색어" autoFocus value={query} maxLength={100} placeholder="이름·닉네임·아이디·이메일" disabled={blocked} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();search();}}}/><button type="button" className="management-add" disabled={blocked} onClick={search}>검색</button></div>
    {error&&<p role="alert" className="inventory-error">{error}</p>}
    <ul className="event-account-results">{results.map(row=><li key={row.ownerId||row.id}><div><strong>{row.label||row.nickname||row.id}</strong>{row.linked&&<span className="revenue-status">연동완료</span>}</div><button type="button" className="management-add" disabled={blocked} onClick={()=>run(async()=>{if(mode==='accounts'){await send('linkEventArtistAccount',{profileId:selected.profileId,targetUserId:row.id});setExtra(current=>[...current.filter(r=>r.ownerId!==selected.ownerId),{...selected,linked:true}]);await onRefresh?.();setMode('');}else await choose(row);})}>{mode==='accounts'?'연결':row.registered?'선택':'행사에 추가'}</button></li>)}</ul>
-   {mode&&pending.current&&!busy&&<button type="button" className="management-back" onClick={retry}>같은 요청 다시 확인</button>}
   </dialog>
-  {!mode&&pending.current&&!busy&&<button type="button" className="management-back" onClick={retry}>같은 요청 다시 확인</button>}
  </fieldset>;
 }

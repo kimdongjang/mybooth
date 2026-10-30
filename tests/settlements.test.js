@@ -229,15 +229,12 @@ test('settlement lifecycle completion is scoped, idempotent, reversible and gate
   const finish=command('finishEventSettlement',1);
   assert.equal((await f.invoke(finish)).status,409);
   assert.equal((await f.invoke(command('completeRecipientSettlement',0,{paidAt:'2026-10-29'}),'b')).status,404);
-  assert.equal((await f.invoke(command('completeRecipientSettlement',0,{paidAt:'2026-10-29'}))).status,409);
   const partial=command('addPayment',0,{amount:4000,paidAt:'2026-10-28',memo:''});
   assert.equal((await f.invoke(partial)).status,200);
-  assert.equal((await f.invoke(command('completeRecipientSettlement',1,{paidAt:'2026-10-29'}))).status,409);
-  assert.equal((await f.invoke(command('addPayment',1,{amount:6000,paidAt:'2026-10-29',memo:''}))).status,200);
   assert.equal((await f.invoke(finish)).status,409);
-  const pay=command('completeRecipientSettlement',2,{paidAt:'2026-10-29'});
-  let result=await f.invoke(pay);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.settlement.payments[2].amount,0);assert.equal(result.body.settlement.payments.reduce((sum,p)=>sum+p.amount,0),10000);
-  assert.equal((await f.invoke(pay)).body.settlement.payments.length,3);
+  const pay=command('completeRecipientSettlement',1,{paidAt:'2026-10-29'});
+  let result=await f.invoke(pay);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.settlement.payments[1].amount,6000);assert.equal(result.body.settlement.payments.reduce((sum,p)=>sum+p.amount,0),10000);
+  assert.equal((await f.invoke(pay)).body.settlement.payments.length,2);
   assert.equal((await f.invoke({...pay,paidAt:'2026-10-30'})).status,409);
   assert.equal((await f.invoke(finish)).status,409);
   const zero=command('completeRecipientSettlement',0,{creator:'최신 이름',paidAt:'2026-10-29'});

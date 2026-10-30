@@ -2211,3 +2211,21 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
 @keyframes copy-toast{0%{opacity:0;transform:translate(-50%,12px)}10%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,8px)}}
 .event-copy-toast{animation:copy-toast 2s ease both}
 @media(prefers-reduced-motion:reduce){.toast,.toast[data-leaving],.event-copy-toast{animation-duration:.01s}}
+
+.button-spinner{display:inline-block;width:14px;height:14px;margin-right:6px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:inventory-loading-spin .8s linear infinite}
+@media(prefers-reduced-motion:reduce){.button-spinner{animation-duration:2s}}
+
+.inventory-allocation-manager{margin:20px 0}
+.inventory-plan-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.inventory-plan-header .inventory-plan-actions{position:static;margin:0;padding:0;border:0;background:none;gap:12px}
+
+.home-dashboard>.home-sales-breakdown{grid-column:1/-1}
+.home-breakdown-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.home-breakdown-grid ol{display:grid;gap:12px;margin:12px 0 0;padding:0;list-style:none}
+.home-breakdown-grid li>div{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.home-breakdown-grid li>div>span{color:#64748b;font-variant-numeric:tabular-nums}
+.home-breakdown-grid progress{width:100%;height:8px;margin-top:6px}
+@media(max-width:767px){.home-breakdown-grid{grid-template-columns:minmax(0,1fr)}}
+.inventory-registration-list{display:grid;gap:16px;margin:12px 0;padding:0;list-style:none}
+.inventory-registration-list li{display:grid;gap:6px}
+.inventory-registration-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}

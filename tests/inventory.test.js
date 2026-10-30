@@ -146,8 +146,11 @@ test('warehouse allocation, sales, void, return, idempotency and account isolati
     assert.equal((await invoke('resetDefaults', b)).status, 409);
     assert.equal((await invoke('deleteProject', b, { password: 'test-password', confirmName: '다음 행사' })).status, 409);
     assert.equal((await invoke('archiveProject', b, { password: 'test-password' })).status, 200);
+    const returned = (await invoke('listInventory')).body.inventory[0];
+    assert.equal(returned.stock, 8);
+    assert.equal(returned.allocations.filter(row => row.project_id === b).reduce((sum, row) => sum + row.stock, 0), 0);
     assert.equal((await invoke('transferInventory', null, { ...move, projectId: b, qty: 1, requestId: 'archived-allocate' })).status, 409);
-    assert.equal((await invoke('transferInventory', null, { ...move, projectId: b, direction: 'return', qty: 7, requestId: 'archived-return' })).status, 200);
+    assert.equal((await invoke('transferInventory', null, { ...move, projectId: b, direction: 'return', qty: 7, requestId: 'archived-return' })).status, 400);
   } finally { await db.close(); }
 });
 

@@ -87,10 +87,10 @@ export default function ArtistStockPage({request,initialProjectId}) {
     finally{executing.current=false;setBusy(false);}
   };
   const send=(action,details)=>execute({action,scope:{...scope},payload:{ownerId:scope.ownerId,...(scope.boothId?{boothId:scope.boothId}:{}),...details,requestId:crypto.randomUUID()}});
-  const disabled=busy||Boolean(pending);
+  const disabled=busy;
   return <main className="page-content inventory-page account-page"><header className="inventory-page-header"><h1>제작자 재고</h1></header><section className="product-management account-content">
     {error&&<p role="alert" className="inventory-error">{error}</p>}
-    {pending&&!busy&&<button className="management-add" onClick={()=>execute(pending)}>같은 요청 다시 확인</button>}
+    
     <label>관리 제작자<select value={selection} onChange={e=>{setSelection(e.target.value);setError('');}} disabled={disabled}>{options.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}</select></label>
     {scope&&data&&<>
       {scope.boothId&&<label>부스 참여 코드<Input value={scope.boothId} readOnly/></label>}

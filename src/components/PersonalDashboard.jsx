@@ -2,7 +2,7 @@ import {settlementPhaseLabel,recipientSettlementLabel} from '../utils/eventSettl
 import {useState} from 'react';
 import {won} from '../utils/productDisplay';
 import {koreanDay} from '../utils/revenueSummary';
-import {dashboardEvents,dashboardAlerts,dashboardFocus,dashboardPastEvents,dashboardRole,settlementDisplay} from '../utils/personalDashboard';
+import {dashboardEvents,dashboardAlerts,dashboardFocus,dashboardPastEvents,dashboardRole,settlementDisplay,inventorySalesBreakdown} from '../utils/personalDashboard';
 import LoadingState from './LoadingState';
 
 const settlementLink=id=>`#/settlement?projectId=${encodeURIComponent(id)}`;
@@ -44,7 +44,7 @@ function FocusCard({choices,index,onIndex}) {
   <dl className="home-event-metrics"><div><dt>행사 판매액</dt><dd>{m.gross!=null?amount(m.gross):'-'}</dd></div><div><dt>거래 건수</dt><dd>{m.transactions!=null?`${won(m.transactions)}건`:'-'}</dd></div><div><dt>객단가</dt><dd>{average}</dd></div></dl>
   {stock&&<div className="home-focus-stock"><div className="inventory-stock-bar" role="img" aria-label={`${stock.label} ${won(stock.sold)}개, 남음 ${won(stock.remaining)}개`}><span className="is-sold" style={{flexGrow:stock.sold}}/><span className="is-remaining" style={{flexGrow:stock.remaining}}/></div><span className="home-muted">재고 {stock.label}율 {rate}% · {stock.label} {won(stock.sold)}개 · 남음 {won(stock.remaining)}개</span></div>}
   <SettlementEstimate event={event}/>
-  <footer className="home-focus-actions">{sellable&&<a className="is-primary" href={eventLink(event,'sales')}>판매 화면</a>}{allocate&&<a href={eventLink(event,'products')}>재고 배정</a>}{event.canReport&&<a href={settlementLink(event.id)}>정산</a>}</footer>
+  <footer className="home-focus-actions">{sellable&&<a className="is-primary" href={eventLink(event,'sales')}>판매 화면</a>}{allocate&&<a href={eventLink(event,'products')}>상품 관리</a>}{event.canReport&&<a href={settlementLink(event.id)}>판매 현황</a>}{p.canManage&&<a href={`#/project/manage?projectId=${encodeURIComponent(event.id)}`}>행사 관리</a>}</footer>
  </section>;
 }
 
@@ -56,12 +56,10 @@ function UpcomingList({rows}) {
 }
 
 function PastEvents({past,highlight}) {
- const [filter,setFilter]=useState('all');
- const rows=past.rows.filter(row=>filter==='all'||(filter==='followUp')===row.followUp).slice(0,5);
+ const rows=past.rows.slice(0,5);
  return <section className="dashboard-card home-past" aria-labelledby="home-past-title"><div className="home-section-heading"><h2 id="home-past-title">지난 행사 이력</h2><a href="#/projects">전체 이력 보기 →</a></div>
   {past.count>0?<>
    <p className="home-muted">지난 행사 {won(past.count)}개 · 누적 판매액 {amount(past.gross)} · 후속 조치 {won(past.followUps)}건</p>
-   <div className="revenue-period" role="group" aria-label="지난 행사 필터">{[['all','전체'],['followUp','후속 조치 필요'],['done','완료']].map(([key,label])=><button key={key} type="button" aria-pressed={filter===key} onClick={()=>setFilter(key)}>{label}</button>)}</div>
    <div className="management-table-wrap"><table className="management-table home-past-table"><thead><tr><th>행사명</th><th>기간</th><th>내 역할</th><th>판매액</th><th>내 정산금</th><th>정산 상태</th><th>재고 상태</th></tr></thead><tbody>{rows.map(({event,settlement,stock,remaining,followUp,role,gross,net})=>{
     const view=settlementDisplay(event);
     return <tr key={event.id} id={`past-event-${event.id}`} className={highlight===event.id?'is-highlighted':undefined} onClick={()=>{window.location.hash=settlementLink(event.id);}}>
@@ -80,10 +78,11 @@ export default function PersonalDashboard({data,error,events=[]}) {
  const settlements=history.flatMap(event=>(event.rows||[]).map(row=>({...row,event}))),confirmed=settlements.filter(row=>row.event.closedAt);
  const pending=sum(confirmed,'pending'),paid=sum(settlements,'paid'),warehouse=sum(inventory,'warehouse'),remaining=sum(inventory,'remaining');
  const sold=inventory.reduce((total,item)=>total+Number(item.stockSummary?.sold||0),0),eventRemaining=inventory.reduce((total,item)=>total+Number(item.stockSummary?.eventRemaining||0),0),other=inventory.reduce((total,item)=>total+Number(item.stockSummary?.other||0),0);
- const portions=[['sold','행사 판매',sold],['remaining','행사 잔여',eventRemaining],['warehouse','미배정',warehouse],...(other>0?[['other','기타 차감',other]]:[])],stockTotal=portions.reduce((total,[,,value])=>total+value,0);
+ const portions=[['sold','판매 완료',sold],['remaining','행사 배정 잔여',eventRemaining],['warehouse','미배정',warehouse],...(other>0?[['other','기타 차감',other]]:[])],stockTotal=portions.reduce((total,[,,value])=>total+value,0);
  const cards=dashboardEvents(data,events,today),past=dashboardPastEvents(cards),groups=dashboardFocus(cards);
  const focus=groups.choices,focusEvent=focus[Math.min(focusIndex,focus.length-1)];
- const upcoming=[...groups.upcoming,...groups.unknown].filter(event=>!event.closed&&event.id!==focusEvent?.id);
+ const upcoming=[...groups.upcoming,...groups.unknown].filter(event=>!event.closed);
+ const breakdown=inventorySalesBreakdown(inventory);
  const alerts=dashboardAlerts(cards,warehouse).map(alert=>({...alert,...alertContent(alert,warehouse)}));
  const showPastRow=alert=>{
   if(alert.type!=='recovery')return undefined;
@@ -96,20 +95,21 @@ export default function PersonalDashboard({data,error,events=[]}) {
   {error&&<p role="alert" className="inventory-error">{error}</p>}{!data&&!error&&<LoadingState/>}
   {data&&<>
    {alerts.length>0&&<section className="home-alert-strip" aria-labelledby="home-alert-title"><h2 id="home-alert-title">지금 확인할 것</h2>{alerts.map(alert=><a key={alert.key} href={alert.href} className={alert.urgent?'is-urgent':undefined} onClick={showPastRow(alert)}>{alert.urgent&&<span aria-hidden="true">⚠ </span>}{alert.text} →</a>)}</section>}
-   <div className="home-row-two">
+   <div className="home-row-two is-even">
     {focus.length>0&&<FocusCard choices={focus} index={focusIndex} onIndex={setFocusIndex}/>}
     <UpcomingList rows={upcoming}/>
    </div>
    <div className="home-row-two is-even">
     <section className="dashboard-card home-stock" aria-labelledby="home-stock-title"><div className="home-section-heading"><h2 id="home-stock-title">내 재고</h2><a href="#/inventory">재고관리 →</a></div>
-     {stockTotal>0||remaining>0?<><div className="home-stock-total"><span>현재 잔량 <strong>{won(remaining)}개</strong></span><span>미배정 <strong>{won(warehouse)}개</strong></span></div>{stockTotal>0&&<div className="inventory-stock-bar" role="img" aria-label={portions.map(([,label,value])=>`${label} ${won(value)}개`).join(', ')}>{portions.filter(([, ,value])=>value>0).map(([key,label,value])=><span key={key} className={`is-${key}`} style={{flexGrow:value}} title={`${label} ${won(value)}개`}/>)}</div>}<div className="inventory-stock-legend">{portions.map(([key,label,value])=><span key={key}><i className={`is-${key}`}/>{label} <strong>{won(value)}개</strong></span>)}</div></>:<p className="home-muted">등록된 재고가 없어요</p>}
+     {stockTotal>0||remaining>0?<><div className="home-stock-total"><span>남은 재고 합계 <strong>{won(remaining)}개</strong></span><span>미배정 <strong>{won(warehouse)}개</strong>{warehouse>0&&<> <a href="#/inventory?view=unassigned">보기 →</a></>}</span></div><p className="home-muted">남은 재고 {won(remaining)}개 = 행사 배정 잔여 {won(eventRemaining)}개 + 미배정 {won(warehouse)}개 · 지금까지 판매 {won(sold)}개</p>{stockTotal>0&&<div className="inventory-stock-bar" role="img" aria-label={portions.map(([,label,value])=>`${label} ${won(value)}개`).join(', ')}>{portions.filter(([, ,value])=>value>0).map(([key,label,value])=><span key={key} className={`is-${key}`} style={{flexGrow:value}} title={`${label} ${won(value)}개`}/>)}</div>}<div className="inventory-stock-legend">{portions.map(([key,label,value])=><span key={key}><i className={`is-${key}`}/>{label} <strong>{won(value)}개</strong></span>)}</div></>:<p className="home-muted">등록된 재고가 없어요</p>}
     </section>
     <section className="dashboard-card home-finance" aria-labelledby="home-finance-title"><div className="home-section-heading"><h2 id="home-finance-title">내 수익현황</h2><a href="#/account/revenue">수익현황 →</a></div>
      <div className="revenue-period" role="group" aria-label="내 판매액 집계 기간">{[['all','전체'],['year','올해'],['custom','직접 선택']].map(([key,label])=><button key={key} type="button" aria-pressed={period===key} onClick={()=>setPeriod(key)}>{label}</button>)}{period==='custom'&&<div className="home-period-dates"><label>시작일<input type="date" value={start} max={end||undefined} onChange={event=>setStart(event.target.value)}/></label><label>종료일<input type="date" min={start} value={end} onChange={event=>setEnd(event.target.value)}/></label></div>}</div>
      {noRevenue?<p className="home-muted">아직 집계된 수익이 없어요</p>:<><dl className="home-primary-metric"><dt>확정 정산 대기 · 항상 전체 기간</dt><dd>{amount(pending)}</dd></dl><dl className="home-finance-details"><div><dt>확정 정산금 · 전체 기간</dt><dd>{amount(confirmedNet)}</dd></div><div><dt>지급 완료 · 전체 기간</dt><dd>{amount(paid)}</dd></div><div><dt>내 판매액 · {period==='all'?'전체 기간':period==='year'?'올해':'선택 기간'}</dt><dd>{amount(gross)}</dd></div></dl></>}
     </section>
    </div>
-   {settlements.length>0&&<section className="dashboard-card home-own-settlements" aria-labelledby="home-own-settlements-title"><div className="home-section-heading"><h2 id="home-own-settlements-title">내 정산 현황</h2><a href="#/account/revenue">수익현황 →</a></div><div className="management-table-wrap" tabIndex={0} role="region" aria-label="내 정산 현황"><table className="management-table"><thead><tr><th>행사 · 제작자</th><th>정산금</th><th>행사 정산</th><th>내 정산</th></tr></thead><tbody>{settlements.map(row=><tr key={`${row.event.projectId}:${row.recipientId}`}><td><a href={settlementLink(row.event.projectId)}>{row.event.eventName} · {row.artistName}</a></td><td>{amount(row.net)}</td><td>{settlementPhaseLabel(row.event)}</td><td>{recipientSettlementLabel(row.event,row)}</td></tr>)}</tbody></table></div></section>}
+   {breakdown.character.length>0&&<section className="dashboard-card home-sales-breakdown" aria-labelledby="home-breakdown-title"><div className="home-section-heading"><h2 id="home-breakdown-title">내 재고 판매 통계</h2><span className="home-muted">판매된 수량 기준</span></div><div className="home-breakdown-grid">{[['character','캐릭터'],['series','작품·시리즈'],['goods','굿즈 종류']].map(([key,label])=><div key={key}><h3>{label}별 판매 Top 5</h3><ol>{breakdown[key].map(row=><li key={row.name}><div><strong>{row.name}</strong><span>{won(row.sold)}개 · {amount(row.amount)}</span></div><progress max={breakdown[key][0].sold} value={row.sold} aria-label={`${row.name} 판매 수량`}/></li>)}</ol></div>)}</div></section>}
+   {settlements.length>0&&<section className="dashboard-card home-own-settlements" aria-labelledby="home-own-settlements-title"><div className="home-section-heading"><h2 id="home-own-settlements-title">내 정산 현황</h2></div><div className="management-table-wrap" tabIndex={0} role="region" aria-label="내 정산 현황"><table className="management-table"><thead><tr><th>행사</th><th>정산금</th><th>행사 정산</th><th>내 정산</th></tr></thead><tbody>{settlements.map(row=><tr key={`${row.event.projectId}:${row.recipientId}`}><td><a href={settlementLink(row.event.projectId)}>{row.event.eventName}</a></td><td>{amount(row.net)}</td><td>{settlementPhaseLabel(row.event)}</td><td>{recipientSettlementLabel(row.event,row)}</td></tr>)}</tbody></table></div></section>}
    <PastEvents past={past} highlight={highlight}/>
   </>}
  </div></main>;
