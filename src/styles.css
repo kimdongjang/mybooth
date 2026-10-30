@@ -2236,3 +2236,5 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
 .home-stock-events{display:grid;gap:12px;margin:12px 0 0;padding:0;list-style:none}
 .home-stock-events li{display:grid;gap:6px}
 .home-stock-events li>div:first-child{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.home-stock-metrics.is-three{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:20px}
+.home-dashboard>.home-own-settlements{grid-column:1/-1}

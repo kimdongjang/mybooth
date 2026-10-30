@@ -641,10 +641,10 @@ test('dashboard summarizes own revenue, filters only sales and keeps operator to
  assert.ok(finance().some(n=>n.type==='h2'&&n.props.children==='내 수익현황'));
  assert.ok(finance().some(n=>n.type==='a'&&n.props.href==='#/account/revenue'&&n.props.children==='수익현황 →'));
  assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='3000원'));
- assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='500원'));
+ assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='900원'));
  tree.find(n=>n.type==='button'&&n.props.children==='올해').props.onClick();tree=h.render(props);
  assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='2000원'));
- assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='500원'));
+ assert.ok(finance().some(n=>n.type==='dd'&&n.props.children==='900원'));
  assert.ok(tree.some(n=>n.type==='a'&&n.props.href==='#/projects'));
 });
 
