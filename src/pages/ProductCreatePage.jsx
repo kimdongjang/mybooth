@@ -116,7 +116,7 @@ export default function ProductCreatePage({ projectId, onImageChange, readOnly, 
             <p className="management-note">최초 입고 수량을 상품·재고에 기록하고 전량을 현재 행사에 배정합니다. 판매가는 이 행사에만 적용됩니다.</p>
             {uncertain && <p role="status" className="management-note">이전 등록의 완료 여부를 확인해야 합니다. 같은 내용으로 다시 시도하면 중복 없이 결과를 확인합니다.</p>}
             {imageError && <p role="alert" className="management-note">{imageError}</p>}
-            <button data-guide="save" type="submit" className="management-add" disabled={creatorBusy}>{saving || busy ? '저장 중…' : registered ? (image ? '이미지 다시 저장' : '등록 완료') : uncertain ? '등록 결과 확인 · 다시 시도' : '상품 등록'}</button>
+            <button data-guide="save" type="submit" className="management-add" disabled={creatorBusy}>{saving || busy ? '저장 중…' : registered ? (image ? '이미지 다시 저장' : '등록 완료') : '상품 등록'}</button>
             </div>
           </div>
         </article>

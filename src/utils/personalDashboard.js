@@ -88,3 +88,19 @@ export function dashboardPastEvents(events) {
  }).sort((a,b)=>Number(b.followUp)-Number(a.followUp)||timestamp(b.event.endedAt)-timestamp(a.event.endedAt)||a.event.name.localeCompare(b.event.name,'ko'));
  return {rows,count:rows.length,gross:sum(rows.map(row=>({gross:row.gross})),'gross'),followUps:rows.filter(row=>row.followUp).length};
 }
+
+// Sold quantity and amount per character / series / goods type across the account's own stock.
+export function inventorySalesBreakdown(inventory=[],limit=5) {
+ const groups={vtuberName:new Map(),genre:new Map(),goodsType:new Map()};
+ for(const item of inventory) {
+  const sold=(item.allocations||[]).reduce((n,a)=>n+Number(a.sold||0),0);
+  if(sold<=0)continue;
+  const amount=(item.allocations||[]).reduce((n,a)=>n+Number(a.sold||0)*Number(a.price||0),0);
+  for(const [key,map] of Object.entries(groups)) {
+   const name=String(item[key]||'').trim()||'미지정',row=map.get(name)||{name,sold:0,amount:0};
+   row.sold+=sold;row.amount+=amount;map.set(name,row);
+  }
+ }
+ const top=map=>[...map.values()].sort((a,b)=>b.sold-a.sold||b.amount-a.amount||a.name.localeCompare(b.name,'ko')).slice(0,limit);
+ return {character:top(groups.vtuberName),series:top(groups.genre),goods:top(groups.goodsType)};
+}

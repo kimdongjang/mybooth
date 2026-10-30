@@ -25,12 +25,12 @@ export default function ContractRetirement({request,beforeClose}) {
   if(!booths.length&&!error)return null;
   return <section className="management-product"><div className="management-product-header"><h2>구형 쓰기 계약</h2></div><div className="account-card-body">
     {error&&<p role="alert" className="inventory-error">{error}</p>}
-    {booths.length>1&&<label>부스<select value={boothId} onChange={e=>setBooth(e.target.value)} disabled={busy||Boolean(pending.current)}>{booths.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>}
+    {booths.length>1&&<label>부스<select value={boothId} onChange={e=>setBooth(e.target.value)} disabled={busy}>{booths.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>}
     {report&&<form className="account-form" onSubmit={run}>
       <dl className="account-details"><div><dt>현재 계약</dt><dd>{report.policy.legacyWritesClosed?'ID 기반 쓰기':'구형 쓰기 호환'}</dd></div><div><dt>ID 매핑</dt><dd>{report.ready?'확인됨':`확인 필요 ${report.issues.length}건`}</dd></div><div><dt>보존 판매</dt><dd>{report.counts.sales}건</dd></div></dl>
-      {!report.policy.legacyWritesClosed&&<label><input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)} disabled={busy||Boolean(pending.current)}/>모든 기기의 주문 동기화와 최신 클라이언트 사용을 확인했습니다.</label>}
+      {!report.policy.legacyWritesClosed&&<label><input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)} disabled={busy}/>모든 기기의 주문 동기화와 최신 클라이언트 사용을 확인했습니다.</label>}
       <label>현재 비밀번호<input type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)} disabled={busy}/></label>
-      <button className="management-add" disabled={busy||!report.policy.legacyWritesClosed&&(!report.ready||!checked)}>{pending.current?'같은 요청 다시 확인':report.policy.legacyWritesClosed?'구형 쓰기 호환 복구':'구형 쓰기 종료'}</button>
+      <button className="management-add" disabled={busy||!report.policy.legacyWritesClosed&&(!report.ready||!checked)}>{busy&&<span className="button-spinner" aria-hidden="true"/>}{report.policy.legacyWritesClosed?'구형 쓰기 호환 복구':'구형 쓰기 종료'}</button>
     </form>}
   </div></section>;
 }

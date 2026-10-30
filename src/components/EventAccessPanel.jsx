@@ -32,7 +32,7 @@ export default function EventAccessPanel({request,project,onChange,beforeChange}
  useEffect(()=>{let active=true;request(`/api/booths?workspace=access&projectId=${encodeURIComponent(project.id)}&boothId=${encodeURIComponent(project.boothId)}`).then(d=>{if(active)setData(d);}).catch(e=>{if(active){setError(e.message);if([401,403,404].includes(e.status))setData(null);}});return()=>{active=false;};},[request,project.id,readRevision]);
  const run=async command=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');setPending(command);try{await beforeChange?.(command.action);const result=await request('/api/booths',{method:'POST',body:JSON.stringify(command)});if(command.action==='saveEventAccess'&&result.profiles&&result.staff)setData(result);else await load(command.action==='saveEventAccess');await onChange?.(command.action,result);setPending(null);return result;}catch(e){setError(e.message);if(e.status>=400&&e.status<500){setPending(null);if(e.status===409)await load(command.action==='saveEventAccess').catch(()=>{});}}finally{setBusy(false);lock.current=false;}};
  const send=(action,payload)=>run({action,payload:{boothId:project.boothId,projectId:project.id,...payload,requestId:crypto.randomUUID()}});
- const disabled=busy||Boolean(pending);
+ const disabled=busy;
  const accountProfile=data?.profiles.find(p=>p.owner_id===accountOwnerId&&p.status==='active'&&p.linked_user_id);
  const accountStaff=data?.staff.find(s=>s.user_id===accountProfile?.linked_user_id&&s.status==='active');
  const accountRole=accountProfile&&(['owner','manager'].includes(accountProfile.booth_role)?'운영자':accountStaff?.role==='assistant'?'부관리자':accountStaff?.role==='seller'||accountProfile.booth_role==='seller'?'부스참여자':'참여 제작자');
@@ -51,7 +51,7 @@ export default function EventAccessPanel({request,project,onChange,beforeChange}
   if(result?.unlinked)setAccountOwnerId(null);
  };
  return <div className="event-access-panel">
- {error&&<p role="alert" className="inventory-error">{error}</p>}{pending&&!busy&&<button className="management-back" onClick={()=>run(pending)}>같은 요청 다시 확인</button>}
+ {error&&<p role="alert" className="inventory-error">{error}</p>}
  <section className="management-product"><div className="management-product-header"><h2>참여 제작자</h2><div className="event-header-actions"><button type="button" className="management-back" disabled={disabled} onClick={copyInvite}>초대 링크 복사</button><button type="button" className="management-add" disabled={disabled} onClick={()=>{setError('');setLinkProfile({mode:'add'});}}>제작자 추가</button></div></div><div className="account-card-body">
 
   <div className="management-table-wrap event-participant-table-wrap"><table className="management-table event-participant-table"><thead><tr><th scope="col">제작자</th><th scope="col">등록 상품</th><th scope="col">참여일</th><th scope="col">행사 권한</th><th scope="col">관리</th></tr></thead><tbody>
@@ -80,7 +80,7 @@ export default function EventAccessPanel({request,project,onChange,beforeChange}
   {linkProfile?.mode==='add'&&<button type="button" className="management-back" disabled={disabled||searching} onClick={()=>{setDirectName(query.trim());setDirect(true);}}>새 제작자 등록</button>}
   </>}
   {error&&<p role="alert" className="inventory-error">{error}</p>}
-  {pending&&!busy&&<button type="button" className="management-back" onClick={async()=>{const result=await run(pending);if(result?.linked||result?.added)setLinkProfile(null);}}>같은 요청 다시 확인</button>}
+  
   {!direct&&<ul className="event-account-results">{accounts.map(account=><li key={account.id}><div><strong>{account.nickname||account.display_name||account.id}</strong><small>{account.display_name||account.id}</small></div><button type="button" className="management-add" disabled={disabled||Boolean(account.registered)} onClick={async()=>{const result=linkProfile.mode==='add'?await send('addEventArtist',{profileId:account.id,role:'none'}):await send('linkEventArtistAccount',{profileId:linkProfile.id,targetUserId:account.id});if(result?.linked||result?.added)setLinkProfile(null);}}>{account.registered?'등록됨':linkProfile?.mode==='add'?'등록':'연결'}</button></li>)}</ul>}
  </dialog>
  </div>;

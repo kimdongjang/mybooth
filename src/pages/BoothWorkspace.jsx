@@ -11,9 +11,9 @@ export default function BoothWorkspace({request,beforeClose,onChange}) {
  useEffect(()=>{setData(null);if(!open||!boothId)return;let active=true;request(`/api/booths?workspace=booth&boothId=${encodeURIComponent(boothId)}`).then(next=>{if(active){setData(next);setName(next.name);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[open,boothId,request]);
  const run=async command=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');setPending(command);try{await request('/api/booths',{method:'POST',body:JSON.stringify(command)});setPending(null);await load();}catch(e){setError(e.message);if(e.status>=400&&e.status<500)setPending(null);}finally{setBusy(false);lock.current=false;}};
  const save=payload=>run({action:'saveBoothManagement',payload:{boothId,...payload,requestId:crypto.randomUUID()}});
- const disabled=busy||Boolean(pending);
+ const disabled=busy;
  return <section className="page-body"><button type="button" className="management-back" onClick={()=>{setOpen(!open);if(open)onChange();}}>부스 관리</button>{open&&<>
-  {error&&<p role="alert" className="inventory-error">{error}</p>}{pending&&!busy&&<button onClick={()=>run(pending)}>같은 요청 다시 확인</button>}
+  {error&&<p role="alert" className="inventory-error">{error}</p>}
   <label>관리 부스<select value={boothId} disabled={disabled} onChange={e=>setBooth(e.target.value)}>{booths.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
   {data&&<section className="management-product"><div className="account-card-body">
    <form className="account-form" onSubmit={e=>{e.preventDefault();save({name,expectedName:data.name});}}><label>부스명<input required maxLength={80} value={name} disabled={disabled} onChange={e=>setName(e.target.value)}/></label><button className="management-add" disabled={disabled}>부스명 저장</button></form>

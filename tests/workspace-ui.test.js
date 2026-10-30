@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {readFile} from 'node:fs/promises';
-import {dashboardEvents,dashboardFocus,dashboardAlerts,dashboardPastEvents,dashboardRole,settlementDisplay} from '../src/utils/personalDashboard.js';
+import {dashboardEvents,dashboardFocus,dashboardAlerts,dashboardPastEvents,dashboardRole,settlementDisplay,inventorySalesBreakdown} from '../src/utils/personalDashboard.js';
 import {eventSchedule,sortEventsBySchedule} from '../src/utils/eventSchedule.js';
 import {eventDestination,eventActionLabel} from '../src/utils/eventNavigation.js';
 import {storageQuery} from '../api/lib/storageContract.js';
@@ -16,7 +16,7 @@ const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.childre
 async function harness(file,mocks={}) {
  let cursor=0,effectIndex=0;const states=[],effects=[],deps=[];
  const react={useId:()=> 'inventory-plan-form',useRef:value=>{const i=cursor++;return states[i]||=( {current:value});},useState:value=>{const i=cursor++;if(!(i in states))states[i]=typeof value==='function'?value():value;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next;}];},useEffect:(effect,dependencies)=>{const i=effectIndex++;if(!deps[i]||dependencies.some((v,j)=>!Object.is(v,deps[i][j]))){deps[i]=dependencies;effects.push(effect);}}};
- const base={'../utils/eventSettlement':{settlementPhaseLabel,recipientSettlementLabel},'../utils/eventNavigation':{eventDestination,eventActionLabel},'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project/manage'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts,dashboardPastEvents,dashboardRole,settlementDisplay},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
+ const base={'../utils/eventSettlement':{settlementPhaseLabel,recipientSettlementLabel},'../utils/eventNavigation':{eventDestination,eventActionLabel},'../hooks/useEventReadRefresh':{useEventReadRefresh:()=>0},react,'./EventStockAllocationPanel':{default:'EventStockAllocationPanel'},'../components/InventoryAllocationManager':{default:'InventoryAllocationManager'},'../components/CreatorField':{default:'CreatorField'},'./CreatorField':{default:'CreatorField'},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),Fragment:'fragment'},'./Icon':{default:'Icon'},'../components/Icon':{default:'Icon'},'../utils/eventSchedule':{eventSchedule,sortEventsBySchedule},'./SyncStatus':{SyncStatus:'SyncStatus'},'../hooks/usePageRoute':{pagePaths:{dashboard:'/dashboard',projects:'/projects',inventory:'/inventory',revenue:'/account/revenue',account:'/account',pos:'/sales',settings:'/products',log:'/settlement',project:'/project/manage'}},'../utils/productDisplay':{won:String,uid:()=>'old-id',eventCreatorNameOf},'../utils/revenueSummary':{koreanDay:value=>String(value).slice(0,10)},'../components/LoadingState':{default:'LoadingState'},'../components/PersonalDashboard':{default:'PersonalDashboard'},'../utils/personalDashboard':{dashboardEvents,dashboardFocus,dashboardAlerts,dashboardPastEvents,dashboardRole,settlementDisplay,inventorySalesBreakdown},'./ArtistStockPage':{StockItem:'StockItem'},'../components/PersonalInventoryCatalog':{default:'PersonalInventoryCatalog'},'../components/PersonalSalesHistory':{default:'PersonalSalesHistory'},'../components/PageLayout':{PageIntro:'PageIntro'},'../components/EventSalesCatalog':{default:'EventSalesCatalog'},'../components/PosUI':{ProductImage:'ProductImage',Input:'Input'},'../components/ExistingEventStockDialog':{default:'ExistingEventStockDialog'},'../components/EventProductDetail':{default:'EventProductDetail'},'../utils/confirmAction':{confirmAction:async()=>true},'./ProductCreatePage':{default:'ProductCreatePage'},'./InventoryImport':{default:'InventoryImport'},'../components/InventoryProductFields':{default:'InventoryProductFields'},'../utils/uploadProductImage':{uploadInventoryImage:async()=>({}),uploadProductImage:async()=>({})},'../utils/productImage':{prepareProductImage:async f=>f},'../hooks/useUnsavedChanges':{useUnsavedChanges:()=>()=>{},allowNavigation:async()=>true},...mocks};
  const listeners=new Map();
  const context=vm.createContext({document:{addEventListener:(key,fn)=>listeners.set(key,fn),removeEventListener:key=>listeners.delete(key)},crypto:globalThis.crypto,URLSearchParams,URL,sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},alert:message=>{throw new Error(message);}});
  const source=await readFile(new URL('../src/'+file,import.meta.url),'utf8');
@@ -234,8 +234,7 @@ test('creator search mutation freezes editing after response loss and retries in
  const request=async(url,options)=>{if(!options)return {artists:[{id:'profile',owner_id:'owner',display_name:'대상',registered:false}]};const cmd=JSON.parse(options.body);calls.push(cmd);if(calls.length===1)throw Object.assign(new Error('network'),{status:503});return {ownerId:'owner',profileId:'profile'};};
  const props=()=>({creators:[],value,onChange:next=>{value=next;},request,project:{id:'e',boothId:'b'},allowDirect:true});
  let tree=h.render(props());tree.find(n=>n.type==='button'&&n.props.children==='제작자 검색').props.onClick();h.render(props());await h.flush();tree=h.render(props());tree.find(n=>n.props['aria-label']==='제작자 검색어').props.onChange({target:{value:'대상'}});tree=h.render(props());await tree.find(n=>n.type==='button'&&n.props.children==='검색').props.onClick();tree=h.render(props());await tree.find(n=>n.type==='button'&&n.props.children==='행사에 추가').props.onClick();tree=h.render(props());
- assert.equal(tree.find(n=>n.type==='select').props.disabled,true);
- const dialog=tree.find(n=>n.type==='dialog');const retry=nodes(dialog).find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인');assert.ok(retry);await retry.props.onClick();assert.equal(calls.length,2);assert.deepEqual(calls[0],calls[1]);assert.equal(value.ownerId,'owner');
+ const dialog=tree.find(n=>n.type==='dialog');assert.equal(nodes(dialog).find(n=>n.props.children==='같은 요청 다시 확인'),undefined);const retry=nodes(dialog).find(n=>n.type==='button'&&n.props.children==='행사에 추가');assert.ok(retry);await retry.props.onClick();assert.equal(calls.length,2);assert.deepEqual(calls[0],calls[1]);assert.equal(value.ownerId,'owner');
 });
 
 
@@ -338,7 +337,7 @@ test('event creation offers empty, template and restore, preserving template req
  tree.find(n=>n.type==='Input'&&n.props.type==='password').props.onChange('password');tree=h.render(props());
  await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});tree=h.render(props());
  assert.equal(tree.find(n=>n.type==='button'&&n.props.children==='백업 파일에서 복원').props.disabled,true);
- assert.ok(tree.find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인'));
+ assert.equal(tree.find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인'),undefined);
  await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});assert.equal(calls.length,2);assert.equal(calls[0].payload.requestId,calls[1].payload.requestId);assert.equal(opened.at(-1),'copy');
 });
 
@@ -364,7 +363,7 @@ test('restore previews sales and settlement and retries the same request without
  assert.ok(tree.find(n=>n.type==='dd'&&n.props.children==='마감'));
  tree.find(n=>n.type==='Input'&&n.props.type==='password').props.onChange('password');tree=h.render(props);
  await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});tree=h.render(props);
- await tree.find(n=>n.type==='button'&&n.props.children==='같은 복원 요청 다시 확인').props.onClick({preventDefault(){}});
+ await tree.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
  assert.equal(calls[0].project,null);assert.equal(calls[0].action,'restoreProject');assert.equal(calls[0].payload.boothId,'b');assert.equal(calls[0].payload.requestId,calls[1].payload.requestId);
 });
 
@@ -377,7 +376,7 @@ test('event information saves directly without password and retries the same inf
  assert.equal(tree.some(n=>n.props?.type==='password'||n.type==='dialog'),false);
  nodes(form).find(n=>n.type==='Input').props.onChange('행사 새 이름');nodes(form).find(n=>n.props?.type==='date').props.onChange({target:{value:'2026-11-03'}});
  tree=h.render(props);form=tree.find(n=>n.type==='form'&&n.props.className.includes('event-info-form'));await form.props.onSubmit({preventDefault(){}});assert.equal(calls.length,1);
- tree=h.render(props);assert.ok(tree.find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인'));
+ tree=h.render(props);assert.equal(tree.find(n=>n.type==='button'&&n.props.children==='같은 요청 다시 확인'),undefined);
  await tree.find(n=>n.type==='form'&&n.props.className.includes('event-info-form')).props.onSubmit({preventDefault(){}});
  assert.equal(calls[0].action,'updateProjectInfo');assert.equal(calls[0].payload.name,'행사 새 이름');assert.equal(calls[0].payload.startsOn,'2026-11-03');assert.equal(calls[0].payload.requestId,calls[1].payload.requestId);assert.equal(Object.hasOwn(calls[0].payload,'password'),false);
 });
@@ -387,7 +386,7 @@ test('event management asks for a password only for deletion and ending sales',a
   const calls=[];const h=await harness('pages/ProjectManagementPage.jsx',{'../components/EventSettlementPanel':{default:'EventSettlementPanel'},'../components/EventAccessPanel':{default:'EventAccessPanel'},'../components/ProjectNavigation':{default:'ProjectNavigation'}});
   const props={page:'projectBackup',project:{id:'e',name:'행사',...(kind==='reopen'?{archivedAt:'2026-10-29'}:{})},navigate(){},onManageProject:async(p,action,payload)=>calls.push({action,payload})};
   let tree=h.render(props);
-  if(kind==='archive'||kind==='reopen'){tree.find(n=>n.type==='button'&&n.props.children===(kind==='archive'?'판매 종료':'판매 다시 열기')).props.onClick();}
+  if(kind==='archive'||kind==='reopen'){tree.find(n=>n.type==='button'&&n.props.children===(kind==='archive'?'행사 종료':'행사 다시 시작')).props.onClick();}
   if(kind==='delete')tree.find(n=>n.type==='button'&&n.props.children==='삭제하기').props.onClick();
   tree=h.render(props);const protectedAction=['archive','delete'].includes(kind);
   assert.equal(tree.some(n=>n.type==='Input'&&n.props.type==='password'),protectedAction);

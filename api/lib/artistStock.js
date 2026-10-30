@@ -271,6 +271,16 @@ export async function adjustArtistStock(sql,userId,payload) {
   return receipt(sql,userId,'adjustArtistStock',payload,prior.fingerprint,{inventory:await projection(sql,await itemFor(sql,ownerId,id),ownerId,boothId),change:{before:balance.totalStock,after:totalStock,delta,reason}});
 }
 
+function imageInPrefix(url,adminId,id) {
+  const scope=`inventory/${adminId}/${id}/`;
+  let path;try{path=new URL(String(url)).pathname;}catch{return false;}
+  for(let i=0;i<3;i++){
+    if(path.includes(scope))return true;
+    try{const next=decodeURIComponent(path);if(next===path)break;path=next;}catch{break;}
+  }
+  return false;
+}
+
 export async function saveArtistProduct(sql,userId,payload) {
   const {ownerId,boothId,id,version,product}=payload;
   let item=await itemFor(sql,ownerId,id);
@@ -283,8 +293,7 @@ export async function saveArtistProduct(sql,userId,payload) {
   const next={...item.product,name:product.name.trim(),price:product.price,cost:product.cost??0};
   for(const key of ['goodsType','vtuberName','genre'])if(Object.hasOwn(product,key)){if(typeof product[key]!=='string'||product[key].length>200)fail('상품 정보를 확인해주세요.',400);next[key]=product[key];}
   if(Object.hasOwn(product,'imageUrl')) {
-    const prefix=`inventory/${encodeURIComponent(item.admin_id)}/${encodeURIComponent(item.id)}/`;
-    if(product.imageUrl&&!String(product.imageUrl).includes(prefix)&&!String(product.imageUrl).startsWith('/local-images/'))fail('상품 이미지 경로를 확인해주세요.',400);
+    if(product.imageUrl&&!imageInPrefix(product.imageUrl,item.admin_id,item.id)&&!String(product.imageUrl).startsWith('/local-images/'))fail('상품 이미지 경로를 확인해주세요.',400);
     next.imageUrl=product.imageUrl;
   }
   await sql`UPDATE pos_inventory SET product=${JSON.stringify(next)}::jsonb,version=version+1 WHERE admin_id=${item.admin_id} AND id=${item.id}`;

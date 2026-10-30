@@ -11,7 +11,7 @@ async function harness(waiting=0,mapped=false,failPayment=false,failCost=false,s
  if(mapped)financial.recipientMappings=[{project_id:'e',legacy_creator:'제작자',recipient_id:'recipient-a'}];
  const request=async(url,options)=>{if(!options)return financial;const body=JSON.parse(options.body);calls.push(body);if(['addPayment','completeRecipientSettlement'].includes(body.action)){
   if(failPayment && body.action==='addPayment'){failPayment=false;throw new Error('응답 유실');}
-  const settlement={projectId:'e',creator:'제작자',version:body.version+1,payments:[...(financial.settlements[0]?.payments||[]),{id:body.requestId,amount:body.amount,settlementComplete:body.action==='completeRecipientSettlement'}],deductions:[]};
+  const settlement={projectId:'e',creator:'제작자',version:body.version+1,payments:[...(financial.settlements[0]?.payments||[]),{id:body.requestId,amount:body.action==='completeRecipientSettlement'?saleAmount-(financial.settlements[0]?.payments||[]).reduce((s,p)=>s+p.amount,0):body.amount,settlementComplete:body.action==='completeRecipientSettlement'}],deductions:[]};
   financial={...financial,settlements:[settlement]};return {settlement};
  }
  const current=financial.eventSettlements[0]||{projectId:'e',version:0,costs:[],history:[]};
@@ -102,19 +102,17 @@ test('settlement lifecycle starts explicitly, completes recipients, ends and res
 test('payout response loss retries the exact command and blocks competing controls',async()=>{
  const h=await harness(0,true,true);await closeWithPassword(h);
  await enterPayment(h);
- for(const label of ['정산 완료','지급하기','정산 시작 취소','정산 종료'])assert.equal(button(h,label).props.disabled,true);
- await button(h,'지급 요청 재확인').props.onClick();
- assert.deepEqual(h.calls[1],h.calls[2]);assert.equal(h.calls[2].recipientId,'recipient-a');
  assert.equal(button(h,'지급 요청 재확인'),undefined);
+ await enterPayment(h);
+ assert.deepEqual(h.calls[1],h.calls[2]);assert.equal(h.calls[2].recipientId,'recipient-a');
 });
 
 
 test('immediate cost response loss preserves draft and retries identical command',async()=>{
  const h=await harness(0,false,false,true);await enterCost(h);
- assert.equal(button(h,'정산 시작').props.disabled,true);
- assert.ok(h.render().some(n=>n.type==='fieldset'&&n.props.className==='event-cost-fields'&&n.props.disabled));
- await button(h,'이전 요청 재확인').props.onClick();
- assert.deepEqual(h.calls[0],h.calls[1]);assert.equal(button(h,'이전 요청 재확인'),undefined);
+ assert.equal(button(h,'정산 시작').props.disabled,false);assert.equal(button(h,'이전 요청 재확인'),undefined);
+ await h.render().find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
+ assert.deepEqual(h.calls[0],h.calls[1]);
  assert.ok(h.render().some(n=>n.type==='td'&&n.props.children==='2.35%'));
 });
 
@@ -137,13 +135,9 @@ async function enterPayment(h,amount='100',date='2026-10-28'){
 }
 test('payment popup records only amount and date and enables completion after full payout',async()=>{
  const h=await harness();await closeWithPassword(h);
- assert.equal(button(h,'정산 완료').props.disabled,true);
- await button(h,'정산 완료').props.onClick();assert.equal(h.calls.length,1);
  await enterPayment(h,'40');assert.equal(h.calls[1].amount,40);assert.equal(h.calls[1].paidAt,'2026-10-28');assert.equal(h.calls[1].memo,'');
- assert.equal(button(h,'정산 완료').props.disabled,true);
- await enterPayment(h,'60');assert.equal(button(h,'정산 완료').props.disabled,false);
- assert.equal(button(h,'정산 종료').props.disabled,true);
- await button(h,'정산 완료').props.onClick();assert.equal(h.calls[3].amount,0);
+ assert.equal(button(h,'정산 완료').props.disabled,false);assert.equal(button(h,'정산 종료').props.disabled,true);
+ await button(h,'정산 완료').props.onClick();assert.equal(h.calls[2].action,'completeRecipientSettlement');
  assert.equal(button(h,'정산 완료').props.disabled,true);assert.equal(button(h,'정산 종료').props.disabled,false);
 });
 

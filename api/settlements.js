@@ -147,7 +147,6 @@ export function createHandler(pool) {
       } else if(action==='completeRecipientSettlement') {
         if(recipientSettled(frozen,payments))fail('이미 정산 완료된 제작자입니다.',409);
         const remaining=Math.max(0,frozen.net-paid);
-        if(remaining>0)fail('남은 정산금을 먼저 지급 기록해주세요.',409);
         payments.push({id:requestId,amount:remaining,paidAt:date(paidAt),memo:'정산 완료',settlementComplete:true});
       } else if (action === 'addPayment') {
         if (!integer(amount) || amount === 0 || typeof memo !== 'string' || memo.length > 500) fail('지급 금액과 메모를 확인해주세요.');

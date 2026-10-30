@@ -1020,6 +1020,17 @@ async function handler(req, res) {
         if(requestId)await sql`INSERT INTO pos_project_imports(admin_id,id,fingerprint,project_id) VALUES(${admin.id},${requestId},${fingerprint},${result.project.id})`;
         return res.status(201).json(result);
       }
+      if (action === 'archiveProject' && !project.archived_at) {
+        // Event end: sold quantity stays on the event product; unsold stock returns to the creator's personal inventory.
+        const leftovers = (await sql`SELECT l.admin_id,l.inventory_id,p.id AS product_id,COALESCE(p.stock_qty,p.stock) AS stock FROM pos_inventory_links l JOIN pos_products p ON p.project_id=l.project_id AND p.id=l.product_id WHERE l.project_id=${projectId} AND COALESCE(p.stock_qty,p.stock)>0 FOR UPDATE OF p`).rows;
+        for (const row of leftovers) {
+          const qty = Number(row.stock);
+          await sql`SELECT id FROM pos_inventory WHERE admin_id=${row.admin_id} AND id=${row.inventory_id} FOR UPDATE`;
+          await sql`UPDATE pos_products SET stock=0,stock_qty=0,initial_stock_qty=GREATEST(0,COALESCE(initial_stock_qty,stock_qty,stock)-${qty}),updated_at=NOW() WHERE project_id=${projectId} AND id=${row.product_id}`;
+          await sql`UPDATE pos_inventory SET stock=stock+${qty},version=version+1 WHERE admin_id=${row.admin_id} AND id=${row.inventory_id}`;
+          await sql`INSERT INTO pos_inventory_transfers VALUES (${row.admin_id},${uid()},${JSON.stringify({ projectId, inventoryId: row.inventory_id, direction: 'return', qty, auto: 'eventEnd' })}::jsonb)`;
+        }
+      }
       const archivedAt = action === 'archiveProject' ? new Date().toISOString() : null;
       await sql`UPDATE pos_projects SET archived_at = ${archivedAt}, updated_at = NOW() WHERE id = ${projectId} AND admin_id = ${admin.id}`;
       return res.status(200).json(await listProjects(admin.id));

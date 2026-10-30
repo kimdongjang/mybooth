@@ -17,10 +17,10 @@ import {confirmAction} from '../utils/confirmAction';
 import {useEventReadRefresh} from '../hooks/useEventReadRefresh';
 
 function ProductEditor({item,busy,onSave,onImage,onRemove}) {
- const [draft,setDraft]=useState(item);
+ const [draft,setDraft]=useState(item),[imageError,setImageError]=useState('');
  const clear=useUnsavedChanges(JSON.stringify(draft)!==JSON.stringify(item));
  return <article className="management-product"><div className="management-product-header inventory-detail-header"><div className="inventory-detail-identity"><h3>{item.name}</h3></div><div className="inventory-detail-actions"><button type="submit" form={`product-${item.id}`} className="management-add" disabled={busy}>수정</button><button type="button" className="inventory-delete-button" disabled={busy} onClick={onRemove}>상품 삭제</button></div></div><div className="management-product-body">
-  <div className="management-image"><ProductImage imageUrl={item.imageUrl} name={item.name}/><label className="management-upload product-image-upload"><span>{item.imageUrl?'이미지 수정':'이미지 등록'}</span><input aria-label="상품 이미지 등록 또는 수정" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)onImage(file);}}/></label></div>
+  <div className="management-image"><ProductImage imageUrl={item.imageUrl} name={item.name}/><label className="management-upload product-image-upload"><span>{item.imageUrl?'이미지 수정':'이미지 등록'}</span><input aria-label="상품 이미지 등록 또는 수정" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file){setImageError('');Promise.resolve(onImage(file)).catch(err=>setImageError(err?.message||'이미지를 저장하지 못했습니다.'));}}}/></label>{imageError&&<p role="alert" className="inventory-error">{imageError}</p>}</div>
   <form id={`product-${item.id}`} className="management-details" onSubmit={async e=>{e.preventDefault();try{await onSave(draft);clear();}catch{}}}><InventoryProductFields draft={draft} hideCreator products={[]} onChange={(key,value)=>setDraft(current=>({...current,[key]:value}))} disabled={busy}/></form>
  </div></article>;
 }
@@ -65,8 +65,8 @@ export default function PersonalInventory({request,routeHash,navigate,event=null
   finally{lock.current=false;setBusy(false);}
  };
  const send=(action,details)=>execute({action,payload:{ownerId:data?.inventory.find(item=>item.id===details.id)?.ownerId||scope.ownerId,...(scope.boothId?{boothId:scope.boothId}:{}),...details,requestId:crypto.randomUUID()}});
- const image=async(item,file)=>{const prepared=await prepareProductImage(file),uploaded=await uploadInventoryImage(item.custodianId,item.inventoryId,prepared,item.ownerId||scope.ownerId);await send('saveArtistProduct',{ownerId:item.ownerId,id:item.id,version:item.version,product:{...item,imageUrl:uploaded.url}});};
- const disabled=busy||Boolean(pending);
+ const image=async(item,file)=>{try{const prepared=await prepareProductImage(file),uploaded=await uploadInventoryImage(item.custodianId,item.inventoryId,prepared,item.ownerId||scope.ownerId);await send('saveArtistProduct',{ownerId:item.ownerId,id:item.id,version:item.version,product:{...item,imageUrl:uploaded.url}});}catch(err){setError('');throw err;}};
+ const disabled=busy;
  const registrationDisabled=disabled||!scope||!data;
  let detailId='';
  if(!event&&tool==='list'&&path!=='#/inventory'){try{detailId=decodeURIComponent(path.split('/').pop());}catch{}}
@@ -108,7 +108,7 @@ export default function PersonalInventory({request,routeHash,navigate,event=null
   {!event&&tool!=='sales'?<>
 
   <header className="management-heading inventory-management-heading"><h2 tabIndex={-1}>{tool==='list'&&!detailId?'내 재고관리':title}</h2><div className="inventory-management-actions">{tool==='sales'?null:tool==='list'&&!detailId?<><button type="button" className="management-add" disabled={disabled} onClick={()=>navigate('/inventory/new')}>+ 새 상품 등록</button></>:tool==='import'?null:<button type="button" className="management-back" disabled={disabled} onClick={()=>navigate('inventory')}>← 상품 목록으로</button>}</div></header></>:event?<PageIntro title="상품 관리" hideTitle/>:null}
-  {error&&<p role="alert" className="inventory-error">{error}</p>}{pending&&!busy&&<button className="management-add" onClick={()=>execute(pending).catch(()=>{})}>같은 요청 다시 확인</button>}
+  {error&&<p role="alert" className="inventory-error">{error}</p>}
    {!event&&tool==='new'&&<>
     <form className="product-management" onSubmit={async e=>{e.preventDefault();if(registrationDisabled)return;try{const result=await send('createArtistStock',{...draft,price:Number(draft.price),cost:Number(draft.cost),quantity:Number(draft.stock)});if(newImage&&result?.inventory)await image(result.inventory,newImage);clear();setDraft({...draft,name:'',stock:0});setNewImage(null);navigate('inventory');}catch{}}}><fieldset disabled={registrationDisabled} className="min-w-0"><div className="management-products"><article className="management-product">
      <div className="management-product-header"><h3>{draft.name||'새 상품'}</h3></div>
