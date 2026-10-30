@@ -416,9 +416,9 @@ export default function App() {
   useEffect(()=>{
     if(!token)return;
     const refresh=()=>{void loadProjects({background:true});};
-    const timer=window.setInterval(()=>{if(!document.hidden)refresh();},SYNC_INTERVAL_MS);window.addEventListener('online',refresh);
+    const timer=screen==='dashboard'?0:window.setInterval(()=>{if(!document.hidden)refresh();},SYNC_INTERVAL_MS);window.addEventListener('online',refresh);
     return()=>{window.clearInterval(timer);window.removeEventListener('online',refresh);};
-  },[token,adminId]);
+  },[token,adminId,screen==='dashboard']);
   useEffect(() => { let active = true; if (!token) { setProfileImage(''); return; } requestJson('/api/pos?account=true').then(data => { if (active) setProfileImage(data.admin?.avatar || ''); }).catch(() => {}); return () => { active = false; }; }, [token]);
   useEffect(() => { if (token && selectedProject?.id) loadState(); }, [token, selectedProject?.id, selectedProject?.boothId]);
 

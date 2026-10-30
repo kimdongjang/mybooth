@@ -230,7 +230,7 @@ export async function artistHistory(sql,userId) {
     }
     const rows=(calculation?.rows || []).filter(row=>byAlias.has(row.creator)).map(row=>{
       const recipient=byAlias.get(row.creator),record=records.find(r=>r.creator===row.creator);
-      const payments=(record?.payments || []).map(p=>({id:p.id,amount:p.amount,paidAt:p.paidAt}));
+      const payments=(record?.payments || []).map(p=>({id:p.id,amount:p.amount,paidAt:p.paidAt,memo:p.memo||'',settlementComplete:Boolean(p.settlementComplete),reversalOf:p.reversalOf||null}));
       const paid=payments.reduce((sum,p)=>sum+p.amount,0);
       return {recipientId:recipient.id,ownerId:recipient.owner_id,artistName:recipient.display_name,gross:row.gross,
         fees:row.fees,net:row.net,shares:(row.shares || []).map(s=>({label:s.label,amount:s.amount})),

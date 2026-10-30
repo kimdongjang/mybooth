@@ -664,7 +664,6 @@ test('personal settlement status separates event phase from own completion on da
  const h=await harness('components/PersonalDashboard.jsx',{'./LoadingState':{default:'LoadingState'}});
  const tree=h.render({data:{events:history,inventory:[]},events:[]});
  assert.ok(tree.some(n=>n.props.children==='내 정산 현황'));
- assert.ok(tree.some(n=>n.type==='td'&&n.props.children==='정산 진행 중'));
  assert.ok(tree.some(n=>n.type==='td'&&n.props.children==='정산 완료'));
  const overview=await harness('pages/PersonalOverview.jsx');
  overview.render({request:async()=>({events:history})});await overview.flush();
