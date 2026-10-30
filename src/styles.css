@@ -2229,3 +2229,10 @@ body:has(.api-read-indicator) .loading-state{visibility:hidden}
 .inventory-registration-list{display:grid;gap:16px;margin:12px 0;padding:0;list-style:none}
 .inventory-registration-list li{display:grid;gap:6px}
 .inventory-registration-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.home-stock-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0 0 12px}
+.home-stock-metrics dt{color:#64748b}
+.home-stock-metrics dd{margin:4px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+.home-stock-events-title{margin-top:20px!important}
+.home-stock-events{display:grid;gap:12px;margin:12px 0 0;padding:0;list-style:none}
+.home-stock-events li{display:grid;gap:6px}
+.home-stock-events li>div:first-child{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
